@@ -17,4 +17,4 @@
 node mobile-userscript/build-userscript.js
 ```
 
-生成脚本会读取 `xchina-immersive-viewer/content.js` 和 `xchina-immersive-viewer/manifest.json`，输出到 `mobile-userscript/flowlens.user.js`。
+生成脚本会读取 `flowlens-extension/content.js` 和 `flowlens-extension/manifest.json`，输出到 `mobile-userscript/flowlens.user.js`。

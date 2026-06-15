@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens
-// @namespace    local.xchina-immersive-viewer
-// @version      1.1.49
+// @namespace    local.flowlens
+// @version      1.1.50
 // @description  手机 Edge / Tampermonkey 版：把多图网页整理成沉浸式全屏瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
@@ -12,8 +12,8 @@
 // ==/UserScript==
 
 (() => {
-  if (window.__xchinaImmersiveViewer) return;
-  window.__xchinaImmersiveViewer = true;
+  if (window.__flowLensViewer) return;
+  window.__flowLensViewer = true;
 
   const xivUserscriptMode = typeof GM_xmlhttpRequest === "function" || typeof GM_download === "function";
 
@@ -81,7 +81,7 @@
   const GALLERY_TEXT_RE = /\bNo\.\s*\d+\b/i;
   const GALLERY_PAGE_WINDOW = 16;
   const GALLERY_FETCH_BATCH = 3;
-  const XCHINA_FETCH_BATCH = 6;
+  const SITE_ALBUM_FETCH_BATCH = 6;
   const VIDEO_PREVIEW_CONCURRENCY = 2;
 
   const state = {
@@ -489,7 +489,7 @@
     }
   }
 
-  function isXchinaImageUrl(url) {
+  function isSiteAlbumImageUrl(url) {
     try {
       const parsed = new URL(url, location.href);
       return /(^|\.)img\.xchina\.io$/i.test(parsed.hostname) && isFavoriteImageUrl(parsed.href);
@@ -647,7 +647,7 @@
     return galleryPrefixFromUrl(location.href) !== "";
   }
 
-  function isXchinaGalleryUrl(url = location.href) {
+  function isKnownGalleryUrl(url = location.href) {
     try {
       const parsed = new URL(url, location.href);
       return /(^|\.)xchina\.co$/i.test(parsed.hostname) && !!galleryPrefixFromUrl(parsed.href);
@@ -895,7 +895,7 @@
       }
     });
 
-    if (isXchinaGalleryUrl(base)) {
+    if (isKnownGalleryUrl(base)) {
       added += collectFallbackImageUrls(doc, base);
     }
 
@@ -983,7 +983,7 @@
     return url;
   }
 
-  function xchinaOriginalImageUrl(url) {
+  function siteAlbumOriginalImageUrl(url) {
     if (!url || isVideoUrl(url)) return url;
     try {
       const parsed = new URL(url, location.href);
@@ -999,7 +999,7 @@
     }
   }
 
-  function xchinaAlbumIdFromUrl(url) {
+  function siteAlbumIdFromUrl(url) {
     try {
       const parsed = new URL(url, location.href);
       const pathMatch = parsed.pathname.match(/\/(?:photo\/id-|photos\d*\/)([A-Za-z0-9_-]{8,})(?:\/|\.html|$)/i);
@@ -1012,7 +1012,7 @@
     }
   }
 
-  function xchinaPageNumberFromUrl(url) {
+  function siteAlbumPageNumberFromUrl(url) {
     try {
       const parsed = new URL(url, location.href);
       const imageMatch = parsed.pathname.match(/\/photos\d*\/[^/]+\/(\d+)(?:[_-]\d+x\d+)?\.(?:avif|jpe?g|png|webp)$/i);
@@ -1023,9 +1023,9 @@
     }
   }
 
-  function xchinaDerivedImageCandidates(url) {
-    const albumId = xchinaAlbumIdFromUrl(url);
-    const pageNumber = xchinaPageNumberFromUrl(url);
+  function siteAlbumDerivedImageCandidates(url) {
+    const albumId = siteAlbumIdFromUrl(url);
+    const pageNumber = siteAlbumPageNumberFromUrl(url);
     if (!albumId || !pageNumber) return [];
     const filename = `${String(pageNumber).padStart(4, "0")}.jpg`;
     return [
@@ -1034,20 +1034,20 @@
     ];
   }
 
-  function xchinaImageUrlFromRaw(raw, base = location.href) {
+  function siteAlbumImageUrlFromRaw(raw, base = location.href) {
     const value = unescapeEmbeddedUrl(raw).replace(/\\/g, "");
     if (!value) return "";
-    if (/^https?:\/\/img\.xchina\.io\/photos\d*\//i.test(value)) return xchinaOriginalImageUrl(value);
-    if (/^\/\/img\.xchina\.io\/photos\d*\//i.test(value)) return xchinaOriginalImageUrl(`https:${value}`);
+    if (/^https?:\/\/img\.xchina\.io\/photos\d*\//i.test(value)) return siteAlbumOriginalImageUrl(value);
+    if (/^\/\/img\.xchina\.io\/photos\d*\//i.test(value)) return siteAlbumOriginalImageUrl(`https:${value}`);
     if (/^\/photos\d*\/[A-Za-z0-9_-]+\/[^/?#]+\.(?:avif|jpe?g|png|webp)(?:[?#].*)?$/i.test(value)) {
-      return xchinaOriginalImageUrl(`https://img.xchina.io${value}`);
+      return siteAlbumOriginalImageUrl(`https://img.xchina.io${value}`);
     }
     const url = absoluteUrl(value, base);
-    return /(^|\.)img\.xchina\.io\//i.test(url) ? xchinaOriginalImageUrl(url) : "";
+    return /(^|\.)img\.xchina\.io\//i.test(url) ? siteAlbumOriginalImageUrl(url) : "";
   }
 
-  function xchinaDirectImageCandidates(doc, base) {
-    const albumId = xchinaAlbumIdFromUrl(base) || xchinaAlbumIdFromUrl(location.href);
+  function siteAlbumDirectImageCandidates(doc, base) {
+    const albumId = siteAlbumIdFromUrl(base) || siteAlbumIdFromUrl(location.href);
     const candidates = [];
     const html = doc.documentElement?.innerHTML || "";
     const normalizedHtml = unescapeEmbeddedUrl(html)
@@ -1055,9 +1055,9 @@
       .replace(/\\/g, "");
 
     function remember(url) {
-      const direct = xchinaImageUrlFromRaw(url, base);
+      const direct = siteAlbumImageUrlFromRaw(url, base);
       if (!direct || !isFavoriteImageUrl(direct)) return;
-      if (albumId && xchinaAlbumIdFromUrl(direct) && xchinaAlbumIdFromUrl(direct) !== albumId) return;
+      if (albumId && siteAlbumIdFromUrl(direct) && siteAlbumIdFromUrl(direct) !== albumId) return;
       candidates.push(direct);
     }
 
@@ -1241,7 +1241,7 @@
 
   function createImageElement(url, index) {
     const img = document.createElement("img");
-    const eagerLimit = isXchinaGalleryUrl() ? 24 : 8;
+    const eagerLimit = isKnownGalleryUrl() ? 24 : 8;
     img.loading = index < eagerLimit ? "eager" : "lazy";
     if (index < eagerLimit) img.fetchPriority = "high";
     img.decoding = "async";
@@ -1661,7 +1661,7 @@
   }
 
   function rememberExpectedImageCount(doc) {
-    if (isXchinaGalleryUrl(doc.documentElement?.dataset?.xivBase || location.href)) {
+    if (isKnownGalleryUrl(doc.documentElement?.dataset?.xivBase || location.href)) {
       const pagerMax = maxPagerNumberFromDocument(doc);
       if (pagerMax > state.expectedImages) state.expectedImages = pagerMax;
       return;
@@ -1770,7 +1770,7 @@
 
     const maxPage = Math.max(0, ...pageNums);
     if (!prefixUrl || maxPage < 2) return;
-    if (isXchinaGalleryUrl(base) && maxPage > state.expectedImages) state.expectedImages = maxPage;
+    if (isKnownGalleryUrl(base) && maxPage > state.expectedImages) state.expectedImages = maxPage;
 
     const startPage = Math.max(1, centerPage - discoveryWindow);
     const endPage = Math.min(maxPage, centerPage + discoveryWindow);
@@ -1781,12 +1781,12 @@
   }
 
   function galleryDiscoveryWindow(url = location.href) {
-    if (isXchinaGalleryUrl(url)) return 1000;
+    if (isKnownGalleryUrl(url)) return 1000;
     return isZttaotuUrl(url) ? 120 : GALLERY_PAGE_WINDOW;
   }
 
   function galleryFetchLimit() {
-    if (isXchinaGalleryUrl()) return XCHINA_FETCH_BATCH;
+    if (isKnownGalleryUrl()) return SITE_ALBUM_FETCH_BATCH;
     return isZttaotuUrl() ? Math.max(GALLERY_FETCH_BATCH, state.pageUrls.size) : GALLERY_FETCH_BATCH;
   }
 
@@ -1816,7 +1816,7 @@
 
   function maxPagerNumberFromDocument(doc) {
     let max = 0;
-    if (isXchinaGalleryUrl(doc.documentElement?.dataset?.xivBase || location.href)) {
+    if (isKnownGalleryUrl(doc.documentElement?.dataset?.xivBase || location.href)) {
       const text = (doc.body?.textContent || "").replace(/\s+/g, " ").trim();
       for (const match of text.matchAll(/\b\d{1,4}\s*\/\s*(\d{1,4})\b/g)) {
         const value = Number(match[1]);
@@ -1903,8 +1903,8 @@
     const now = Date.now();
     if (!force && now - state.lastGalleryFetchAt < 900) return;
     state.lastGalleryFetchAt = now;
-    const maxBatch = isXchinaGalleryUrl()
-      ? XCHINA_FETCH_BATCH
+    const maxBatch = isKnownGalleryUrl()
+      ? SITE_ALBUM_FETCH_BATCH
       : isZttaotuUrl() ? Math.max(GALLERY_FETCH_BATCH, state.pageUrls.size) : GALLERY_FETCH_BATCH;
     limit = Math.max(1, Math.min(maxBatch, limit));
     state.fetching = true;
@@ -1948,11 +1948,11 @@
             updateStatus(`分页异常：${String(error?.message || error).slice(0, 36)}`);
           } finally {
             loaded += 1;
-            if (isXchinaGalleryUrl()) await sleep(160);
+            if (isKnownGalleryUrl()) await sleep(160);
           }
         }
       };
-      const workers = Math.min(isXchinaGalleryUrl() ? 2 : 2, Math.max(1, limit));
+      const workers = Math.min(isKnownGalleryUrl() ? 2 : 2, Math.max(1, limit));
       await Promise.all(Array.from({ length: workers }, worker));
     } finally {
       state.fetching = false;
@@ -2598,8 +2598,8 @@
 
   function detailImageCandidates(doc, base) {
     const urls = [];
-    if (isXchinaGalleryUrl(base) || xchinaAlbumIdFromUrl(base)) {
-      urls.push(...xchinaDirectImageCandidates(doc, base));
+    if (isKnownGalleryUrl(base) || siteAlbumIdFromUrl(base)) {
+      urls.push(...siteAlbumDirectImageCandidates(doc, base));
     }
     doc.querySelectorAll('meta[property="og:image"], meta[name="twitter:image"], link[rel="image_src"]').forEach((node) => {
       const raw = node.getAttribute("content") || node.getAttribute("href");
@@ -2674,7 +2674,7 @@
   }
 
   async function chooseLargestImage(candidates, thumbUrl) {
-    const sorted = [...new Set(candidates.map((url) => xchinaOriginalImageUrl(url)).filter(isFavoriteImageUrl))]
+    const sorted = [...new Set(candidates.map((url) => siteAlbumOriginalImageUrl(url)).filter(isFavoriteImageUrl))]
       .sort((a, b) => scoreHighResCandidate(b, thumbUrl) - scoreHighResCandidate(a, thumbUrl))
       .slice(0, 12);
     if (!sorted.length) return isFavoriteImageUrl(thumbUrl) ? thumbUrl : "";
@@ -2689,15 +2689,15 @@
   async function resolveHighResUrl(imageUrl, quiet = false) {
     const key = keyForUrl(imageUrl);
     if (state.highResByImage.has(key)) return state.highResByImage.get(key);
-    const directOriginal = xchinaOriginalImageUrl(imageUrl);
+    const directOriginal = siteAlbumOriginalImageUrl(imageUrl);
     if (directOriginal && directOriginal !== imageUrl && isFavoriteImageUrl(directOriginal)) {
       state.highResByImage.set(key, directOriginal);
       return directOriginal;
     }
-    const xchinaDerived = xchinaDerivedImageCandidates(imageUrl).find(isFavoriteImageUrl) || "";
-    if (xchinaDerived) {
-      state.highResByImage.set(key, xchinaDerived);
-      return xchinaDerived;
+    const siteAlbumDerived = siteAlbumDerivedImageCandidates(imageUrl).find(isFavoriteImageUrl) || "";
+    if (siteAlbumDerived) {
+      state.highResByImage.set(key, siteAlbumDerived);
+      return siteAlbumDerived;
     }
     const detailUrl = state.photoShowByImage.get(key) || state.detailByImage.get(key) || (isDetailPhotoPage(imageUrl) ? imageUrl : "");
     if (!detailUrl) return imageUrl;
@@ -3198,13 +3198,13 @@
     }
   }
 
-  async function xchinaFavoriteCandidates(sourceUrl, currentUrl) {
-    if (!isXchinaGalleryUrl(location.href) && !xchinaAlbumIdFromUrl(sourceUrl) && !xchinaAlbumIdFromUrl(currentUrl)) return [];
+  async function siteAlbumFavoriteCandidates(sourceUrl, currentUrl) {
+    if (!isKnownGalleryUrl(location.href) && !siteAlbumIdFromUrl(sourceUrl) && !siteAlbumIdFromUrl(currentUrl)) return [];
     const candidates = [];
     const seen = new Set();
 
     function remember(url) {
-      const direct = xchinaOriginalImageUrl(url);
+      const direct = siteAlbumOriginalImageUrl(url);
       if (!isFavoriteImageUrl(direct)) return;
       const key = keyForUrl(direct);
       if (seen.has(key)) return;
@@ -3224,7 +3224,7 @@
 
     for (const url of [...new Set(urls)]) {
       remember(url);
-      xchinaDerivedImageCandidates(url).forEach(remember);
+      siteAlbumDerivedImageCandidates(url).forEach(remember);
     }
 
     return candidates;
@@ -3265,16 +3265,16 @@
     state.savingFavorite = true;
     button.title = "正在保存";
     try {
-      const xchinaCandidates = await xchinaFavoriteCandidates(sourceUrl, currentUrl);
-      const highResUrl = xchinaCandidates.length
+      const siteAlbumCandidates = await siteAlbumFavoriteCandidates(sourceUrl, currentUrl);
+      const highResUrl = siteAlbumCandidates.length
         ? ""
         : await resolveHighResUrl(sourceUrl || currentUrl, true);
       const candidates = [];
       const candidateKeys = new Set();
-      [loadedUrl, ...xchinaCandidates, highResUrl, currentUrl, sourceUrl]
+      [loadedUrl, ...siteAlbumCandidates, highResUrl, currentUrl, sourceUrl]
         .filter(Boolean)
         .forEach((url) => {
-          [url, xchinaOriginalImageUrl(url)].forEach((candidate) => {
+          [url, siteAlbumOriginalImageUrl(url)].forEach((candidate) => {
             if (!isFavoriteImageUrl(candidate)) return;
             const key = keyForUrl(candidate);
             if (candidateKeys.has(key)) return;
@@ -3294,7 +3294,7 @@
       for (const saveUrl of candidates) {
         updateStatus(`保存 ${saveUrl.split("/").pop() || "图片"}`);
         let result = null;
-        if (isXchinaImageUrl(saveUrl)) {
+        if (isSiteAlbumImageUrl(saveUrl)) {
           result = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl), { direct: true });
         } else {
           try {
@@ -3303,7 +3303,7 @@
             result = { ok: false, error: String(error?.message || error), via: "page-blob" };
           }
         }
-        if (!result?.ok && !isXchinaImageUrl(saveUrl)) {
+        if (!result?.ok && !isSiteAlbumImageUrl(saveUrl)) {
           const fallback = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl));
           result = fallback?.ok ? fallback : {
             ok: false,
@@ -3627,7 +3627,7 @@
 
   function discoverNearbyPages() {
     if (isZttaotuUrl()) return;
-    if (isXchinaGalleryUrl()) return;
+    if (isKnownGalleryUrl()) return;
     const prefix = galleryPrefixFromUrl(location.href);
     const n = pageNumberFromUrl(location.href);
     if (!prefix || !n) return;

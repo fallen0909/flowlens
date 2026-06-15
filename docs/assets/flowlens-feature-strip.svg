@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="360" viewBox="0 0 1600 360" role="img" aria-label="FlowLens 功能图标：收集图片、瀑布流、大图预览、视频支持、打包下载、本地运行">
+  <defs>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#152232"/>
+      <stop offset="1" stop-color="#0c121b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#19d3e6"/>
+      <stop offset="1" stop-color="#f4b85d"/>
+    </linearGradient>
+    <style>
+      .label { font: 700 30px "Segoe UI", "Microsoft YaHei", sans-serif; fill: #eef8fc; }
+      .desc { font: 400 19px "Segoe UI", "Microsoft YaHei", sans-serif; fill: #9fb6c8; }
+      .stroke { fill: none; stroke: #30d8e8; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+      .soft { fill: rgba(48,216,232,.12); stroke: rgba(48,216,232,.42); stroke-width: 2; }
+    </style>
+  </defs>
+  <rect width="1600" height="360" rx="34" fill="#070b10"/>
+  <g transform="translate(30 34)">
+    <g transform="translate(0 0)">
+      <rect width="230" height="292" rx="26" fill="url(#card)" stroke="#28445a"/>
+      <rect x="56" y="55" width="48" height="62" rx="10" class="soft"/>
+      <rect x="92" y="82" width="58" height="74" rx="12" class="soft"/>
+      <rect x="128" y="48" width="50" height="64" rx="10" class="soft"/>
+      <path d="M62 189h106M62 218h72" class="stroke"/>
+      <text x="34" y="251" class="label">智能收集</text>
+    </g>
+    <g transform="translate(260 0)">
+      <rect width="230" height="292" rx="26" fill="url(#card)" stroke="#28445a"/>
+      <rect x="48" y="48" width="54" height="92" rx="12" fill="url(#accent)" opacity=".85"/>
+      <rect x="114" y="48" width="68" height="58" rx="12" fill="#3ad9e7" opacity=".65"/>
+      <rect x="114" y="118" width="68" height="96" rx="12" fill="#f4b85d" opacity=".75"/>
+      <rect x="48" y="152" width="54" height="62" rx="12" fill="#8fe3c6" opacity=".7"/>
+      <text x="34" y="251" class="label">瀑布流</text>
+    </g>
+    <g transform="translate(520 0)">
+      <rect width="230" height="292" rx="26" fill="url(#card)" stroke="#28445a"/>
+      <rect x="44" y="58" width="142" height="100" rx="18" fill="url(#accent)" opacity=".82"/>
+      <path d="M78 204l-26 26M152 204l26 26M52 230h126" class="stroke"/>
+      <text x="34" y="251" class="label">大图预览</text>
+    </g>
+    <g transform="translate(780 0)">
+      <rect width="230" height="292" rx="26" fill="url(#card)" stroke="#28445a"/>
+      <rect x="42" y="58" width="146" height="104" rx="18" fill="#192b3c" stroke="#30d8e8" stroke-width="5"/>
+      <circle cx="115" cy="110" r="32" fill="rgba(255,255,255,.16)"/>
+      <path d="M106 92v36l31-18z" fill="#eef8fc"/>
+      <text x="34" y="251" class="label">视频支持</text>
+    </g>
+    <g transform="translate(1040 0)">
+      <rect width="230" height="292" rx="26" fill="url(#card)" stroke="#28445a"/>
+      <path d="M115 48v116M76 126l39 39 39-39" class="stroke"/>
+      <rect x="58" y="188" width="114" height="38" rx="12" class="soft"/>
+      <text x="34" y="251" class="label">打包下载</text>
+    </g>
+    <g transform="translate(1300 0)">
+      <rect width="230" height="292" rx="26" fill="url(#card)" stroke="#28445a"/>
+      <path d="M72 92h86a26 26 0 0 1 26 26v52a26 26 0 0 1-26 26H72a26 26 0 0 1-26-26v-52a26 26 0 0 1 26-26z" class="stroke"/>
+      <path d="M76 92V74a39 39 0 0 1 78 0v18" class="stroke"/>
+      <text x="34" y="251" class="label">本地运行</text>
+    </g>
+  </g>
+</svg>

@@ -6,11 +6,25 @@
 
 很多多图网页的问题都很具体：广告和正文混在一起，缩略图太小，下一页要反复点，点开大图会丢失浏览位置，视频和类 GIF 又要在不同播放器之间切换。瀑光做的就是把这些干扰拿掉，把注意力还给图片本身。
 
+![FlowLens 功能图标](docs/assets/flowlens-feature-strip.svg)
+
+## 实际效果
+
+![瀑光 FlowLens 图片流实际效果](docs/assets/flowlens-gallery-preview.png)
+
+打开网页后，点击右下角“瀑光”入口，页面会切换成一个全屏图片流：
+
+- 顶部显示已收集数量、图片/视频数量、列数和下载入口。
+- 图片按瀑布流密集排布，一屏能看到更多内容。
+- 视频卡片有半透明播放标识，不会在网格里自动播放。
+- 点击图片或视频进入大图模式，支持滚轮、方向键和侧边箭头切换。
+- 大图可在“适应屏幕”和“1:1 原尺寸”之间切换，原尺寸下可以拖动查看细节。
+
 ## 版本入口
 
 ### 电脑端：Edge / Chrome 扩展
 
-目录：`xchina-immersive-viewer/`
+目录：`flowlens-extension/`
 
 适合桌面 Edge、Chrome 使用。打开浏览器扩展管理页，开启开发者模式，然后选择这个目录“加载解压缩的扩展”。
 
@@ -31,7 +45,7 @@
 
 - `flowlens.user.js`：手机端油猴脚本
 - `install-userscript.html`：本地安装/更新入口
-- `build-userscript.js`：从桌面端共享逻辑重新生成手机脚本
+- `build-userscript.js`：从电脑端共享逻辑重新生成手机脚本
 
 重新生成手机脚本：
 
@@ -39,7 +53,7 @@
 node mobile-userscript/build-userscript.js
 ```
 
-## 有意思的地方
+## 能解决什么痛点
 
 ![瀑光 FlowLens 图标](docs/assets/flowlens-icon-source.png)
 
@@ -51,27 +65,30 @@ node mobile-userscript/build-userscript.js
 - 原尺寸模式下可拖动查看细节。
 - 本地运行，不上传图片；只处理当前页面和明确适配过的套图页面。
 
-## 当前重点适配
+## 网页适配
 
-- `xchina.co/photo/*`
-- `x.810114.xyz/photo/*`
+瀑光默认会收集当前页面已有和动态新增的有效大图/媒体。对于结构复杂、分页特殊、需要接口数据或需要过滤干扰内容的网站，可以做单独适配。
 
-通用网页只收集当前页面已有和动态新增的有效大图/媒体。只有明确适配过的套图详情页才会触发多页抓取，避免对任意网站盲目扫分页。
+如果你有想适配的网页，可以联系我。报酬按复杂度给就行，建议参考：
+
+- 简单页面适配：50-100 元
+- 分页、接口、视频混合适配：100-300 元
+- 复杂站点、多站点批量适配或长期维护：另议
 
 ## 本地开发
 
-修改桌面扩展源码后运行：
+修改电脑端扩展源码后运行：
 
 ```powershell
-node --check xchina-immersive-viewer/content.js
-node --check xchina-immersive-viewer/background.js
-node -e "JSON.parse(require('fs').readFileSync('xchina-immersive-viewer/manifest.json','utf8')); console.log('manifest ok')"
+node --check flowlens-extension/content.js
+node --check flowlens-extension/background.js
+node -e "JSON.parse(require('fs').readFileSync('flowlens-extension/manifest.json','utf8')); console.log('manifest ok')"
 ```
 
 同步到本地 Edge 加载目录：
 
 ```powershell
-Copy-Item -Path xchina-immersive-viewer\* -Destination outputs\xchina-immersive-viewer -Recurse -Force
+Copy-Item -Path flowlens-extension\* -Destination outputs\flowlens-extension -Recurse -Force
 ```
 
 `outputs/` 是本机开发加载目录，不作为 GitHub 主要源码提交。

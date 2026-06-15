@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const repoRoot = path.resolve(__dirname, "..");
-const extensionRoot = path.join(repoRoot, "xchina-immersive-viewer");
+const extensionRoot = path.join(repoRoot, "flowlens-extension");
 const manifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, "manifest.json"), "utf8"));
 const contentPath = path.join(extensionRoot, "content.js");
 const outputPath = path.join(__dirname, "flowlens.user.js");
@@ -18,7 +18,7 @@ function replaceOnce(source, search, replacement) {
 
 const userscriptHeader = `// ==UserScript==
 // @name         瀑光 FlowLens
-// @namespace    local.xchina-immersive-viewer
+// @namespace    local.flowlens
 // @version      ${manifest.version}
 // @description  手机 Edge / Tampermonkey 版：把多图网页整理成沉浸式全屏瀑布流。
 // @match        *://*/*
@@ -81,8 +81,8 @@ const userscriptHelpers = `  const xivUserscriptMode = typeof GM_xmlhttpRequest 
 
 content = replaceOnce(
   content,
-  "  window.__xchinaImmersiveViewer = true;\n\n",
-  "  window.__xchinaImmersiveViewer = true;\n\n" + userscriptHelpers
+  "  window.__flowLensViewer = true;\n\n",
+  "  window.__flowLensViewer = true;\n\n" + userscriptHelpers
 );
 
 content = replaceOnce(

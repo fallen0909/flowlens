@@ -7,13 +7,13 @@
 GitHub 上保留最新、主要、可维护的文件：
 
 - `README.md`：项目主页说明。
-- `xchina-immersive-viewer/`：电脑端 Edge/Chrome 未打包扩展源码。
+- `flowlens-extension/`：电脑端 Edge/Chrome 未打包扩展源码。
 - `mobile-userscript/`：手机端 Android Edge/Tampermonkey 脚本。
-- `docs/assets/`：README 使用的项目图片和图标展示素材。
+- `docs/assets/`：README 使用的项目图片、图标和效果展示素材。
 
 本地开发加载目录：
 
-- `outputs/xchina-immersive-viewer/`
+- `outputs/flowlens-extension/`
 
 `outputs/` 只用于本机 Edge 加载和自动重载，不提交到 GitHub。除非用户明确要求，不要生成 zip 包；用户一直是用文件夹安装和更新插件。
 
@@ -21,16 +21,16 @@ GitHub 上保留最新、主要、可维护的文件：
 
 修改插件时按这个顺序做：
 
-1. 只编辑 `xchina-immersive-viewer/` 里的电脑端源码。
+1. 只编辑 `flowlens-extension/` 里的电脑端源码。
 2. 如需更新手机脚本，运行：
    - `node mobile-userscript/build-userscript.js`
 3. 运行语法检查：
-   - `node --check xchina-immersive-viewer/content.js`
-   - `node --check xchina-immersive-viewer/background.js`
-   - 解析检查 `xchina-immersive-viewer/manifest.json`
+   - `node --check flowlens-extension/content.js`
+   - `node --check flowlens-extension/background.js`
+   - 解析检查 `flowlens-extension/manifest.json`
    - 如改了手机脚本构建结果，也检查 `mobile-userscript/flowlens.user.js`
-4. 把整个 `xchina-immersive-viewer/` 同步复制到 `outputs/xchina-immersive-viewer/`。
-5. 更新 `xchina-immersive-viewer/reload-token.txt`，并确保输出目录里的 `reload-token.txt` 也同步更新，让 Edge 自动重载未打包插件。
+4. 把整个 `flowlens-extension/` 同步复制到 `outputs/flowlens-extension/`。
+5. 更新 `flowlens-extension/reload-token.txt`，并确保输出目录里的 `reload-token.txt` 也同步更新，让 Edge 自动重载未打包插件。
 
 文件操作使用 PowerShell 原生命令。不要使用破坏性的 git 命令。
 
@@ -49,8 +49,8 @@ GitHub 上保留最新、主要、可维护的文件：
 - `manifest.json` 当前会在 `<all_urls>` 注入 `content.js`。
 - 通用网站只扫描当前页面已经存在的大图、媒体，以及后续动态新增的媒体。
 - 只有明确适配过的套图详情页才能触发多页抓取。
-- 不要对任意网站盲目扫描或爬取分页，这会让 `https://xchina.co/` 这类页面卡死。
-- `x.810114.xyz` 有专门工作流：优先使用站点/API 数据；必要时才触发展开全部后从 DOM 收集媒体。
+- 不要对任意网站盲目扫描或爬取分页，这会让普通页面卡死。
+- 部分已适配站点有专门工作流：优先使用站点/API 数据；必要时才触发展开全部后从 DOM 收集媒体。
 - 插件支持图片和类 GIF 视频：`mp4`、`webm`、`mov`、`m4v`。
 - 所有网站上明确是广告、推广、被屏蔽提示、扫码下载 App、模糊敏感提示的图片，都不要加入图片流。
 
@@ -76,15 +76,15 @@ GitHub 上保留最新、主要、可维护的文件：
 完成源码修改后，至少运行：
 
 ```powershell
-node --check xchina-immersive-viewer/content.js
-node --check xchina-immersive-viewer/background.js
-node -e "JSON.parse(require('fs').readFileSync('xchina-immersive-viewer/manifest.json','utf8')); console.log('manifest ok')"
+node --check flowlens-extension/content.js
+node --check flowlens-extension/background.js
+node -e "JSON.parse(require('fs').readFileSync('flowlens-extension/manifest.json','utf8')); console.log('manifest ok')"
 ```
 
 同步到输出目录后，再验证 Edge 实际加载的输出目录：
 
 ```powershell
-node --check outputs/xchina-immersive-viewer/content.js
-node --check outputs/xchina-immersive-viewer/background.js
-node -e "const m=require('./outputs/xchina-immersive-viewer/manifest.json'); console.log(m.version)"
+node --check outputs/flowlens-extension/content.js
+node --check outputs/flowlens-extension/background.js
+node -e "const m=require('./outputs/flowlens-extension/manifest.json'); console.log(m.version)"
 ```
