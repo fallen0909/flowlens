@@ -114,6 +114,14 @@
     return "flowlens-settings-v2";
   }
 
+  function chromeStorageLocal() {
+    try {
+      return typeof chrome !== "undefined" ? chrome.storage?.local : null;
+    } catch {
+      return null;
+    }
+  }
+
   function loadSettings() {
     try {
       const raw = localStorage.getItem(settingsStorageKey());
@@ -128,12 +136,36 @@
     state.theme = state.themeManual ? state.settings.theme : systemTheme();
   }
 
+  function loadExtensionSettings() {
+    const storage = chromeStorageLocal();
+    if (!storage?.get) return;
+    try {
+      storage.get(settingsStorageKey(), (result) => {
+        if (chrome.runtime?.lastError) return;
+        const stored = result?.[settingsStorageKey()];
+        if (!stored || typeof stored !== "object") return;
+        state.settings = { ...DEFAULT_SETTINGS, ...state.settings, ...stored };
+        applySettings();
+      });
+    } catch {
+      // Keep the local fallback when extension storage is unavailable.
+    }
+  }
+
   function saveSettings(patch = {}) {
     state.settings = { ...(state.settings || DEFAULT_SETTINGS), ...patch };
     try {
       localStorage.setItem(settingsStorageKey(), JSON.stringify(state.settings));
     } catch {
       // Storage can be blocked on restricted pages; settings remain active for this session.
+    }
+    const storage = chromeStorageLocal();
+    if (storage?.set) {
+      try {
+        storage.set({ [settingsStorageKey()]: state.settings });
+      } catch {
+        // Extension storage is best-effort in userscript or restricted contexts.
+      }
     }
   }
 
@@ -2063,6 +2095,7 @@
 
   function onLaunchPointerDown(event) {
     if (event.button !== 0) return;
+    event.preventDefault();
     const rect = state.launch.getBoundingClientRect();
     state.launchDrag = {
       id: event.pointerId,
@@ -2079,6 +2112,7 @@
   function onLaunchPointerMove(event) {
     const drag = state.launchDrag;
     if (!drag || drag.id !== event.pointerId) return;
+    event.preventDefault();
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
     if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
@@ -2091,6 +2125,7 @@
   function endLaunchDrag(event) {
     const drag = state.launchDrag;
     if (!drag || drag.id !== event.pointerId) return;
+    event.preventDefault();
     state.launch.releasePointerCapture?.(event.pointerId);
     state.launch.dataset.dragging = "false";
     state.launchDrag = null;
@@ -2164,6 +2199,7 @@
   function ensureUi() {
     if (state.root) return;
     if (!state.settings) loadSettings();
+    loadExtensionSettings();
 
     const style = document.createElement("style");
     style.textContent = css;
@@ -2190,6 +2226,9 @@
     state.launch.addEventListener("pointermove", onLaunchPointerMove);
     state.launch.addEventListener("pointerup", endLaunchDrag);
     state.launch.addEventListener("pointercancel", endLaunchDrag);
+    window.addEventListener("pointermove", onLaunchPointerMove, true);
+    window.addEventListener("pointerup", endLaunchDrag, true);
+    window.addEventListener("pointercancel", endLaunchDrag, true);
     document.documentElement.appendChild(state.launch);
     applyLaunchSettings();
 
