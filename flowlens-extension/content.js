@@ -33,6 +33,8 @@
     counter: null,
     status: null,
     launch: null,
+    settingsPanel: null,
+    diagnosticsPanel: null,
     images: [],
     detailByImage: new Map(),
     photoShowByImage: new Map(),
@@ -56,8 +58,11 @@
     active: false,
     index: 0,
     columns: 3,
+    mediaFilter: "all",
     theme: systemTheme(),
     themeManual: false,
+    settings: null,
+    launchDrag: null,
     observer: null,
     videoPreviewObserver: null,
     videoPreviewQueue: [],
@@ -80,6 +85,9 @@
     restoreStartedAt: 0,
     restoreTimer: 0,
     galleryFailureCount: 0,
+    rejectedCount: 0,
+    collectedCount: 0,
+    lastDownloadScope: "all",
     x810114ApiMode: false
   };
 
@@ -89,6 +97,64 @@
     } catch {
       return "light";
     }
+  }
+
+  const DEFAULT_SETTINGS = {
+    launchCompact: false,
+    launchX: 0,
+    launchY: 0,
+    columns: 3,
+    theme: "system",
+    autoScrollSpeed: 3,
+    autoFullscreen: true,
+    videoPreview: true
+  };
+
+  function settingsStorageKey() {
+    return "flowlens-settings-v2";
+  }
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(settingsStorageKey());
+      const parsed = raw ? JSON.parse(raw) : {};
+      state.settings = { ...DEFAULT_SETTINGS, ...parsed };
+    } catch {
+      state.settings = { ...DEFAULT_SETTINGS };
+    }
+    state.columns = Math.max(2, Math.min(8, Number(state.settings.columns || DEFAULT_SETTINGS.columns)));
+    state.autoScrollSpeed = Math.max(1, Math.min(10, Number(state.settings.autoScrollSpeed || DEFAULT_SETTINGS.autoScrollSpeed)));
+    state.themeManual = state.settings.theme !== "system";
+    state.theme = state.themeManual ? state.settings.theme : systemTheme();
+  }
+
+  function saveSettings(patch = {}) {
+    state.settings = { ...(state.settings || DEFAULT_SETTINGS), ...patch };
+    try {
+      localStorage.setItem(settingsStorageKey(), JSON.stringify(state.settings));
+    } catch {
+      // Storage can be blocked on restricted pages; settings remain active for this session.
+    }
+  }
+
+  function setSetting(key, value) {
+    saveSettings({ [key]: value });
+    applySettings();
+  }
+
+  function applySettings() {
+    if (!state.settings) loadSettings();
+    state.columns = Math.max(2, Math.min(8, Number(state.settings.columns || DEFAULT_SETTINGS.columns)));
+    state.autoScrollSpeed = Math.max(1, Math.min(10, Number(state.settings.autoScrollSpeed || DEFAULT_SETTINGS.autoScrollSpeed)));
+    state.themeManual = state.settings.theme !== "system";
+    state.theme = state.themeManual ? state.settings.theme : systemTheme();
+    if (state.root) state.root.dataset.theme = state.theme;
+    if (state.grid) {
+      state.grid.style.setProperty("--xiv-columns", state.columns);
+      rebuildMasonry();
+    }
+    applyLaunchSettings();
+    syncSettingsPanel();
   }
 
   const css = `
@@ -102,6 +168,7 @@
       backdrop-filter: blur(14px); display: inline-flex; align-items: center; justify-content: center;
       gap: 8px; padding: 0 14px 0 12px; letter-spacing: .2px;
       transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+      touch-action: none; user-select: none;
     }
     #xiv-launch:hover {
       transform: translateY(-2px);
@@ -109,9 +176,23 @@
       box-shadow: 0 18px 42px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.2);
     }
     #xiv-launch:active { transform: translateY(0) scale(.98); }
+    #xiv-launch[data-dragging="true"] {
+      cursor: grabbing; transition: none; transform: scale(.98);
+    }
+    #xiv-launch[data-pinned="true"] {
+      right: auto; bottom: auto;
+    }
+    #xiv-launch[data-compact="true"] {
+      min-width: 0; width: 48px; height: 48px; padding: 0; gap: 0;
+      border-radius: 999px;
+    }
+    #xiv-launch[data-compact="true"] span { display: none; }
     #xiv-launch svg {
       width: 19px; height: 19px; padding: 5px; border-radius: 10px;
       background: rgba(255,255,255,.12);
+    }
+    #xiv-launch[data-compact="true"] svg {
+      width: 21px; height: 21px; padding: 0; background: transparent;
     }
     #xiv-launch[data-site="x810114"] {
       right: 92px; bottom: 92px;
@@ -195,6 +276,45 @@
       background: rgba(255,255,255,.78); color: #151515; border-color: rgba(0,0,0,.12);
     }
     .xiv-btn:hover, #xiv-launch:hover { background: rgba(42,42,46,.9); }
+    .xiv-select {
+      height: 38px; min-width: 84px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18);
+      background: rgba(18,18,20,.76); color: #fff; padding: 0 30px 0 12px;
+      font: 800 13px/1 system-ui, sans-serif; backdrop-filter: blur(12px); cursor: pointer;
+    }
+    #xiv-root[data-theme="light"] .xiv-select {
+      background: rgba(255,255,255,.78); color: #151515; border-color: rgba(0,0,0,.12);
+    }
+    .xiv-panel {
+      position: fixed; right: 12px; top: 58px; z-index: 6; width: min(360px, calc(100vw - 24px));
+      display: none; border: 1px solid rgba(255,255,255,.16); border-radius: 12px;
+      background: rgba(18,18,20,.9); color: #fff; box-shadow: 0 18px 54px rgba(0,0,0,.42);
+      backdrop-filter: blur(18px); padding: 12px; box-sizing: border-box; pointer-events: auto;
+    }
+    #xiv-root[data-theme="light"] .xiv-panel {
+      background: rgba(255,255,255,.94); color: #151515; border-color: rgba(0,0,0,.12);
+      box-shadow: 0 18px 54px rgba(0,0,0,.18);
+    }
+    .xiv-panel[data-open="true"] { display: block; }
+    .xiv-panel h3 {
+      margin: 0 0 10px; font: 850 15px/1.2 system-ui, sans-serif;
+    }
+    .xiv-setting-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      min-height: 36px; padding: 7px 0; border-top: 1px solid rgba(255,255,255,.1);
+      font: 650 13px/1.2 system-ui, sans-serif;
+    }
+    #xiv-root[data-theme="light"] .xiv-setting-row { border-top-color: rgba(0,0,0,.08); }
+    .xiv-setting-row:first-of-type { border-top: 0; }
+    .xiv-setting-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #fff; }
+    #xiv-root[data-theme="light"] .xiv-setting-row input[type="checkbox"] { accent-color: #111; }
+    .xiv-panel small {
+      display: block; margin-top: 8px; color: rgba(255,255,255,.62); line-height: 1.45;
+    }
+    #xiv-root[data-theme="light"] .xiv-panel small { color: rgba(0,0,0,.58); }
+    .xiv-diagnostics pre {
+      max-height: 48vh; overflow: auto; margin: 8px 0 0; white-space: pre-wrap;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
     #xiv-lightbox {
       position: fixed; inset: 0; z-index: 4; display: none; place-items: center;
       background: rgba(0,0,0,.94); cursor: zoom-out; overflow: auto;
@@ -297,6 +417,10 @@
     slow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M8 8l-4 4 4 4"/></svg>',
     fast: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M16 8l4 4-4 4"/></svg>',
     top: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M6 15l6-6 6 6M12 9v10"/></svg>',
+    settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.05.05a2.1 2.1 0 0 1-2.97 2.97l-.05-.05a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V21a2.1 2.1 0 0 1-4.2 0v-.07a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.05.05a2.1 2.1 0 0 1-2.97-2.97l.05-.05A1.8 1.8 0 0 0 3.6 15a1.8 1.8 0 0 0-1.66-1.1H1.9a2.1 2.1 0 0 1 0-4.2h.07A1.8 1.8 0 0 0 3.6 8a1.8 1.8 0 0 0-.36-1.98l-.05-.05A2.1 2.1 0 0 1 6.16 3l.05.05A1.8 1.8 0 0 0 8.2 3.4a1.8 1.8 0 0 0 1.1-1.66V1.7a2.1 2.1 0 0 1 4.2 0v.07a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.05-.05A2.1 2.1 0 0 1 19.6 6l-.05.05A1.8 1.8 0 0 0 19.2 8a1.8 1.8 0 0 0 1.66 1.1h.07a2.1 2.1 0 0 1 0 4.2h-.07A1.8 1.8 0 0 0 19.4 15Z"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 10v7M12 7h.01"/></svg>',
+    heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>'
   };
 
@@ -686,6 +810,7 @@
     state.imageKeys.delete(key);
     const index = state.images.indexOf(url);
     if (index >= 0) state.images.splice(index, 1);
+    state.rejectedCount += 1;
     state.grid?.querySelector(`[data-url-key="${CSS.escape(key)}"]`)?.remove();
     syncTileIndexes();
     layoutMasonry();
@@ -754,6 +879,7 @@
     url = normalizeMediaUrl(url);
     const key = keyForUrl(url);
     if (state.imageKeys.has(key)) {
+      state.rejectedCount += 1;
       const index = state.images.findIndex((imageUrl) => keyForUrl(imageUrl) === key);
       const currentUrl = index >= 0 ? state.images[index] : "";
       if (currentUrl && mediaQualityScore(url) > mediaQualityScore(currentUrl)) {
@@ -766,6 +892,7 @@
     }
     state.imageKeys.add(key);
     state.images.push(url);
+    state.collectedCount += 1;
     rememberDetailUrl(url, detailUrl);
     rememberPosterUrl(url, posterUrl);
     return true;
@@ -887,6 +1014,8 @@
     state.fetchedPages.clear();
     state.expectedImages = 0;
     state.galleryFailureCount = 0;
+    state.rejectedCount = 0;
+    state.collectedCount = 0;
     state.x810114ApiMode = false;
     state.grid?.replaceChildren();
     updateCounter();
@@ -1220,7 +1349,7 @@
         rememberMediaRatio(url, size.width, size.height);
       }
       video.dataset.previewUrl = url;
-      observeVideoPreview(video);
+      if (state.settings?.videoPreview !== false) observeVideoPreview(video);
       return video;
     }
 
@@ -1906,8 +2035,135 @@
       }
     }
   }
+
+  function clampLaunchPosition(x, y) {
+    const width = state.launch?.offsetWidth || 48;
+    const height = state.launch?.offsetHeight || 48;
+    const margin = 8;
+    return {
+      x: Math.max(margin, Math.min(window.innerWidth - width - margin, Math.round(x))),
+      y: Math.max(margin, Math.min(window.innerHeight - height - margin, Math.round(y)))
+    };
+  }
+
+  function applyLaunchSettings() {
+    if (!state.launch || !state.settings) return;
+    state.launch.dataset.compact = state.settings.launchCompact ? "true" : "false";
+    const hasPosition = Number(state.settings.launchX) > 0 || Number(state.settings.launchY) > 0;
+    state.launch.dataset.pinned = hasPosition ? "true" : "false";
+    if (!hasPosition) {
+      state.launch.style.left = "";
+      state.launch.style.top = "";
+      return;
+    }
+    const pos = clampLaunchPosition(Number(state.settings.launchX || 0), Number(state.settings.launchY || 0));
+    state.launch.style.left = `${pos.x}px`;
+    state.launch.style.top = `${pos.y}px`;
+  }
+
+  function onLaunchPointerDown(event) {
+    if (event.button !== 0) return;
+    const rect = state.launch.getBoundingClientRect();
+    state.launchDrag = {
+      id: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      left: rect.left,
+      top: rect.top,
+      moved: false
+    };
+    state.launch.dataset.dragging = "true";
+    state.launch.setPointerCapture?.(event.pointerId);
+  }
+
+  function onLaunchPointerMove(event) {
+    const drag = state.launchDrag;
+    if (!drag || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
+    const pos = clampLaunchPosition(drag.left + dx, drag.top + dy);
+    state.launch.dataset.pinned = "true";
+    state.launch.style.left = `${pos.x}px`;
+    state.launch.style.top = `${pos.y}px`;
+  }
+
+  function endLaunchDrag(event) {
+    const drag = state.launchDrag;
+    if (!drag || drag.id !== event.pointerId) return;
+    state.launch.releasePointerCapture?.(event.pointerId);
+    state.launch.dataset.dragging = "false";
+    state.launchDrag = null;
+    if (!drag.moved) return;
+    state.launch.dataset.dragged = "true";
+    const rect = state.launch.getBoundingClientRect();
+    const pos = clampLaunchPosition(rect.left, rect.top);
+    saveSettings({ launchX: pos.x, launchY: pos.y });
+  }
+
+  function closePanels(except = "") {
+    [state.settingsPanel, state.diagnosticsPanel].forEach((panel) => {
+      if (!panel) return;
+      if (panel.dataset.panel === except) return;
+      panel.dataset.open = "false";
+    });
+  }
+
+  function toggleSettingsPanel() {
+    const open = state.settingsPanel?.dataset.open === "true";
+    closePanels(open ? "" : "settings");
+    if (state.settingsPanel) state.settingsPanel.dataset.open = open ? "false" : "true";
+    syncSettingsPanel();
+  }
+
+  function toggleDiagnosticsPanel() {
+    const open = state.diagnosticsPanel?.dataset.open === "true";
+    closePanels(open ? "" : "diagnostics");
+    if (state.diagnosticsPanel) {
+      state.diagnosticsPanel.dataset.open = open ? "false" : "true";
+      const pre = state.diagnosticsPanel.querySelector("pre");
+      if (pre) pre.textContent = diagnosticsText();
+    }
+  }
+
+  function syncSettingsPanel() {
+    if (!state.settingsPanel || !state.settings) return;
+    state.settingsPanel.querySelectorAll("[data-setting]").forEach((control) => {
+      const key = control.dataset.setting;
+      if (control.type === "checkbox") control.checked = !!state.settings[key];
+      else control.value = String(state.settings[key] ?? "");
+    });
+  }
+
+  function onSettingsControlChange(event) {
+    const control = event.currentTarget;
+    const key = control.dataset.setting;
+    const value = control.type === "checkbox" ? control.checked : control.value;
+    setSetting(key, value);
+    updateStatus("设置已保存");
+  }
+
+  function diagnosticsText() {
+    const imageCount = state.images.filter((url) => !isVideoUrl(url)).length;
+    const videoCount = state.images.filter(isVideoUrl).length;
+    const pendingPages = sortedPageUrls().filter((url) => !state.fetchedPages.has(url) && url !== location.href).length;
+    const lines = [
+      `页面：${location.href}`,
+      `站点模式：${isGenericX810114Page() ? "x810114" : isKnownGalleryUrl() ? "已适配套图" : isPhotoGalleryPage() ? "通用套图" : "通用页面"}`,
+      `媒体：${state.images.length} 个（图片 ${imageCount}，视频 ${videoCount}）`,
+      `已渲染：${state.renderedKeys.size} 个`,
+      `分页：发现 ${state.pageUrls.size} 页，已取 ${state.fetchedPages.size} 页，待取 ${pendingPages} 页，失败 ${state.galleryFailureCount} 页`,
+      `收藏：${state.favoriteKeys.size} 个`,
+      `过滤/去重：${state.rejectedCount} 个`,
+      `入口：${state.settings?.launchCompact ? "圆形图标" : "图标文字"}，坐标 ${Math.round(state.settings?.launchX || 0)}, ${Math.round(state.settings?.launchY || 0)}`,
+      `设置：列数 ${state.columns}，主题 ${state.settings?.theme || "system"}，自动滚动速度 ${state.autoScrollSpeed}，自动全屏 ${state.settings?.autoFullscreen ? "开" : "关"}，视频预览 ${state.settings?.videoPreview ? "开" : "关"}`
+    ];
+    return lines.join("\n");
+  }
+
   function ensureUi() {
     if (state.root) return;
+    if (!state.settings) loadSettings();
 
     const style = document.createElement("style");
     style.textContent = css;
@@ -1924,9 +2180,18 @@
     });
     state.launch.addEventListener("click", (event) => {
       claimEvent(event);
+      if (state.launch.dataset.dragged === "true") {
+        state.launch.dataset.dragged = "false";
+        return;
+      }
       openViewer();
     });
+    state.launch.addEventListener("pointerdown", onLaunchPointerDown);
+    state.launch.addEventListener("pointermove", onLaunchPointerMove);
+    state.launch.addEventListener("pointerup", endLaunchDrag);
+    state.launch.addEventListener("pointercancel", endLaunchDrag);
     document.documentElement.appendChild(state.launch);
+    applyLaunchSettings();
 
     state.root = document.createElement("div");
     state.root.id = "xiv-root";
@@ -1935,17 +2200,38 @@
       <div id="xiv-topbar">
         <div class="xiv-pill"><span id="xiv-counter">0 张</span><span id="xiv-status">就绪</span></div>
         <div class="xiv-actions">
+          <select class="xiv-select" data-xiv="filter" title="筛选媒体">
+            <option value="all">全部</option>
+            <option value="image">图片</option>
+            <option value="video">视频</option>
+          </select>
           <button class="xiv-btn" type="button" data-xiv="less" title="减少列数">${icons.gridPlus}<span>减少列数</span></button>
           <button class="xiv-btn" type="button" data-xiv="more" title="增加列数">${icons.gridMinus}<span>增加列数</span></button>
           <button class="xiv-btn" type="button" data-xiv="theme" title="切换主题">${icons.theme}<span>主题</span></button>
           <button class="xiv-btn" type="button" data-xiv="full" title="全屏">${icons.fullscreen}<span>全屏</span></button>
           <button class="xiv-btn" type="button" data-xiv="download" title="下载 ZIP">${icons.download}<span>下载</span></button>
+          <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>
+          <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>
           <button class="xiv-btn" type="button" data-xiv="auto" title="自动滚动">${icons.play}<span>自动</span></button>
           <button class="xiv-btn" type="button" data-xiv="slower" title="减慢自动滚动">${icons.slow}<span>减速</span></button>
           <button class="xiv-btn" type="button" data-xiv="faster" title="加快自动滚动">${icons.fast}<span>加速</span></button>
           <button class="xiv-btn" type="button" data-xiv="top" title="回到顶部">${icons.top}<span>顶部</span></button>
+          <button class="xiv-btn" type="button" data-xiv="diag" title="诊断">${icons.info}<span>诊断</span></button>
+          <button class="xiv-btn" type="button" data-xiv="settings" title="设置">${icons.settings}<span>设置</span></button>
           <button class="xiv-btn xiv-btn-icon" type="button" data-xiv="close" title="关闭">${icons.close}</button>
         </div>
+      </div>
+      <div class="xiv-panel" data-panel="settings">
+        <h3>瀑光设置</h3>
+        <label class="xiv-setting-row"><span>入口缩成圆形图标</span><input type="checkbox" data-setting="launchCompact"></label>
+        <label class="xiv-setting-row"><span>打开时自动全屏</span><input type="checkbox" data-setting="autoFullscreen"></label>
+        <label class="xiv-setting-row"><span>网格视频预览</span><input type="checkbox" data-setting="videoPreview"></label>
+        <label class="xiv-setting-row"><span>主题</span><select class="xiv-select" data-setting="theme"><option value="system">跟随系统</option><option value="dark">深色</option><option value="light">浅色</option></select></label>
+        <small>入口可以直接拖动，位置会保存。普通更新通过 reload-token 自动重载。</small>
+      </div>
+      <div class="xiv-panel xiv-diagnostics" data-panel="diagnostics">
+        <h3>诊断报告</h3>
+        <pre></pre>
       </div>
       <div id="xiv-lightbox"><img alt=""></div>
     `;
@@ -1959,17 +2245,27 @@
     state.lightbox = state.root.querySelector("#xiv-lightbox");
     state.counter = state.root.querySelector("#xiv-counter");
     state.status = state.root.querySelector("#xiv-status");
+    state.settingsPanel = state.root.querySelector('[data-panel="settings"]');
+    state.diagnosticsPanel = state.root.querySelector('[data-panel="diagnostics"]');
 
     state.root.querySelector('[data-xiv="close"]').addEventListener("click", closeViewer);
+    state.root.querySelector('[data-xiv="filter"]').addEventListener("change", (event) => setMediaFilter(event.target.value));
     state.root.querySelector('[data-xiv="less"]').addEventListener("click", () => setColumns(state.columns - 1));
     state.root.querySelector('[data-xiv="more"]').addEventListener("click", () => setColumns(state.columns + 1));
     state.root.querySelector('[data-xiv="theme"]').addEventListener("click", toggleTheme);
     state.root.querySelector('[data-xiv="full"]').addEventListener("click", toggleFullscreen);
     state.root.querySelector('[data-xiv="download"]').addEventListener("click", downloadZip);
+    state.root.querySelector('[data-xiv="favzip"]').addEventListener("click", () => downloadZip("favorites"));
+    state.root.querySelector('[data-xiv="links"]').addEventListener("click", exportLinks);
     state.root.querySelector('[data-xiv="auto"]').addEventListener("click", toggleAutoScroll);
     state.root.querySelector('[data-xiv="slower"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed - 1));
     state.root.querySelector('[data-xiv="faster"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed + 1));
     state.root.querySelector('[data-xiv="top"]').addEventListener("click", () => state.stage.scrollTo({ top: 0, behavior: "smooth" }));
+    state.root.querySelector('[data-xiv="diag"]').addEventListener("click", toggleDiagnosticsPanel);
+    state.root.querySelector('[data-xiv="settings"]').addEventListener("click", toggleSettingsPanel);
+    state.root.querySelectorAll("[data-setting]").forEach((control) => {
+      control.addEventListener("change", onSettingsControlChange);
+    });
     state.stage.addEventListener("scroll", onScroll, { passive: true });
     state.stage.addEventListener("click", onStageCaptureClick, true);
     state.lightbox.addEventListener("click", onLightboxClick);
@@ -1985,7 +2281,8 @@
     window.addEventListener("keyup", onKeyRelease, true);
     window.addEventListener("keypress", onKeyRelease, true);
     watchSystemTheme();
-    setColumns(state.columns);
+    syncSettingsPanel();
+    setColumns(state.columns, false);
   }
 
   function watchSystemTheme() {
@@ -2025,7 +2322,7 @@
       const label = document.createElement("span");
       label.textContent = String(i + 1).padStart(2, "0");
       tile.append(media, label);
-      if (media.tagName === "VIDEO") {
+      if (isVideoUrl(url)) {
         const mark = document.createElement("i");
         mark.className = "xiv-video-mark";
         mark.setAttribute("aria-hidden", "true");
@@ -2084,6 +2381,39 @@
     });
   }
 
+  function setMediaFilter(value) {
+    state.mediaFilter = ["image", "video"].includes(value) ? value : "all";
+    applyMediaFilter();
+    updateCounter();
+  }
+
+  function mediaMatchesFilter(url) {
+    if (state.mediaFilter === "video") return isVideoUrl(url);
+    if (state.mediaFilter === "image") return !isVideoUrl(url);
+    return true;
+  }
+
+  function filteredImages() {
+    return state.images.filter(mediaMatchesFilter);
+  }
+
+  function applyMediaFilter() {
+    allTiles().forEach((tile) => {
+      tile.hidden = !mediaMatchesFilter(tile.dataset.url || "");
+    });
+    layoutMasonry();
+  }
+
+  function rebuildMasonry() {
+    if (!state.grid) return;
+    const tiles = allTiles();
+    state.grid.replaceChildren();
+    state.masonryColumns = [];
+    ensureMasonryColumns();
+    appendTilesToMasonry(tiles);
+    applyMediaFilter();
+  }
+
   function ensureMasonryColumns() {
     if (!state.grid) return [];
     const count = Math.max(1, state.columns);
@@ -2109,7 +2439,7 @@
     for (const tile of tiles) {
       const index = shortestColumnIndex(columnHeights);
       columns[index]?.appendChild(tile);
-      columnHeights[index] += estimatedTileHeight(tile, columns[index]);
+      if (!tile.hidden) columnHeights[index] += estimatedTileHeight(tile, columns[index]);
     }
   }
 
@@ -2122,7 +2452,7 @@
   }
 
   function columnHeight(column) {
-    return [...column.children].reduce((sum, tile) => sum + estimatedTileHeight(tile, column), 0);
+    return [...column.children].reduce((sum, tile) => sum + (tile.hidden ? 0 : estimatedTileHeight(tile, column)), 0);
   }
 
   function estimatedTileHeight(tile, column) {
@@ -2316,25 +2646,30 @@
 
   function updateCounter() {
     if (!state.counter) return;
+    const visibleCount = filteredImages().length;
+    const suffix = state.mediaFilter === "all" ? "" : ` / 显示 ${visibleCount}`;
     state.counter.textContent = state.expectedImages
-      ? `${state.images.length}/${state.expectedImages} 张`
-      : `${state.images.length} 张`;
+      ? `${state.images.length}/${state.expectedImages} 张${suffix}`
+      : `${state.images.length} 张${suffix}`;
   }
 
   function updateStatus(text) {
     if (state.status) state.status.textContent = text;
   }
 
-  function setColumns(next) {
+  function setColumns(next, persist = true) {
     state.columns = Math.max(2, Math.min(8, next));
     if (state.grid) state.grid.style.setProperty("--xiv-columns", state.columns);
     if (state.grid) layoutMasonry();
+    if (persist) saveSettings({ columns: state.columns });
   }
 
   function toggleTheme() {
     state.themeManual = true;
     state.theme = state.theme === "dark" ? "light" : "dark";
     state.root.dataset.theme = state.theme;
+    saveSettings({ theme: state.theme });
+    syncSettingsPanel();
   }
 
   async function toggleFullscreen() {
@@ -2347,6 +2682,7 @@
 
   function setAutoScrollSpeed(next) {
     state.autoScrollSpeed = Math.max(1, Math.min(10, next));
+    saveSettings({ autoScrollSpeed: state.autoScrollSpeed });
     updateStatus(`速度 ${state.autoScrollSpeed}`);
   }
 
@@ -2731,16 +3067,48 @@
     }
   }
 
-  async function downloadZip() {
+  function urlsForScope(scope = "all") {
+    if (scope === "favorites") {
+      return state.images.filter((url) => state.favoriteKeys.has(keyForUrl(url)));
+    }
+    if (scope === "filtered") return filteredImages();
+    return [...state.images];
+  }
+
+  function downloadTextFile(text, filename) {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.documentElement.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+  }
+
+  async function exportLinks() {
+    await waitForGalleryFetch();
+    const urls = urlsForScope(state.mediaFilter === "all" ? "all" : "filtered");
+    if (!urls.length) {
+      updateStatus("没有可导出的链接");
+      return;
+    }
+    downloadTextFile(urls.join("\n"), `flowlens-links-${urls.length}.txt`);
+    updateStatus(`已导出 ${urls.length} 条链接`);
+  }
+
+  async function downloadZip(scope = "all") {
     if (state.downloading) return;
     state.downloading = true;
+    state.lastDownloadScope = scope;
 
     try {
       updateStatus("准备下载");
       await waitForGalleryFetch();
-      const urls = [...state.images];
+      const urls = urlsForScope(scope);
       if (!urls.length) {
-        updateStatus("没有图片");
+        updateStatus(scope === "favorites" ? "还没有收藏" : "没有图片");
         return;
       }
 
@@ -2771,7 +3139,7 @@
       const objectUrl = URL.createObjectURL(zip);
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = `photo-stream-${files.length}.zip`;
+      a.download = `${scope === "favorites" ? "flowlens-favorites" : "photo-stream"}-${files.length}.zip`;
       document.documentElement.appendChild(a);
       a.click();
       a.remove();
@@ -2853,7 +3221,7 @@
       startGenericObserver();
     }
 
-    if (!document.fullscreenElement) {
+    if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
       try {
         await state.root.requestFullscreen?.();
       } catch {
@@ -3374,7 +3742,11 @@
 
   function showAdjacentImage(delta) {
     if (!state.images.length) return;
-    const next = (state.index + delta + state.images.length) % state.images.length;
+    let next = state.index;
+    for (let step = 0; step < state.images.length; step += 1) {
+      next = (next + delta + state.images.length) % state.images.length;
+      if (mediaMatchesFilter(state.images[next])) break;
+    }
     state.lightboxGestureToken = Date.now();
     openLightbox(next);
   }
