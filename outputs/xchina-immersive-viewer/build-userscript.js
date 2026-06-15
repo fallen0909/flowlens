@@ -16,10 +16,10 @@ function replaceOnce(source, search, replacement) {
 }
 
 const userscriptHeader = `// ==UserScript==
-// @name         套图沉浸图片流
+// @name         瀑光 FlowLens
 // @namespace    local.xchina-immersive-viewer
 // @version      ${manifest.version}
-// @description  手机 Edge / Tampermonkey 版：为多图网页提供全屏图片流查看。
+// @description  手机 Edge / Tampermonkey 版：把多图网页整理成沉浸式全屏瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
 // @noframes

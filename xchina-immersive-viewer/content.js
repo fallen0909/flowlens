@@ -1917,8 +1917,8 @@
     state.launch.id = "xiv-launch";
     state.launch.type = "button";
     state.launch.dataset.site = isGenericX810114Page() ? "x810114" : "";
-    state.launch.title = "打开图片流 (G)";
-    state.launch.innerHTML = `${icons.grid}<span>图片流</span>`;
+    state.launch.title = "打开瀑光 FlowLens (G)";
+    state.launch.innerHTML = `${icons.grid}<span>瀑光</span>`;
     ["pointerdown", "mousedown", "mouseup", "touchstart", "touchend"].forEach((type) => {
       state.launch.addEventListener(type, (event) => event.stopPropagation());
     });
@@ -2815,7 +2815,7 @@
     ensureUi();
     if (!isSupportedPage()) {
       updateStatus("当前页面不支持");
-      alert("图片流只支持 http/https 网页。");
+      alert("瀑光只支持 http/https 网页。");
       return;
     }
 
@@ -3075,7 +3075,7 @@
 
   function debugLog(...args) {
     try {
-      console.info("[图片流]", ...args);
+      console.info("[瀑光]", ...args);
     } catch {
       // Ignore console failures on restricted pages.
     }
