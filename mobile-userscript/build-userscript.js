@@ -1,10 +1,11 @@
 const fs = require("fs");
 const path = require("path");
 
-const root = __dirname;
-const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
-const contentPath = path.join(root, "content.js");
-const outputPath = path.join(root, "xchina-immersive-viewer.user.js");
+const repoRoot = path.resolve(__dirname, "..");
+const extensionRoot = path.join(repoRoot, "xchina-immersive-viewer");
+const manifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, "manifest.json"), "utf8"));
+const contentPath = path.join(extensionRoot, "content.js");
+const outputPath = path.join(__dirname, "flowlens.user.js");
 
 let content = fs.readFileSync(contentPath, "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
 

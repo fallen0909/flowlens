@@ -1,14 +1,14 @@
-# 瀑光 FlowLens
+# 电脑端：瀑光 FlowLens 扩展
 
-![瀑光 FlowLens 项目封面](assets/flowlens-hero.png)
+![瀑光 FlowLens 项目封面](../docs/assets/flowlens-hero.png)
 
-瀑光 FlowLens 是一个本地 Edge / Chrome 浏览器扩展，也提供 Android Edge + Tampermonkey 可用的脚本版本。它做的事情很简单：把网页里零散、分页、尺寸不一的图片收拢起来，变成一个全屏、顺滑、适合长时间浏览的沉浸式图片流。
+这是瀑光 FlowLens 的电脑端 Edge / Chrome 未打包扩展版本。它会把网页里零散、分页、尺寸不一的图片收拢起来，变成一个全屏、顺滑、适合长时间浏览的沉浸式图片流。
 
 很多套图网页的痛点都很具体：页面广告多，图片间距乱，下一页要反复点，缩略图太小，点开大图又会丢失浏览位置；遇到视频或类 GIF，还要在不同播放器和页面之间来回切。瀑光把这些碎片整理成一个干净的瀑布流视图，让你像刷相册一样看网页图片。
 
 ## 为什么有意思
 
-![瀑光 FlowLens 图标](assets/flowlens-icon-source.png)
+![瀑光 FlowLens 图标](../docs/assets/flowlens-icon-source.png)
 
 - 一键进入全屏图片流：不用在原网页的布局、广告、分页按钮里找图。
 - 智能收集大图和媒体：支持图片，也支持 `mp4`、`webm`、`mov`、`m4v` 这类视频卡片。
@@ -37,20 +37,6 @@
 2. 开启开发者模式。
 3. 点击“加载解压缩的扩展”或“Load unpacked”。
 4. 选择 `xchina-immersive-viewer` 文件夹。
-
-### Android Edge / Tampermonkey 脚本
-
-Android Edge 不能像桌面版一样直接加载本地未打包扩展，可以使用生成好的油猴脚本：
-
-1. 在 Android Edge 的扩展里安装 `Tampermonkey`。
-2. 安装 `xchina-immersive-viewer.user.js`。
-3. 打开目标套图页，点击右下角“瀑光”悬浮入口。
-
-从共享源码重新生成脚本：
-
-```powershell
-node xchina-immersive-viewer/build-userscript.js
-```
 
 ## 使用
 

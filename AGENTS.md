@@ -2,29 +2,35 @@
 
 ## 项目说明
 
-这个仓库是一个本地 Edge/Chrome 浏览器插件。插件以“未打包扩展”的方式安装，用于把多图网页整理成全屏图片流查看。
+这个仓库是本地 Edge/Chrome 浏览器扩展和 Android Edge/Tampermonkey 脚本的源码仓库，用于把多图网页整理成全屏图片流查看。
 
-主要源码目录：
+GitHub 上保留最新、主要、可维护的文件：
 
-- `xchina-immersive-viewer/`
+- `README.md`：项目主页说明。
+- `xchina-immersive-viewer/`：电脑端 Edge/Chrome 未打包扩展源码。
+- `mobile-userscript/`：手机端 Android Edge/Tampermonkey 脚本。
+- `docs/assets/`：README 使用的项目图片和图标展示素材。
 
-用户在 Edge 里加载的插件目录：
+本地开发加载目录：
 
 - `outputs/xchina-immersive-viewer/`
 
-除非用户明确要求，不要生成 zip 包。用户一直是用文件夹安装和更新插件。
+`outputs/` 只用于本机 Edge 加载和自动重载，不提交到 GitHub。除非用户明确要求，不要生成 zip 包；用户一直是用文件夹安装和更新插件。
 
 ## 修改流程
 
 修改插件时按这个顺序做：
 
-1. 只编辑 `xchina-immersive-viewer/` 里的源码。
-2. 运行语法检查：
+1. 只编辑 `xchina-immersive-viewer/` 里的电脑端源码。
+2. 如需更新手机脚本，运行：
+   - `node mobile-userscript/build-userscript.js`
+3. 运行语法检查：
    - `node --check xchina-immersive-viewer/content.js`
    - `node --check xchina-immersive-viewer/background.js`
    - 解析检查 `xchina-immersive-viewer/manifest.json`
-3. 把整个 `xchina-immersive-viewer/` 同步复制到 `outputs/xchina-immersive-viewer/`。
-4. 更新 `xchina-immersive-viewer/reload-token.txt`，并确保输出目录里的 `reload-token.txt` 也同步更新，让 Edge 自动重载未打包插件。
+   - 如改了手机脚本构建结果，也检查 `mobile-userscript/flowlens.user.js`
+4. 把整个 `xchina-immersive-viewer/` 同步复制到 `outputs/xchina-immersive-viewer/`。
+5. 更新 `xchina-immersive-viewer/reload-token.txt`，并确保输出目录里的 `reload-token.txt` 也同步更新，让 Edge 自动重载未打包插件。
 
 文件操作使用 PowerShell 原生命令。不要使用破坏性的 git 命令。
 
