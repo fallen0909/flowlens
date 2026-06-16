@@ -19,7 +19,6 @@
       background: #000 !important;
       overscroll-behavior: none !important;
     }
-
     #xiv-root {
       position: fixed !important;
       inset: 0 !important;
@@ -29,6 +28,10 @@
       overflow: hidden !important;
       background: #050505 !important;
       transform: translateZ(0);
+    }
+    #xiv-root[data-theme="light"] {
+      background: #f4f4f1 !important;
+      color: #141414 !important;
     }
     @supports not (height: 100dvh) {
       #xiv-root { height: 100vh !important; max-height: 100vh !important; }
@@ -44,6 +47,7 @@
       z-index: 2;
       pointer-events: none;
     }
+    #xiv-root[data-theme="light"]::before { background: #f4f4f1; }
     #xiv-stage {
       inset: 0 !important;
       width: 100% !important;
@@ -60,17 +64,15 @@
       padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important;
       background: linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.36), rgba(0,0,0,0)) !important;
     }
+    #xiv-root[data-theme="light"] #xiv-topbar {
+      background: linear-gradient(to bottom, rgba(244,244,241,.92), rgba(244,244,241,.45), rgba(244,244,241,0)) !important;
+    }
     #xiv-topbar [data-xiv]:not([data-xiv="download"]):not([data-xiv="auto"]):not([data-xiv="top"]):not([data-xiv="settings"]):not([data-xiv="close"]),
     #xiv-topbar .xiv-select[data-xiv="filter"] {
       display: none !important;
     }
-    #xiv-topbar .xiv-actions {
-      gap: 8px !important;
-      flex-wrap: nowrap !important;
-    }
-    html.xiv-fl-launch-hidden #xiv-launch {
-      display: none !important;
-    }
+    #xiv-topbar .xiv-actions { gap: 8px !important; flex-wrap: nowrap !important; }
+    html.xiv-fl-launch-hidden #xiv-launch { display: none !important; }
     .xiv-fl-filter-select {
       height: 34px;
       min-width: 108px;
@@ -86,6 +88,33 @@
       color: #151515;
       border-color: rgba(0,0,0,.12);
     }
+    .xiv-fl-stepper {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+    }
+    .xiv-fl-stepper button {
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 999px;
+      background: rgba(18,18,20,.72);
+      color: #fff;
+      font: 900 18px/1 system-ui, sans-serif;
+      cursor: pointer;
+    }
+    .xiv-fl-stepper strong {
+      min-width: 46px;
+      text-align: center;
+      font: 850 13px/1 system-ui, sans-serif;
+    }
+    #xiv-root[data-theme="light"] .xiv-fl-stepper button {
+      background: rgba(255,255,255,.86);
+      color: #151515;
+      border-color: rgba(0,0,0,.12);
+    }
+    #xiv-root [data-panel="settings"] small { display: none !important; }
     #xiv-lightbox img,
     #xiv-lightbox video,
     #xiv-lightbox iframe,
@@ -108,7 +137,6 @@
     @keyframes xivFlNextX { from { opacity: .18; transform: translate3d(8vw, 0, 0) scale(.985); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
     @keyframes xivFlPrevX { from { opacity: .18; transform: translate3d(-8vw, 0, 0) scale(.985); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
     @keyframes xivFlFade { from { opacity: .25; transform: scale(.985); } to { opacity: 1; transform: scale(1); } }
-
     @media (max-width: 820px) {
       #xiv-topbar {
         justify-content: flex-end !important;
@@ -117,17 +145,10 @@
         padding-left: max(8px, env(safe-area-inset-left, 0px)) !important;
       }
       #xiv-topbar .xiv-pill { display: none !important; }
-      #xiv-topbar .xiv-btn {
-        min-width: 42px !important;
-        width: 42px !important;
-        height: 42px !important;
-      }
+      #xiv-topbar .xiv-btn { min-width: 42px !important; width: 42px !important; height: 42px !important; }
       #xiv-stage { padding-top: calc(58px + env(safe-area-inset-top, 0px)) !important; }
       #xiv-lightbox img,
-      #xiv-lightbox video {
-        max-width: 100vw !important;
-        max-height: 100dvh !important;
-      }
+      #xiv-lightbox video { max-width: 100vw !important; max-height: 100dvh !important; }
     }
   `;
 
@@ -140,30 +161,19 @@
   }
 
   function readSettings() {
-    try {
-      return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {};
-    } catch {
-      return {};
-    }
+    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; }
   }
 
   function saveSettings(patch) {
     const settings = { ...readSettings(), ...patch };
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
     try {
-      if (typeof chrome !== "undefined" && chrome.storage?.local?.set) {
-        chrome.storage.local.set({ [SETTINGS_KEY]: settings });
-      }
+      if (typeof chrome !== "undefined" && chrome.storage?.local?.set) chrome.storage.local.set({ [SETTINGS_KEY]: settings });
     } catch { /* ignore */ }
   }
 
-  function launchHidden() {
-    return readSettings().launchHidden === true;
-  }
-
-  function applyLaunchVisibility() {
-    document.documentElement.classList.toggle("xiv-fl-launch-hidden", launchHidden());
-  }
+  function launchHidden() { return readSettings().launchHidden === true; }
+  function applyLaunchVisibility() { document.documentElement.classList.toggle("xiv-fl-launch-hidden", launchHidden()); }
 
   function getStoredFilter() {
     const value = localStorage.getItem(FILTER_KEY) || document.querySelector('#xiv-root [data-xiv="filter"]')?.value || "all";
@@ -220,26 +230,60 @@
       if (!show) el.style.display = "none";
     });
     const filter = document.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]');
-    if (filter) {
-      filter.hidden = true;
-      filter.style.display = "none";
-    }
+    if (filter) { filter.hidden = true; filter.style.display = "none"; }
   }
 
-  function createSettingRow(labelText, control) {
+  function createSettingRow(labelText, control, id) {
     const label = document.createElement("label");
     label.className = "xiv-setting-row";
-    label.dataset.flAddon = "true";
+    label.dataset.flAddon = id || "true";
     const span = document.createElement("span");
     span.textContent = labelText;
     label.append(span, control);
     return label;
   }
 
+  function createStepper(id, minusAction, plusAction) {
+    const box = document.createElement("span");
+    box.className = "xiv-fl-stepper";
+    box.dataset.flStepper = id;
+    box.innerHTML = `<button type="button" data-fl-minus>−</button><strong data-fl-value>--</strong><button type="button" data-fl-plus>+</button>`;
+    box.querySelector("[data-fl-minus]").addEventListener("click", (event) => {
+      event.preventDefault();
+      document.querySelector(`#xiv-root [data-xiv="${minusAction}"]`)?.click();
+      setTimeout(refreshSteppers, 120);
+    });
+    box.querySelector("[data-fl-plus]").addEventListener("click", (event) => {
+      event.preventDefault();
+      document.querySelector(`#xiv-root [data-xiv="${plusAction}"]`)?.click();
+      setTimeout(refreshSteppers, 120);
+    });
+    return box;
+  }
+
+  function refreshSteppers() {
+    const settings = readSettings();
+    const columns = Math.max(2, Math.min(8, Number(settings.columns || 3)));
+    const speed = Math.max(1, Math.min(10, Number(settings.autoScrollSpeed || 3)));
+    const colValue = document.querySelector('[data-fl-stepper="columns"] [data-fl-value]');
+    const speedValue = document.querySelector('[data-fl-stepper="speed"] [data-fl-value]');
+    if (colValue) colValue.textContent = `${columns}列`;
+    if (speedValue) speedValue.textContent = `${speed}档`;
+  }
+
   function ensureSettingsAddons() {
     const panel = document.querySelector('#xiv-root [data-panel="settings"]');
-    if (!panel || panel.querySelector('[data-fl-addon="launch-hidden"]')) return;
-    const before = panel.querySelector("small");
+    if (!panel) return;
+    panel.querySelectorAll("small").forEach((el) => el.remove());
+    if (panel.querySelector('[data-fl-addon="launch-hidden"]')) {
+      refreshSteppers();
+      return;
+    }
+    const themeRow = panel.querySelector('[data-setting="theme"]')?.closest?.(".xiv-setting-row");
+    const insertBefore = themeRow || null;
+
+    const columnsRow = createSettingRow("图片流列数", createStepper("columns", "less", "more"), "columns");
+    const speedRow = createSettingRow("自动滚动速度", createStepper("speed", "slower", "faster"), "speed");
 
     const hideInput = document.createElement("input");
     hideInput.type = "checkbox";
@@ -250,8 +294,7 @@
       applyLaunchVisibility();
       syncAddonControls();
     });
-    const hideRow = createSettingRow("隐藏入口图标（用 G 或 Alt+F 打开）", hideInput);
-    hideRow.dataset.flAddon = "launch-hidden";
+    const hideRow = createSettingRow("隐藏入口图标（用 G 或 Alt+F 打开）", hideInput, "launch-hidden");
 
     const filterSelect = document.createElement("select");
     filterSelect.className = "xiv-fl-filter-select";
@@ -259,16 +302,13 @@
     filterSelect.innerHTML = '<option value="all">全部</option><option value="image">只看图片</option><option value="video">只看视频</option>';
     filterSelect.value = getStoredFilter();
     filterSelect.addEventListener("change", () => setStoredFilter(filterSelect.value));
-    const filterRow = createSettingRow("图片流筛选", filterSelect);
-    filterRow.dataset.flAddon = "media-filter";
+    const filterRow = createSettingRow("图片流筛选", filterSelect, "media-filter");
 
-    const tip = document.createElement("small");
-    tip.dataset.flAddon = "true";
-    tip.textContent = "顶部工具栏已精简为下载、自动滚动、回到顶部、设置、关闭。筛选入口移到这里，快捷键 G 或 Alt+F 可打开/关闭瀑光。";
-
-    panel.insertBefore(hideRow, before || null);
-    panel.insertBefore(filterRow, before || null);
-    panel.insertBefore(tip, before || null);
+    panel.insertBefore(columnsRow, insertBefore);
+    panel.insertBefore(speedRow, insertBefore);
+    panel.insertBefore(hideRow, insertBefore);
+    panel.insertBefore(filterRow, insertBefore);
+    refreshSteppers();
   }
 
   function syncAddonControls() {
@@ -276,49 +316,50 @@
     if (hideInput) hideInput.checked = launchHidden();
     const filterSelect = document.querySelector('[data-fl-setting="mediaFilter"]');
     if (filterSelect) filterSelect.value = getStoredFilter();
+    refreshSteppers();
   }
 
-  function isTypingTarget(target) {
-    return target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']");
-  }
+  function isTypingTarget(target) { return target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']"); }
 
   function toggleViewerByPatch() {
     const root = document.getElementById("xiv-root");
-    if (root?.dataset.active === "true") {
-      document.querySelector('#xiv-root [data-xiv="close"]')?.click();
-      return;
-    }
+    if (root?.dataset.active === "true") { document.querySelector('#xiv-root [data-xiv="close"]')?.click(); return; }
     document.getElementById("xiv-launch")?.click();
   }
 
+  function closePanelsOnOutside(event) {
+    const settingsPanel = document.querySelector('#xiv-root [data-panel="settings"]');
+    const diagnosticsPanel = document.querySelector('#xiv-root [data-panel="diagnostics"]');
+    if (settingsPanel?.dataset.open !== "true" && diagnosticsPanel?.dataset.open !== "true") return;
+    if (event.target?.closest?.('[data-panel="settings"], [data-panel="diagnostics"], [data-xiv="settings"], [data-xiv="diag"]')) return;
+    if (settingsPanel) settingsPanel.dataset.open = "false";
+    if (diagnosticsPanel) diagnosticsPanel.dataset.open = "false";
+  }
+
   function bindShortcuts() {
+    document.addEventListener("pointerdown", closePanelsOnOutside, true);
     document.addEventListener("keydown", (event) => {
       if (isTypingTarget(event.target)) return;
       if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleViewerByPatch();
+        event.preventDefault(); event.stopPropagation(); toggleViewerByPatch();
       }
       if (document.getElementById("xiv-lightbox")?.dataset.active === "true") {
         if (event.key === "ArrowRight") lastSwitchDirection = "next-x";
         else if (event.key === "ArrowLeft") lastSwitchDirection = "prev-x";
       }
     }, true);
-
     document.addEventListener("wheel", (event) => {
       const lightbox = document.getElementById("xiv-lightbox");
       if (lightbox?.dataset.active !== "true" || !lightbox.contains(event.target)) return;
       const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
       if (Math.abs(delta) > 4) lastSwitchDirection = delta > 0 ? "next-y" : "prev-y";
     }, true);
-
     document.addEventListener("pointerdown", (event) => {
       const lightbox = document.getElementById("xiv-lightbox");
       if (lightbox?.dataset.active !== "true" || !lightbox.contains(event.target)) return;
       if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow")) return;
       swipeStart = { x: event.clientX, y: event.clientY };
     }, true);
-
     document.addEventListener("pointerup", (event) => {
       if (!swipeStart) return;
       const dx = event.clientX - swipeStart.x;
@@ -363,10 +404,7 @@
     applyFilterDom(getStoredFilter());
   }
 
-  function scheduleApplyAll() {
-    clearTimeout(mutationTimer);
-    mutationTimer = setTimeout(applyAll, 80);
-  }
+  function scheduleApplyAll() { clearTimeout(mutationTimer); mutationTimer = setTimeout(applyAll, 80); }
 
   injectStyle();
   bindShortcuts();
