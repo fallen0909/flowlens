@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机布局与手势修复
 // @namespace    local.flowlens.layout
-// @version      1.2.15
-// @description  手机端安全版：恢复大图轻点适应/1:1原图切换，支持原图按住拖动、捏合缩放、视频区域滑动和顶部边缘修复。
+// @version      1.2.16
+// @description  手机端安全版：1:1原图模式禁用滑动切图，支持原图拖动、捏合缩放、视频区域滑动和顶部边缘修复。
 // @match        *://*/*
 // @run-at       document-start
 // @noframes
@@ -63,6 +63,9 @@
     const value = Number(getComputedStyle(box).getPropertyValue('--fl-mobile-scale') || 1);
     return Number.isFinite(value) && value > 0 ? value : 1;
   }
+  function isActualMode(box) {
+    return box && (box.dataset.zoom === 'actual' || scaleOf(box) > 1.04);
+  }
   function setScale(box, value) {
     const scale = Math.max(1, Math.min(4, value));
     box.style.setProperty('--fl-mobile-scale', String(scale));
@@ -84,10 +87,8 @@
       const h = img.naturalHeight || 0;
       img.style.setProperty('max-width', 'none', 'important');
       img.style.setProperty('max-height', 'none', 'important');
-      if (w > 0) img.style.setProperty('width', `${w}px`, 'important');
-      else img.style.setProperty('width', 'auto', 'important');
-      if (h > 0) img.style.setProperty('height', `${h}px`, 'important');
-      else img.style.setProperty('height', 'auto', 'important');
+      img.style.setProperty('width', w > 0 ? `${w}px` : 'auto', 'important');
+      img.style.setProperty('height', h > 0 ? `${h}px` : 'auto', 'important');
       requestAnimationFrame(() => {
         box.scrollLeft = Math.max(0, (box.scrollWidth - box.clientWidth) / 2);
         box.scrollTop = Math.max(0, (box.scrollHeight - box.clientHeight) / 2);
@@ -97,7 +98,7 @@
     else img.addEventListener('load', apply, { once:true });
   }
   function toggleZoom(box) {
-    const actual = box.dataset.zoom === 'actual' || scaleOf(box) > 1.04;
+    const actual = isActualMode(box);
     box.style.setProperty('--fl-mobile-scale', '1');
     if (actual) {
       box.dataset.zoom = 'fit';
@@ -118,7 +119,7 @@
     return target?.closest?.('.xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow');
   }
   function wantsPan(box, target) {
-    return target?.matches?.('#xiv-lightbox img') && (box.dataset.zoom === 'actual' || scaleOf(box) > 1.04);
+    return target?.matches?.('#xiv-lightbox img') && isActualMode(box);
   }
 
   document.addEventListener('pointerdown', (event) => {
@@ -161,6 +162,11 @@
         event.stopPropagation();
         return;
       }
+      if (isActualMode(box) && Math.hypot(dx, dy) > 8) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (Math.hypot(dx, dy) > 24) {
         event.preventDefault();
         event.stopPropagation();
@@ -193,13 +199,15 @@
     const panned = swipe.panned;
     swipe = null;
     delete box.dataset.flPanning;
-    if (panned) {
+
+    if (panned || (isActualMode(box) && Math.max(ax, ay) >= 12)) {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation?.();
       suppressClickUntil = Date.now() + 350;
       return;
     }
+
     if (Math.max(ax, ay) > Math.max(42, Math.min(innerWidth, innerHeight) * 0.09)) {
       event.preventDefault();
       event.stopPropagation();
