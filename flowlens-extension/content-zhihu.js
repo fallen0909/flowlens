@@ -4,8 +4,7 @@
 
   function isZhihuPage() {
     try {
-      const host = location.hostname;
-      return /(^|\.)zhihu\.com$/i.test(host);
+      return /(^|\.)zhihu\.com$/i.test(location.hostname);
     } catch {
       return false;
     }
@@ -15,7 +14,17 @@
 
   const CONTAINER_ID = "xiv-zhihu-precollector";
   const ZHIMG_RE = /https?:\/\/pic\d?\.zhimg\.com\/(?:\d+\/)?v2-[^"'<>\s\\)]+?\.(?:webp|jpe?g|png)(?:\?[^"'<>\s\\)]*)?/gi;
+  const LOAD_BUTTON_RE = /(展开阅读全文|阅读全文|查看全部|显示全部|更多回答|加载更多|继续浏览内容|查看剩余|展开更多)/;
+  const MAX_AUTOLOAD_TIME = 90000;
   let scheduled = 0;
+  let loaderRunning = false;
+  let loaderStartedAt = 0;
+  let originalScrollY = 0;
+  let originalHtmlOverflow = "";
+  let originalBodyOverflow = "";
+  let lastHeight = 0;
+  let lastCount = 0;
+  let idleTicks = 0;
 
   function cleanupUrl(raw) {
     let value = String(raw || "")
@@ -76,8 +85,7 @@
     });
 
     const html = document.documentElement?.innerHTML || "";
-    const matches = html.match(ZHIMG_RE) || [];
-    matches.forEach((url) => rememberUrl(result, url));
+    (html.match(ZHIMG_RE) || []).forEach((url) => rememberUrl(result, url));
     return [...result.values()];
   }
 
@@ -103,11 +111,12 @@
   }
 
   function syncPrecollector() {
-    if (!document.body) return;
+    if (!document.body) return 0;
     const urls = collectZhimgUrls();
-    if (!urls.length) return;
+    if (!urls.length) return 0;
     const container = ensureContainer();
     const existing = new Set([...container.querySelectorAll("img[data-xiv-zhimg]")].map((img) => img.src));
+    let added = 0;
     urls.forEach((url, index) => {
       if (existing.has(url)) return;
       const img = document.createElement("img");
@@ -119,17 +128,145 @@
       img.src = url;
       img.style.cssText = "display:block;width:360px;height:240px;object-fit:cover;margin:0 0 2px 0;";
       container.appendChild(img);
+      added += 1;
     });
+    return added;
   }
 
   function scheduleSync() {
     clearTimeout(scheduled);
-    scheduled = window.setTimeout(syncPrecollector, 120);
+    scheduled = window.setTimeout(() => {
+      syncPrecollector();
+      maybeStartAnswerAutoload();
+    }, 120);
+  }
+
+  function viewerActive() {
+    return document.getElementById("xiv-root")?.dataset.active === "true";
+  }
+
+  function setStatus(text) {
+    const status = document.getElementById("xiv-status");
+    if (status) status.textContent = text;
+  }
+
+  function isVisibleElement(el) {
+    const rect = el?.getBoundingClientRect?.();
+    return !!(rect && rect.width > 0 && rect.height > 0);
+  }
+
+  function clickLoadButtons() {
+    let clicked = 0;
+    document.querySelectorAll("button, a, [role='button']").forEach((el) => {
+      if (clicked >= 3) return;
+      if (!isVisibleElement(el)) return;
+      const text = (el.textContent || el.getAttribute("aria-label") || el.getAttribute("title") || "").replace(/\s+/g, "");
+      if (!text || text.length > 28 || !LOAD_BUTTON_RE.test(text)) return;
+      try {
+        el.click();
+        clicked += 1;
+      } catch {
+        // Ignore click failures.
+      }
+    });
+    return clicked;
+  }
+
+  function pageHeight() {
+    const doc = document.documentElement;
+    const body = document.body;
+    return Math.max(doc?.scrollHeight || 0, body?.scrollHeight || 0);
+  }
+
+  function currentImageCount() {
+    return document.querySelectorAll(`#${CONTAINER_ID} img[data-xiv-zhimg]`).length;
+  }
+
+  function restoreOriginalPagePosition() {
+    try {
+      document.documentElement.style.overflow = originalHtmlOverflow;
+      document.body.style.overflow = originalBodyOverflow;
+      window.scrollTo({ top: originalScrollY, behavior: "auto" });
+    } catch {
+      // Keep current position if restoring is blocked.
+    }
+  }
+
+  function stopAnswerAutoload(reason = "就绪") {
+    if (!loaderRunning) return;
+    loaderRunning = false;
+    syncPrecollector();
+    restoreOriginalPagePosition();
+    setStatus(reason);
+  }
+
+  function answerAutoloadTick() {
+    if (!loaderRunning) return;
+    if (!viewerActive()) {
+      stopAnswerAutoload("就绪");
+      return;
+    }
+    if (Date.now() - loaderStartedAt > MAX_AUTOLOAD_TIME) {
+      stopAnswerAutoload("知乎加载完成");
+      return;
+    }
+
+    try {
+      document.documentElement.style.overflow = "auto";
+      if (document.body) document.body.style.overflow = "auto";
+    } catch {
+      // Ignore style restrictions.
+    }
+
+    clickLoadButtons();
+    const added = syncPrecollector();
+    const beforeHeight = pageHeight();
+    const step = Math.max(900, Math.round(window.innerHeight * 0.9));
+    const nextTop = Math.min(beforeHeight, window.scrollY + step);
+    window.scrollTo({ top: nextTop, behavior: "auto" });
+
+    window.setTimeout(() => {
+      const height = pageHeight();
+      const count = currentImageCount();
+      const progressed = height > lastHeight + 80 || count > lastCount || added > 0;
+      if (progressed) {
+        idleTicks = 0;
+        lastHeight = height;
+        lastCount = count;
+        setStatus(`知乎加载中 ${count} 张`);
+      } else {
+        idleTicks += 1;
+      }
+      const nearBottom = window.scrollY + window.innerHeight >= height - 360;
+      if (nearBottom && idleTicks >= 8) {
+        stopAnswerAutoload("知乎加载完成");
+        return;
+      }
+      answerAutoloadTick();
+    }, 650);
+  }
+
+  function maybeStartAnswerAutoload() {
+    if (loaderRunning || !viewerActive()) return;
+    if (!/\/question\//i.test(location.pathname)) return;
+    loaderRunning = true;
+    loaderStartedAt = Date.now();
+    originalScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    originalHtmlOverflow = document.documentElement.style.overflow || "";
+    originalBodyOverflow = document.body?.style?.overflow || "";
+    lastHeight = pageHeight();
+    lastCount = currentImageCount();
+    idleTicks = 0;
+    setStatus("知乎加载更多答案");
+    answerAutoloadTick();
   }
 
   syncPrecollector();
   window.addEventListener("load", scheduleSync, { once: true });
   window.addEventListener("scroll", scheduleSync, { passive: true });
+  window.addEventListener("keydown", () => setTimeout(maybeStartAnswerAutoload, 200), true);
+  window.addEventListener("click", () => setTimeout(maybeStartAnswerAutoload, 200), true);
+  window.setInterval(maybeStartAnswerAutoload, 1200);
   new MutationObserver(scheduleSync).observe(document.documentElement, {
     childList: true,
     subtree: true,
