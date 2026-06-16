@@ -1,0 +1,56 @@
+name: Build release packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'flowlens-extension/**'
+      - 'mobile-userscript/**'
+      - '.github/workflows/release-build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./flowlens-extension/manifest.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build ZIP packages
+        run: |
+          set -e
+          VERSION="${{ steps.version.outputs.version }}"
+          rm -rf dist release-work
+          mkdir -p release-work dist
+
+          mkdir -p release-work/flowlens-extension
+          rsync -a flowlens-extension/ release-work/flowlens-extension/
+          (cd release-work && zip -r "../dist/flowlens-extension-v${VERSION}.zip" flowlens-extension)
+
+          mkdir -p release-work/flowlens-userscripts
+          rsync -a mobile-userscript/ release-work/flowlens-userscripts/
+          (cd release-work && zip -r "../dist/flowlens-userscripts-v${VERSION}.zip" flowlens-userscripts)
+
+          cat > dist/README.txt <<EOF
+          FlowLens release v${VERSION}
+
+          Desktop extension:
+          - unzip flowlens-extension-v${VERSION}.zip
+          - Edge/Chrome -> extensions -> developer mode -> load unpacked -> choose flowlens-extension folder
+
+          Mobile userscripts:
+          - unzip flowlens-userscripts-v${VERSION}.zip
+          - open install-userscript.html or install scripts from GitHub Pages if enabled
+          EOF
+
+      - name: Upload release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowlens-release-v${{ steps.version.outputs.version }}
+          path: dist/*
