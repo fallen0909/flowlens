@@ -46,12 +46,13 @@ jobs:
             'flowlens-zhihu.user.js'
           ];
           function stripHeader(source) {
-            return source.replace(/^\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==\s*/m, '').trim();
+            const end = source.indexOf('// ==/UserScript==');
+            return end >= 0 ? source.slice(end + '// ==/UserScript=='.length).trim() : source.trim();
           }
           const header = `// ==UserScript==
           // @name         瀑光 FlowLens 手机整合版
           // @namespace    local.flowlens.mobile.all
-          // @version      1.2.13
+          // @version      1.2.14
           // @description  手机 Edge / Tampermonkey 整合版：主功能、优化补丁、布局修复、全局设置同步、知乎适配。
           // @match        *://*/*
           // @run-at       document-idle
