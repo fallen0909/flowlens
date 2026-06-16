@@ -41,6 +41,7 @@ jobs:
           const files = [
             'flowlens.user.js',
             'flowlens-optimizer.user.js',
+            'flowlens-layout-fix.user.js',
             'flowlens-global-settings.user.js',
             'flowlens-zhihu.user.js'
           ];
@@ -50,8 +51,8 @@ jobs:
           const header = `// ==UserScript==
           // @name         瀑光 FlowLens 手机整合版
           // @namespace    local.flowlens.mobile.all
-          // @version      1.2.7
-          // @description  手机 Edge / Tampermonkey 整合版：主功能、优化补丁、全局设置同步、知乎适配。
+          // @version      1.2.8
+          // @description  手机 Edge / Tampermonkey 整合版：主功能、优化补丁、布局修复、全局设置同步、知乎适配。
           // @match        *://*/*
           // @run-at       document-idle
           // @noframes
