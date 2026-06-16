@@ -26,14 +26,28 @@
     color: white;
     font-weight: 700;
     text-decoration: none;
+    margin: 0 10px 10px 0;
+  }
+  a.secondary {
+    background: #24292f;
   }
   p {
     line-height: 1.7;
   }
+  .note {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #d0d7de;
+  }
 </style>
 <main>
   <h1>安装瀑光 FlowLens 油猴脚本</h1>
-  <p>点击下面的按钮后，Tampermonkey 应该会打开安装或更新页面。</p>
-  <p><a href="./flowlens.user.js">安装/更新脚本</a></p>
+  <p>手机 Edge / Tampermonkey 需要先安装主脚本，再安装优化补丁。补丁用于隐藏入口图标、精简顶部工具栏、修复图片/视频筛选，并增强移动端切换动画。</p>
+  <p>
+    <a href="./flowlens.user.js">安装/更新主脚本</a>
+    <a class="secondary" href="./flowlens-optimizer.user.js">安装/更新优化补丁</a>
+  </p>
+  <p class="note">如果已经安装过主脚本，这次只需要再点一次“安装/更新优化补丁”。之后在瀑光设置里可开启“隐藏入口图标”，用 G 或 Alt+F 打开/关闭。</p>
 </main>
 </html>
