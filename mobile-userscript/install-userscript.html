@@ -31,6 +31,9 @@
   a.secondary {
     background: #24292f;
   }
+  a.zhihu {
+    background: #175199;
+  }
   p {
     line-height: 1.7;
   }
@@ -43,11 +46,12 @@
 </style>
 <main>
   <h1>安装瀑光 FlowLens 油猴脚本</h1>
-  <p>手机 Edge / Tampermonkey 需要先安装主脚本，再安装优化补丁。补丁用于隐藏入口图标、精简顶部工具栏、修复图片/视频筛选，并增强移动端切换动画。</p>
+  <p>手机 Edge / Tampermonkey 需要先安装主脚本，再安装优化补丁。知乎页面如有首图或懒加载大图漏抓，再安装知乎图片预采集脚本。</p>
   <p>
     <a href="./flowlens.user.js">安装/更新主脚本</a>
     <a class="secondary" href="./flowlens-optimizer.user.js">安装/更新优化补丁</a>
+    <a class="zhihu" href="./flowlens-zhihu.user.js">安装/更新知乎适配</a>
   </p>
-  <p class="note">如果已经安装过主脚本，这次只需要再点一次“安装/更新优化补丁”。之后在瀑光设置里可开启“隐藏入口图标”，用 G 或 Alt+F 打开/关闭。</p>
+  <p class="note">如果已经安装过主脚本，这次建议更新“优化补丁”，并额外安装“知乎适配”。之后在瀑光设置里可开启“隐藏入口图标”，用 G 或 Alt+F 打开/关闭。</p>
 </main>
 </html>
