@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机布局与手势修复
 // @namespace    local.flowlens.layout
-// @version      1.2.18
-// @description  手机端安全版：1:1原图模式只拖动图片，强拦截原滑动切图，保留轻点还原、捏合缩放、视频区域滑动。
+// @version      1.2.21
+// @description  手机端安全版：移除捏合缩放，恢复 1:1 原图单指拖动，1:1 模式禁用滑动切图。
 // @match        *://*/*
 // @run-at       document-start
 // @noframes
@@ -26,8 +26,7 @@
     #xiv-root[data-active="true"] .xiv-video-mark { display:none!important; opacity:0!important; visibility:hidden!important; pointer-events:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] { touch-action:none!important; overscroll-behavior:contain!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="actual"] { overflow:auto!important; -webkit-overflow-scrolling:auto!important; }
-    #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] img, #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] video { transform:scale(var(--fl-mobile-scale,1)); transform-origin:center center; transition:transform .12s ease; touch-action:none!important; }
-    #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-pinching="true"] img, #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-pinching="true"] video { transition:none!important; }
+    #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] img, #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] video { touch-action:none!important; transform:none!important; transition:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="actual"] img { max-width:none!important; max-height:none!important; width:auto; height:auto; cursor:grab!important; -webkit-user-select:none!important; user-select:none!important; -webkit-user-drag:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-panning="true"] img { cursor:grabbing!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="fit"] img { max-width:100vw!important; max-height:100vh!important; width:auto!important; height:auto!important; }
@@ -40,6 +39,7 @@
     event.stopPropagation();
     event.stopImmediatePropagation?.();
   }
+
   function installStyle() {
     let style = document.getElementById('xiv-fl-mobile-safe-fix-style');
     if (!style) {
@@ -55,29 +55,27 @@
     }
   }
 
-  const points = new Map();
-  let pinch = null;
-  let swipe = null;
-  let touchPan = null;
+  let pan = null;
   let suppressClickUntil = 0;
+  let lastTouchTime = 0;
 
   function lightbox() {
     const box = document.getElementById('xiv-lightbox');
     return box && box.dataset.active === 'true' ? box : null;
   }
-  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-  function scaleOf(box) {
-    const value = Number(getComputedStyle(box).getPropertyValue('--fl-mobile-scale') || 1);
-    return Number.isFinite(value) && value > 0 ? value : 1;
-  }
+
   function isActualMode(box) {
-    return box && (box.dataset.zoom === 'actual' || scaleOf(box) > 1.04);
+    return box && box.dataset.zoom === 'actual';
   }
-  function setScale(box, value) {
-    const scale = Math.max(1, Math.min(4, value));
-    box.style.setProperty('--fl-mobile-scale', String(scale));
-    if (scale > 1.04) box.dataset.zoom = 'actual';
+
+  function isControl(target) {
+    return target?.closest?.('.xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow');
   }
+
+  function isImgTarget(target) {
+    return target?.matches?.('#xiv-lightbox img');
+  }
+
   function clearActualImageStyle(box) {
     const img = box.querySelector('img');
     if (!img) return;
@@ -86,6 +84,7 @@
     img.style.removeProperty('max-width');
     img.style.removeProperty('max-height');
   }
+
   function applyActualImageStyle(box) {
     const img = box.querySelector('img');
     if (!img) return;
@@ -104,10 +103,9 @@
     if (img.complete) apply();
     else img.addEventListener('load', apply, { once:true });
   }
+
   function toggleZoom(box) {
-    const actual = isActualMode(box);
-    box.style.setProperty('--fl-mobile-scale', '1');
-    if (actual) {
+    if (isActualMode(box)) {
       box.dataset.zoom = 'fit';
       clearActualImageStyle(box);
       box.scrollTo?.({ top:0, left:0, behavior:'auto' });
@@ -117,164 +115,137 @@
     }
     suppressClickUntil = Date.now() + 350;
   }
+
   function switchItem(next) {
     const side = next ? 'right' : 'left';
     const arrow = document.querySelector(`#xiv-lightbox .xiv-lightbox-arrow[data-side="${side}"]`);
     arrow?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true, button:0 }));
   }
-  function isControl(target) {
-    return target?.closest?.('.xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow');
-  }
-  function isImgTarget(target) {
-    return target?.matches?.('#xiv-lightbox img');
-  }
-  function wantsPan(box, target) {
-    return isImgTarget(target) && isActualMode(box);
+
+  function startPan(box, target, x, y) {
+    pan = { x, y, left:box.scrollLeft, top:box.scrollTop, target, moved:false, time:Date.now() };
+    box.dataset.flPanning = 'true';
   }
 
-  document.addEventListener('pointerdown', (event) => {
-    const box = lightbox();
-    if (!box || !box.contains(event.target) || isControl(event.target)) return;
-    points.set(event.pointerId, { x:event.clientX, y:event.clientY, target:event.target, t:Date.now() });
-    if (points.size === 1) {
-      swipe = { id:event.pointerId, x:event.clientX, y:event.clientY, target:event.target, t:Date.now(), left:box.scrollLeft, top:box.scrollTop, panned:false };
-      if (wantsPan(box, event.target)) {
-        box.dataset.flPanning = 'true';
-        stop(event);
-      }
-    }
-    if (points.size === 2) {
-      const pair = Array.from(points.values()).slice(0, 2);
-      pinch = { distance:dist(pair[0], pair[1]), scale:scaleOf(box) };
-      box.dataset.flPinching = 'true';
-      stop(event);
-    }
-  }, true);
+  function movePan(box, x, y) {
+    if (!pan) return;
+    const dx = x - pan.x;
+    const dy = y - pan.y;
+    pan.moved = pan.moved || Math.hypot(dx, dy) > 1;
+    box.scrollLeft = pan.left - dx;
+    box.scrollTop = pan.top - dy;
+    box.dataset.flPanning = 'true';
+  }
 
-  document.addEventListener('pointermove', (event) => {
-    const box = lightbox();
-    if (!box || !points.has(event.pointerId)) return;
-    const old = points.get(event.pointerId);
-    points.set(event.pointerId, { ...old, x:event.clientX, y:event.clientY });
-    if (pinch && points.size >= 2) {
-      const pair = Array.from(points.values()).slice(0, 2);
-      setScale(box, pinch.scale * dist(pair[0], pair[1]) / Math.max(1, pinch.distance));
-      stop(event);
-      return;
-    }
-    if (swipe && swipe.id === event.pointerId) {
-      const dx = event.clientX - swipe.x;
-      const dy = event.clientY - swipe.y;
-      if (wantsPan(box, swipe.target)) {
-        swipe.panned = true;
-        box.dataset.flPanning = 'true';
-        box.scrollLeft = swipe.left - dx;
-        box.scrollTop = swipe.top - dy;
-        stop(event);
-        return;
-      }
-      if (isActualMode(box)) {
-        stop(event);
-        return;
-      }
-      if (Math.hypot(dx, dy) > 24) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    }
-  }, true);
-
-  document.addEventListener('pointerup', (event) => {
-    const box = lightbox();
-    const start = points.get(event.pointerId);
-    points.delete(event.pointerId);
-    if (!box || !start) return;
-    if (pinch) {
-      if (points.size < 2) {
-        delete box.dataset.flPinching;
-        pinch = null;
-      }
-      stop(event);
-      suppressClickUntil = Date.now() + 350;
-      return;
-    }
-    if (!swipe || swipe.id !== event.pointerId) return;
-    const dx = event.clientX - swipe.x;
-    const dy = event.clientY - swipe.y;
-    const ax = Math.abs(dx);
-    const ay = Math.abs(dy);
-    const dt = Date.now() - swipe.t;
-    const target = swipe.target;
-    const panned = swipe.panned;
-    swipe = null;
+  function endPan(box) {
+    if (!pan) return null;
+    const done = pan;
+    pan = null;
     delete box.dataset.flPanning;
-
-    if (isActualMode(box)) {
-      stop(event);
-      suppressClickUntil = Date.now() + 350;
-      if (!panned && ax < 12 && ay < 12 && dt < 650 && isImgTarget(target)) toggleZoom(box);
-      return;
-    }
-
-    if (Math.max(ax, ay) > Math.max(42, Math.min(innerWidth, innerHeight) * 0.09)) {
-      event.preventDefault();
-      event.stopPropagation();
-      suppressClickUntil = Date.now() + 420;
-      switchItem(ax >= ay ? dx < 0 : dy < 0);
-      return;
-    }
-    if (ax < 12 && ay < 12 && dt < 650 && isImgTarget(target)) {
-      stop(event);
-      toggleZoom(box);
-    }
-  }, true);
-
-  document.addEventListener('pointercancel', (event) => {
-    points.delete(event.pointerId);
-    const box = lightbox();
-    if (box) {
-      if (points.size < 2) delete box.dataset.flPinching;
-      delete box.dataset.flPanning;
-    }
-    if (!points.size) {
-      pinch = null;
-      swipe = null;
-    }
-  }, true);
+    return done;
+  }
 
   document.addEventListener('touchstart', (event) => {
     const box = lightbox();
-    if (!box || event.touches.length !== 1 || isControl(event.target) || !wantsPan(box, event.target)) return;
-    const t = event.touches[0];
-    touchPan = { x:t.clientX, y:t.clientY, left:box.scrollLeft, top:box.scrollTop, target:event.target, moved:false, time:Date.now() };
-    box.dataset.flPanning = 'true';
-    stop(event);
+    if (!box || isControl(event.target)) return;
+    lastTouchTime = Date.now();
+
+    if (isActualMode(box)) {
+      if (event.touches.length === 1 && isImgTarget(event.target)) {
+        const t = event.touches[0];
+        startPan(box, event.target, t.clientX, t.clientY);
+      }
+      stop(event);
+    }
   }, true);
 
   document.addEventListener('touchmove', (event) => {
     const box = lightbox();
     if (!box || !isActualMode(box)) return;
-    if (touchPan && event.touches.length === 1) {
+    if (pan && event.touches.length === 1) {
       const t = event.touches[0];
-      const dx = t.clientX - touchPan.x;
-      const dy = t.clientY - touchPan.y;
-      touchPan.moved = Math.hypot(dx, dy) > 1;
-      box.scrollLeft = touchPan.left - dx;
-      box.scrollTop = touchPan.top - dy;
-      box.dataset.flPanning = 'true';
+      movePan(box, t.clientX, t.clientY);
     }
     stop(event);
   }, true);
 
   document.addEventListener('touchend', (event) => {
     const box = lightbox();
-    if (!box || !isActualMode(box) || !touchPan) return;
-    const pan = touchPan;
-    touchPan = null;
-    delete box.dataset.flPanning;
+    if (!box || !isActualMode(box)) return;
+    const done = endPan(box);
     stop(event);
     suppressClickUntil = Date.now() + 350;
-    if (!pan.moved && Date.now() - pan.time < 650 && isImgTarget(pan.target)) toggleZoom(box);
+    if (done && !done.moved && Date.now() - done.time < 650 && isImgTarget(done.target)) toggleZoom(box);
+  }, true);
+
+  document.addEventListener('pointerdown', (event) => {
+    if (Date.now() - lastTouchTime < 700) return;
+    const box = lightbox();
+    if (!box || !box.contains(event.target) || isControl(event.target)) return;
+    if (isActualMode(box)) {
+      if (isImgTarget(event.target)) startPan(box, event.target, event.clientX, event.clientY);
+      stop(event);
+    } else if (isImgTarget(event.target)) {
+      pan = { x:event.clientX, y:event.clientY, target:event.target, moved:false, time:Date.now(), fitMode:true };
+    }
+  }, true);
+
+  document.addEventListener('pointermove', (event) => {
+    if (Date.now() - lastTouchTime < 700) return;
+    const box = lightbox();
+    if (!box || !box.contains(event.target)) return;
+    if (isActualMode(box)) {
+      if (pan) movePan(box, event.clientX, event.clientY);
+      stop(event);
+      return;
+    }
+    if (pan?.fitMode) {
+      pan.moved = pan.moved || Math.hypot(event.clientX - pan.x, event.clientY - pan.y) > 12;
+      if (pan.moved) {
+        const dx = event.clientX - pan.x;
+        const dy = event.clientY - pan.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) > Math.max(42, Math.min(innerWidth, innerHeight) * 0.09)) {
+          stop(event);
+        }
+      }
+    }
+  }, true);
+
+  document.addEventListener('pointerup', (event) => {
+    if (Date.now() - lastTouchTime < 700) return;
+    const box = lightbox();
+    if (!box || !pan) return;
+    const done = endPan(box) || pan;
+    const dx = event.clientX - done.x;
+    const dy = event.clientY - done.y;
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+    const dt = Date.now() - done.time;
+
+    if (isActualMode(box)) {
+      stop(event);
+      suppressClickUntil = Date.now() + 350;
+      if (!done.moved && ax < 12 && ay < 12 && dt < 650 && isImgTarget(done.target)) toggleZoom(box);
+      return;
+    }
+
+    pan = null;
+    if (done.fitMode && Math.max(ax, ay) > Math.max(42, Math.min(innerWidth, innerHeight) * 0.09)) {
+      stop(event);
+      suppressClickUntil = Date.now() + 420;
+      switchItem(ax >= ay ? dx < 0 : dy < 0);
+      return;
+    }
+    if (done.fitMode && ax < 12 && ay < 12 && dt < 650 && isImgTarget(done.target)) {
+      stop(event);
+      toggleZoom(box);
+    }
+  }, true);
+
+  document.addEventListener('pointercancel', () => {
+    const box = lightbox();
+    if (box) delete box.dataset.flPanning;
+    pan = null;
   }, true);
 
   document.addEventListener('click', (event) => {
