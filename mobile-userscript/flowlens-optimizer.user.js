@@ -18,7 +18,6 @@
   const KEEP_ACTIONS = new Set(["download", "auto", "top", "settings", "close"]);
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
   let mutationTimer = 0;
-  let reflowing = false;
   let lightboxObserver = null;
   let lastSwitchDirection = "fade";
   let swipeStart = null;
@@ -42,11 +41,9 @@
       background: #050505 !important;
       transform: translateZ(0);
     }
-
     @supports not (height: 100dvh) {
       #xiv-root { height: 100vh !important; max-height: 100vh !important; }
     }
-
     #xiv-root::before {
       content: "";
       position: fixed;
@@ -58,7 +55,6 @@
       z-index: 2;
       pointer-events: none;
     }
-
     #xiv-stage {
       inset: 0 !important;
       width: 100% !important;
@@ -70,27 +66,22 @@
       padding-left: max(6px, env(safe-area-inset-left, 0px)) !important;
       background: transparent !important;
     }
-
     #xiv-topbar {
       top: 0 !important;
       padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important;
       background: linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.36), rgba(0,0,0,0)) !important;
     }
-
     #xiv-topbar [data-xiv]:not([data-xiv="download"]):not([data-xiv="auto"]):not([data-xiv="top"]):not([data-xiv="settings"]):not([data-xiv="close"]),
     #xiv-topbar .xiv-select[data-xiv="filter"] {
       display: none !important;
     }
-
     #xiv-topbar .xiv-actions {
       gap: 8px !important;
       flex-wrap: nowrap !important;
     }
-
     html.xiv-fl-launch-hidden #xiv-launch {
       display: none !important;
     }
-
     .xiv-fl-filter-select {
       height: 34px;
       min-width: 108px;
@@ -101,13 +92,11 @@
       padding: 0 28px 0 12px;
       font: 800 13px/1 system-ui, sans-serif;
     }
-
     #xiv-root[data-theme="light"] .xiv-fl-filter-select {
       background: rgba(255,255,255,.86);
       color: #151515;
       border-color: rgba(0,0,0,.12);
     }
-
     #xiv-lightbox img,
     #xiv-lightbox video,
     #xiv-lightbox iframe,
@@ -115,39 +104,21 @@
       will-change: transform, opacity;
       backface-visibility: hidden;
     }
-
     #xiv-lightbox .xiv-fl-media-anim {
       animation-duration: 280ms;
       animation-timing-function: cubic-bezier(.22, .61, .36, 1);
       animation-fill-mode: both;
     }
-
     #xiv-lightbox[data-fl-dir="next-y"] .xiv-fl-media-anim { animation-name: xivFlNextY; }
     #xiv-lightbox[data-fl-dir="prev-y"] .xiv-fl-media-anim { animation-name: xivFlPrevY; }
     #xiv-lightbox[data-fl-dir="next-x"] .xiv-fl-media-anim { animation-name: xivFlNextX; }
     #xiv-lightbox[data-fl-dir="prev-x"] .xiv-fl-media-anim { animation-name: xivFlPrevX; }
     #xiv-lightbox[data-fl-dir="fade"] .xiv-fl-media-anim { animation-name: xivFlFade; }
-
-    @keyframes xivFlNextY {
-      from { opacity: .18; transform: translate3d(0, 8vh, 0) scale(.985); }
-      to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-    }
-    @keyframes xivFlPrevY {
-      from { opacity: .18; transform: translate3d(0, -8vh, 0) scale(.985); }
-      to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-    }
-    @keyframes xivFlNextX {
-      from { opacity: .18; transform: translate3d(8vw, 0, 0) scale(.985); }
-      to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-    }
-    @keyframes xivFlPrevX {
-      from { opacity: .18; transform: translate3d(-8vw, 0, 0) scale(.985); }
-      to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-    }
-    @keyframes xivFlFade {
-      from { opacity: .25; transform: scale(.985); }
-      to { opacity: 1; transform: scale(1); }
-    }
+    @keyframes xivFlNextY { from { opacity: .18; transform: translate3d(0, 8vh, 0) scale(.985); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
+    @keyframes xivFlPrevY { from { opacity: .18; transform: translate3d(0, -8vh, 0) scale(.985); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
+    @keyframes xivFlNextX { from { opacity: .18; transform: translate3d(8vw, 0, 0) scale(.985); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
+    @keyframes xivFlPrevX { from { opacity: .18; transform: translate3d(-8vw, 0, 0) scale(.985); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
+    @keyframes xivFlFade { from { opacity: .25; transform: scale(.985); } to { opacity: 1; transform: scale(1); } }
 
     @media (max-width: 820px) {
       #xiv-topbar {
@@ -156,17 +127,13 @@
         padding-right: max(8px, env(safe-area-inset-right, 0px)) !important;
         padding-left: max(8px, env(safe-area-inset-left, 0px)) !important;
       }
-      #xiv-topbar .xiv-pill {
-        display: none !important;
-      }
+      #xiv-topbar .xiv-pill { display: none !important; }
       #xiv-topbar .xiv-btn {
         min-width: 42px !important;
         width: 42px !important;
         height: 42px !important;
       }
-      #xiv-stage {
-        padding-top: calc(58px + env(safe-area-inset-top, 0px)) !important;
-      }
+      #xiv-stage { padding-top: calc(58px + env(safe-area-inset-top, 0px)) !important; }
       #xiv-lightbox img,
       #xiv-lightbox video {
         max-width: 100vw !important;
@@ -193,11 +160,7 @@
 
   function saveSettings(patch) {
     const settings = { ...readSettings(), ...patch };
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    } catch {
-      // ignore storage restrictions
-    }
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
   }
 
   function launchHidden() {
@@ -214,18 +177,6 @@
     return ["all", "image", "video"].includes(value) ? value : "all";
   }
 
-  function setStoredFilter(value) {
-    const next = ["all", "image", "video"].includes(value) ? value : "all";
-    try { localStorage.setItem(FILTER_KEY, next); } catch { /* ignore */ }
-    const nativeSelect = document.querySelector('#xiv-root [data-xiv="filter"]');
-    if (nativeSelect && nativeSelect.value !== next) {
-      nativeSelect.value = next;
-      nativeSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    scheduleFilterApply(next);
-    syncAddonControls();
-  }
-
   function mediaTypeOfTile(tile) {
     const url = (tile && tile.dataset && tile.dataset.url) || "";
     if (VIDEO_RE.test(url)) return "video";
@@ -233,60 +184,8 @@
     return "image";
   }
 
-  function sortedTiles() {
-    return Array.from(document.querySelectorAll("#xiv-grid .xiv-tile"))
-      .sort((a, b) => Number(a.dataset.index || 0) - Number(b.dataset.index || 0));
-  }
-
-  function estimateTileHeight(tile, column) {
-    const rect = tile.getBoundingClientRect && tile.getBoundingClientRect();
-    if (rect && rect.height > 20) return rect.height + 8;
-    const media = tile.querySelector && tile.querySelector("img, video");
-    const w = (media && (media.naturalWidth || media.videoWidth || media.clientWidth)) || (column && column.clientWidth) || 160;
-    const h = (media && (media.naturalHeight || media.videoHeight || media.clientHeight)) || 120;
-    const columnWidth = (column && column.clientWidth) || tile.clientWidth || 160;
-    return Math.max(88, columnWidth * (h / Math.max(1, w))) + 8;
-  }
-
-  function reflowMasonry(tiles) {
-    const grid = document.getElementById("xiv-grid");
-    if (!grid || !tiles.length) return;
-    const existingColumns = Array.from(grid.querySelectorAll(".xiv-masonry-column"));
-    const cssColumns = Number(getComputedStyle(grid).getPropertyValue("--xiv-columns"));
-    const count = Math.max(1, existingColumns.length || cssColumns || 3);
-    const columns = Array.from({ length: count }, () => {
-      const column = document.createElement("div");
-      column.className = "xiv-masonry-column";
-      return column;
-    });
-    const heights = Array.from({ length: count }, () => 0);
-    reflowing = true;
-    grid.replaceChildren(...columns);
-    for (const tile of tiles) {
-      if (tile.hidden || tile.style.display === "none") {
-        columns[0].appendChild(tile);
-        continue;
-      }
-      let target = 0;
-      for (let i = 1; i < heights.length; i += 1) {
-        if (heights[i] < heights[target]) target = i;
-      }
-      columns[target].appendChild(tile);
-      heights[target] += estimateTileHeight(tile, columns[target]);
-    }
-    reflowing = false;
-  }
-
-  function updateCounter(filter, total, visible, imageCount, videoCount) {
-    const counter = document.getElementById("xiv-counter");
-    if (!counter) return;
-    if (filter === "image") counter.textContent = `图片 ${visible}/${imageCount}`;
-    else if (filter === "video") counter.textContent = `视频 ${visible}/${videoCount}`;
-    else counter.textContent = `${total} 个`;
-  }
-
   function applyFilterDom(value = getStoredFilter()) {
-    const tiles = sortedTiles();
+    const tiles = Array.from(document.querySelectorAll("#xiv-grid .xiv-tile"));
     if (!tiles.length) return;
     let imageCount = 0;
     let videoCount = 0;
@@ -301,20 +200,29 @@
       tile.style.display = show ? "" : "none";
       if (show) visible += 1;
     }
-    reflowMasonry(tiles);
-    updateCounter(value, tiles.length, visible, imageCount, videoCount);
+    const counter = document.getElementById("xiv-counter");
+    if (counter) {
+      if (value === "image") counter.textContent = `图片 ${visible}/${imageCount}`;
+      else if (value === "video") counter.textContent = `视频 ${visible}/${videoCount}`;
+      else counter.textContent = `${tiles.length} 个`;
+    }
   }
 
-  function scheduleFilterApply(value = getStoredFilter()) {
-    [0, 60, 180].forEach((delay) => {
-      window.setTimeout(() => applyFilterDom(value), delay);
-    });
+  function setStoredFilter(value) {
+    const next = ["all", "image", "video"].includes(value) ? value : "all";
+    try { localStorage.setItem(FILTER_KEY, next); } catch { /* ignore */ }
+    const nativeSelect = document.querySelector('#xiv-root [data-xiv="filter"]');
+    if (nativeSelect && nativeSelect.value !== next) {
+      nativeSelect.value = next;
+      nativeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    [0, 80, 180].forEach((delay) => setTimeout(() => applyFilterDom(next), delay));
+    syncAddonControls();
   }
 
   function ensureToolbarCompact() {
     document.querySelectorAll("#xiv-topbar [data-xiv]").forEach((el) => {
-      const key = el.dataset.xiv;
-      const show = KEEP_ACTIONS.has(key);
+      const show = KEEP_ACTIONS.has(el.dataset.xiv);
       el.hidden = !show;
       if (!show) el.style.display = "none";
     });
@@ -427,8 +335,9 @@
       const dy = event.clientY - swipeStart.y;
       swipeStart = null;
       if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
-      if (Math.abs(dx) >= Math.abs(dy)) lastSwitchDirection = dx < 0 ? "next-x" : "prev-x";
-      else lastSwitchDirection = dy < 0 ? "next-y" : "prev-y";
+      lastSwitchDirection = Math.abs(dx) >= Math.abs(dy)
+        ? (dx < 0 ? "next-x" : "prev-x")
+        : (dy < 0 ? "next-y" : "prev-y");
     }, true);
   }
 
@@ -441,7 +350,7 @@
     media.classList.remove("xiv-fl-media-anim");
     void media.offsetWidth;
     media.classList.add("xiv-fl-media-anim");
-    window.setTimeout(() => media.classList.remove("xiv-fl-media-anim"), 340);
+    setTimeout(() => media.classList.remove("xiv-fl-media-anim"), 340);
     lastSwitchDirection = "fade";
   }
 
@@ -450,9 +359,7 @@
     if (!lightbox || lightbox.dataset.flObserved === "true") return;
     lightbox.dataset.flObserved = "true";
     if (lightboxObserver && lightboxObserver.disconnect) lightboxObserver.disconnect();
-    lightboxObserver = new MutationObserver(() => {
-      window.requestAnimationFrame(animateLightboxMedia);
-    });
+    lightboxObserver = new MutationObserver(() => requestAnimationFrame(animateLightboxMedia));
     lightboxObserver.observe(lightbox, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "data-active"] });
   }
 
@@ -463,21 +370,17 @@
     ensureSettingsAddons();
     syncAddonControls();
     observeLightbox();
-    scheduleFilterApply(getStoredFilter());
+    applyFilterDom(getStoredFilter());
   }
 
   function scheduleApplyAll() {
-    if (reflowing) return;
     clearTimeout(mutationTimer);
-    mutationTimer = window.setTimeout(applyAll, 80);
+    mutationTimer = setTimeout(applyAll, 80);
   }
 
   injectStyle();
   bindShortcuts();
   applyAll();
-
-  const observer = new MutationObserver(scheduleApplyAll);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-
-  window.addEventListener("resize", () => scheduleFilterApply(getStoredFilter()), { passive: true });
+  new MutationObserver(scheduleApplyAll).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("resize", () => applyFilterDom(getStoredFilter()), { passive: true });
 })();
