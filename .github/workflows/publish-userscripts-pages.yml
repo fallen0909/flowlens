@@ -34,6 +34,41 @@ jobs:
           rsync -a mobile-userscript/ public/
           cp mobile-userscript/install-userscript.html public/index.html
 
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const root = 'mobile-userscript';
+          const files = [
+            'flowlens.user.js',
+            'flowlens-optimizer.user.js',
+            'flowlens-global-settings.user.js',
+            'flowlens-zhihu.user.js'
+          ];
+          function stripHeader(source) {
+            return source.replace(/^\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==\s*/m, '').trim();
+          }
+          const header = `// ==UserScript==
+          // @name         瀑光 FlowLens 手机整合版
+          // @namespace    local.flowlens.mobile.all
+          // @version      1.2.7
+          // @description  手机 Edge / Tampermonkey 整合版：主功能、优化补丁、全局设置同步、知乎适配。
+          // @match        *://*/*
+          // @run-at       document-idle
+          // @noframes
+          // @grant        GM_xmlhttpRequest
+          // @grant        GM_download
+          // @grant        GM_getValue
+          // @grant        GM_setValue
+          // @connect      *
+          // @updateURL    https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js
+          // @downloadURL  https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js
+          // ==/UserScript==`;
+          const body = files
+            .map((file) => stripHeader(fs.readFileSync(path.join(root, file), 'utf8')))
+            .join('\n\n');
+          fs.writeFileSync('public/flowlens-mobile-all.user.js', `${header}\n\n${body}\n`, 'utf8');
+          NODE
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
