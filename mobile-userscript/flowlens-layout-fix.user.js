@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机布局与手势修复
 // @namespace    local.flowlens.layout
-// @version      1.2.17
-// @description  手机端安全版：1:1原图模式手指移动立即拖动图片，禁用滑动切图，保留捏合缩放和顶部边缘修复。
+// @version      1.2.18
+// @description  手机端安全版：1:1原图模式只拖动图片，强拦截原滑动切图，保留轻点还原、捏合缩放、视频区域滑动。
 // @match        *://*/*
 // @run-at       document-start
 // @noframes
@@ -25,6 +25,7 @@
     #xiv-root[data-active="true"][data-theme="light"] #xiv-topbar .xiv-pill:has(#xiv-counter) { background:rgba(255,255,255,.78)!important; color:#151515!important; border-color:rgba(0,0,0,.12)!important; }
     #xiv-root[data-active="true"] .xiv-video-mark { display:none!important; opacity:0!important; visibility:hidden!important; pointer-events:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] { touch-action:none!important; overscroll-behavior:contain!important; }
+    #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="actual"] { overflow:auto!important; -webkit-overflow-scrolling:auto!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] img, #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] video { transform:scale(var(--fl-mobile-scale,1)); transform-origin:center center; transition:transform .12s ease; touch-action:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-pinching="true"] img, #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-pinching="true"] video { transition:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="actual"] img { max-width:none!important; max-height:none!important; width:auto; height:auto; cursor:grab!important; -webkit-user-select:none!important; user-select:none!important; -webkit-user-drag:none!important; }
@@ -34,6 +35,11 @@
     html.xiv-active #xiv-fl-edge-cover { display:block!important; }
   `;
 
+  function stop(event) {
+    if (event.cancelable) event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+  }
   function installStyle() {
     let style = document.getElementById('xiv-fl-mobile-safe-fix-style');
     if (!style) {
@@ -52,6 +58,7 @@
   const points = new Map();
   let pinch = null;
   let swipe = null;
+  let touchPan = null;
   let suppressClickUntil = 0;
 
   function lightbox() {
@@ -118,8 +125,11 @@
   function isControl(target) {
     return target?.closest?.('.xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow');
   }
+  function isImgTarget(target) {
+    return target?.matches?.('#xiv-lightbox img');
+  }
   function wantsPan(box, target) {
-    return target?.matches?.('#xiv-lightbox img') && isActualMode(box);
+    return isImgTarget(target) && isActualMode(box);
   }
 
   document.addEventListener('pointerdown', (event) => {
@@ -130,16 +140,14 @@
       swipe = { id:event.pointerId, x:event.clientX, y:event.clientY, target:event.target, t:Date.now(), left:box.scrollLeft, top:box.scrollTop, panned:false };
       if (wantsPan(box, event.target)) {
         box.dataset.flPanning = 'true';
-        event.preventDefault();
-        event.stopPropagation();
+        stop(event);
       }
     }
     if (points.size === 2) {
       const pair = Array.from(points.values()).slice(0, 2);
       pinch = { distance:dist(pair[0], pair[1]), scale:scaleOf(box) };
       box.dataset.flPinching = 'true';
-      event.preventDefault();
-      event.stopPropagation();
+      stop(event);
     }
   }, true);
 
@@ -151,25 +159,22 @@
     if (pinch && points.size >= 2) {
       const pair = Array.from(points.values()).slice(0, 2);
       setScale(box, pinch.scale * dist(pair[0], pair[1]) / Math.max(1, pinch.distance));
-      event.preventDefault();
-      event.stopPropagation();
+      stop(event);
       return;
     }
     if (swipe && swipe.id === event.pointerId) {
       const dx = event.clientX - swipe.x;
       const dy = event.clientY - swipe.y;
-      if (wantsPan(box, swipe.target) && Math.hypot(dx, dy) > 0.5) {
+      if (wantsPan(box, swipe.target)) {
         swipe.panned = true;
         box.dataset.flPanning = 'true';
         box.scrollLeft = swipe.left - dx;
         box.scrollTop = swipe.top - dy;
-        event.preventDefault();
-        event.stopPropagation();
+        stop(event);
         return;
       }
-      if (isActualMode(box) && Math.hypot(dx, dy) > 4) {
-        event.preventDefault();
-        event.stopPropagation();
+      if (isActualMode(box)) {
+        stop(event);
         return;
       }
       if (Math.hypot(dx, dy) > 24) {
@@ -189,8 +194,7 @@
         delete box.dataset.flPinching;
         pinch = null;
       }
-      event.preventDefault();
-      event.stopPropagation();
+      stop(event);
       suppressClickUntil = Date.now() + 350;
       return;
     }
@@ -205,11 +209,10 @@
     swipe = null;
     delete box.dataset.flPanning;
 
-    if (panned || (isActualMode(box) && Math.max(ax, ay) >= 6)) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
+    if (isActualMode(box)) {
+      stop(event);
       suppressClickUntil = Date.now() + 350;
+      if (!panned && ax < 12 && ay < 12 && dt < 650 && isImgTarget(target)) toggleZoom(box);
       return;
     }
 
@@ -220,10 +223,8 @@
       switchItem(ax >= ay ? dx < 0 : dy < 0);
       return;
     }
-    if (ax < 12 && ay < 12 && dt < 650 && target?.matches?.('#xiv-lightbox img')) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
+    if (ax < 12 && ay < 12 && dt < 650 && isImgTarget(target)) {
+      stop(event);
       toggleZoom(box);
     }
   }, true);
@@ -241,12 +242,43 @@
     }
   }, true);
 
-  document.addEventListener('click', (event) => {
-    if (Date.now() < suppressClickUntil && event.target?.closest?.('#xiv-lightbox')) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
+  document.addEventListener('touchstart', (event) => {
+    const box = lightbox();
+    if (!box || event.touches.length !== 1 || isControl(event.target) || !wantsPan(box, event.target)) return;
+    const t = event.touches[0];
+    touchPan = { x:t.clientX, y:t.clientY, left:box.scrollLeft, top:box.scrollTop, target:event.target, moved:false, time:Date.now() };
+    box.dataset.flPanning = 'true';
+    stop(event);
+  }, true);
+
+  document.addEventListener('touchmove', (event) => {
+    const box = lightbox();
+    if (!box || !isActualMode(box)) return;
+    if (touchPan && event.touches.length === 1) {
+      const t = event.touches[0];
+      const dx = t.clientX - touchPan.x;
+      const dy = t.clientY - touchPan.y;
+      touchPan.moved = Math.hypot(dx, dy) > 1;
+      box.scrollLeft = touchPan.left - dx;
+      box.scrollTop = touchPan.top - dy;
+      box.dataset.flPanning = 'true';
     }
+    stop(event);
+  }, true);
+
+  document.addEventListener('touchend', (event) => {
+    const box = lightbox();
+    if (!box || !isActualMode(box) || !touchPan) return;
+    const pan = touchPan;
+    touchPan = null;
+    delete box.dataset.flPanning;
+    stop(event);
+    suppressClickUntil = Date.now() + 350;
+    if (!pan.moved && Date.now() - pan.time < 650 && isImgTarget(pan.target)) toggleZoom(box);
+  }, true);
+
+  document.addEventListener('click', (event) => {
+    if (Date.now() < suppressClickUntil && event.target?.closest?.('#xiv-lightbox')) stop(event);
   }, true);
 
   installStyle();
