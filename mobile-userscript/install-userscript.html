@@ -21,14 +21,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 52px;
+    min-height: 54px;
     padding: 0 18px;
     border-radius: 14px;
     background: #0969da;
     color: white;
-    font-weight: 800;
+    font-weight: 850;
     text-decoration: none;
     margin: 0 0 12px;
+  }
+  a.main {
+    background: linear-gradient(135deg, #0969da, #6f42c1);
+    font-size: 17px;
   }
   a.secondary { background: #24292f; }
   a.zhihu { background: #175199; }
@@ -41,19 +45,33 @@
     border: 1px solid #d0d7de;
   }
   .muted { color: #57606a; }
+  details {
+    margin-top: 20px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #d0d7de;
+  }
+  summary { font-weight: 800; cursor: pointer; }
+  code { word-break: break-all; }
 </style>
 <main>
   <h1>安装瀑光 FlowLens 油猴脚本</h1>
-  <p class="note"><strong>第一次安装：</strong>按下面顺序把 4 个按钮都点一遍。每点一个，Tampermonkey 页面里点“安装”或“更新”，然后返回本页继续点下一个。</p>
+  <p class="note"><strong>推荐方式：</strong>只点下面这一个按钮即可。它已经整合了主脚本、优化补丁、全局设置同步和知乎适配。</p>
 
-  <h2>必装</h2>
-  <a href="./flowlens.user.js">① 安装/更新主脚本</a>
-  <a class="secondary" href="./flowlens-optimizer.user.js">② 安装/更新优化补丁</a>
-  <a class="settings" href="./flowlens-global-settings.user.js">③ 安装/更新全局设置同步</a>
+  <a class="main" href="./flowlens-mobile-all.user.js">一键安装/更新手机整合版</a>
 
-  <h2>建议安装</h2>
-  <a class="zhihu" href="./flowlens-zhihu.user.js">④ 安装/更新知乎适配</a>
+  <p class="muted">点完后，Tampermonkey 正常会弹出安装页，点“安装”或“更新”即可。以后更新也只点这个按钮。</p>
 
-  <p class="muted">以后更新时，也按这个顺序点一遍即可。知乎适配主要解决知乎首图、懒加载答案图片漏抓问题。</p>
+  <details>
+    <summary>安装不弹出时点这里</summary>
+    <p>如果点按钮后只出现 Tampermonkey 的中转页，没有出现安装按钮，请复制下面这个地址，到 Tampermonkey 的“工具/Utilities”里用“从 URL 安装”安装：</p>
+    <p><code>https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js</code></p>
+    <p>备用分开安装入口：</p>
+    <a href="./flowlens.user.js">① 主脚本</a>
+    <a class="secondary" href="./flowlens-optimizer.user.js">② 优化补丁</a>
+    <a class="settings" href="./flowlens-global-settings.user.js">③ 全局设置同步</a>
+    <a class="zhihu" href="./flowlens-zhihu.user.js">④ 知乎适配</a>
+  </details>
 </main>
 </html>
