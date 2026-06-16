@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机布局与手势修复
 // @namespace    local.flowlens.layout
-// @version      1.2.16
-// @description  手机端安全版：1:1原图模式禁用滑动切图，支持原图拖动、捏合缩放、视频区域滑动和顶部边缘修复。
+// @version      1.2.17
+// @description  手机端安全版：1:1原图模式手指移动立即拖动图片，禁用滑动切图，保留捏合缩放和顶部边缘修复。
 // @match        *://*/*
 // @run-at       document-start
 // @noframes
@@ -27,7 +27,7 @@
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] { touch-action:none!important; overscroll-behavior:contain!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] img, #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"] video { transform:scale(var(--fl-mobile-scale,1)); transform-origin:center center; transition:transform .12s ease; touch-action:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-pinching="true"] img, #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-pinching="true"] video { transition:none!important; }
-    #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="actual"] img { max-width:none!important; max-height:none!important; width:auto; height:auto; cursor:grab!important; }
+    #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="actual"] img { max-width:none!important; max-height:none!important; width:auto; height:auto; cursor:grab!important; -webkit-user-select:none!important; user-select:none!important; -webkit-user-drag:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-panning="true"] img { cursor:grabbing!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="fit"] img { max-width:100vw!important; max-height:100vh!important; width:auto!important; height:auto!important; }
     #xiv-fl-edge-cover { position:fixed!important; left:0!important; right:0!important; top:-6px!important; height:12px!important; background:#050505!important; z-index:2147483647!important; pointer-events:none!important; display:none; }
@@ -128,6 +128,11 @@
     points.set(event.pointerId, { x:event.clientX, y:event.clientY, target:event.target, t:Date.now() });
     if (points.size === 1) {
       swipe = { id:event.pointerId, x:event.clientX, y:event.clientY, target:event.target, t:Date.now(), left:box.scrollLeft, top:box.scrollTop, panned:false };
+      if (wantsPan(box, event.target)) {
+        box.dataset.flPanning = 'true';
+        event.preventDefault();
+        event.stopPropagation();
+      }
     }
     if (points.size === 2) {
       const pair = Array.from(points.values()).slice(0, 2);
@@ -153,7 +158,7 @@
     if (swipe && swipe.id === event.pointerId) {
       const dx = event.clientX - swipe.x;
       const dy = event.clientY - swipe.y;
-      if (wantsPan(box, swipe.target) && Math.hypot(dx, dy) > 3) {
+      if (wantsPan(box, swipe.target) && Math.hypot(dx, dy) > 0.5) {
         swipe.panned = true;
         box.dataset.flPanning = 'true';
         box.scrollLeft = swipe.left - dx;
@@ -162,7 +167,7 @@
         event.stopPropagation();
         return;
       }
-      if (isActualMode(box) && Math.hypot(dx, dy) > 8) {
+      if (isActualMode(box) && Math.hypot(dx, dy) > 4) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -200,7 +205,7 @@
     swipe = null;
     delete box.dataset.flPanning;
 
-    if (panned || (isActualMode(box) && Math.max(ax, ay) >= 12)) {
+    if (panned || (isActualMode(box) && Math.max(ax, ay) >= 6)) {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation?.();
