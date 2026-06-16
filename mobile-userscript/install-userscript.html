@@ -11,22 +11,24 @@
     color: #1f2328;
   }
   main {
-    max-width: 720px;
+    max-width: 760px;
     margin: 0 auto;
-    padding: 36px 18px;
+    padding: 32px 18px;
   }
+  h1 { margin: 0 0 14px; }
+  h2 { margin: 26px 0 12px; font-size: 18px; }
   a {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 48px;
+    min-height: 52px;
     padding: 0 18px;
-    border-radius: 12px;
+    border-radius: 14px;
     background: #0969da;
     color: white;
-    font-weight: 700;
+    font-weight: 800;
     text-decoration: none;
-    margin: 0 10px 10px 0;
+    margin: 0 0 12px;
   }
   a.secondary { background: #24292f; }
   a.zhihu { background: #175199; }
@@ -38,16 +40,20 @@
     background: #fff;
     border: 1px solid #d0d7de;
   }
+  .muted { color: #57606a; }
 </style>
 <main>
   <h1>安装瀑光 FlowLens 油猴脚本</h1>
-  <p>手机 Edge / Tampermonkey 需要先安装主脚本，再安装优化补丁。要让隐藏入口图标、主题、列数、滚动速度等设置在所有网站同步，请安装全局设置同步脚本。知乎页面如有首图或懒加载大图漏抓，再安装知乎适配。</p>
-  <p>
-    <a href="./flowlens.user.js">安装/更新主脚本</a>
-    <a class="secondary" href="./flowlens-optimizer.user.js">安装/更新优化补丁</a>
-    <a class="settings" href="./flowlens-global-settings.user.js">安装/更新全局设置同步</a>
-    <a class="zhihu" href="./flowlens-zhihu.user.js">安装/更新知乎适配</a>
-  </p>
-  <p class="note">如果已经安装过主脚本，这次建议更新“优化补丁”，并额外安装“全局设置同步”。之后在任意一个网站改设置，其他网站会跟着使用同一套设置。</p>
+  <p class="note"><strong>第一次安装：</strong>按下面顺序把 4 个按钮都点一遍。每点一个，Tampermonkey 页面里点“安装”或“更新”，然后返回本页继续点下一个。</p>
+
+  <h2>必装</h2>
+  <a href="./flowlens.user.js">① 安装/更新主脚本</a>
+  <a class="secondary" href="./flowlens-optimizer.user.js">② 安装/更新优化补丁</a>
+  <a class="settings" href="./flowlens-global-settings.user.js">③ 安装/更新全局设置同步</a>
+
+  <h2>建议安装</h2>
+  <a class="zhihu" href="./flowlens-zhihu.user.js">④ 安装/更新知乎适配</a>
+
+  <p class="muted">以后更新时，也按这个顺序点一遍即可。知乎适配主要解决知乎首图、懒加载答案图片漏抓问题。</p>
 </main>
 </html>
