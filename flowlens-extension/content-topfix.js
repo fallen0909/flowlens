@@ -4,7 +4,7 @@
 
   const css = `
     #xiv-root[data-active="true"] #xiv-stage {
-      padding-top: 0 !important;
+      padding-top: 10px !important;
     }
     #xiv-root[data-active="true"] #xiv-grid {
       margin-top: 0 !important;
@@ -26,7 +26,7 @@
     }
     @media (max-width: 820px) {
       #xiv-root[data-active="true"] #xiv-stage {
-        padding-top: 0 !important;
+        padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
       }
     }
   `;
