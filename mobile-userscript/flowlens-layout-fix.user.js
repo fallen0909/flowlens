@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机布局与手势修复
 // @namespace    local.flowlens.layout
-// @version      1.2.21
-// @description  手机端安全版：移除捏合缩放，恢复 1:1 原图单指拖动，1:1 模式禁用滑动切图。
+// @version      1.2.22
+// @description  手机端安全版：移除捏合缩放，恢复 1:1 原图单指拖动，修复 1:1 模式按钮失效。
 // @match        *://*/*
 // @run-at       document-start
 // @noframes
@@ -30,6 +30,15 @@
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="actual"] img { max-width:none!important; max-height:none!important; width:auto; height:auto; cursor:grab!important; -webkit-user-select:none!important; user-select:none!important; -webkit-user-drag:none!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-fl-panning="true"] img { cursor:grabbing!important; }
     #xiv-root[data-active="true"] #xiv-lightbox[data-active="true"][data-zoom="fit"] img { max-width:100vw!important; max-height:100vh!important; width:auto!important; height:auto!important; }
+    #xiv-root[data-active="true"] #xiv-lightbox .xiv-lightbox-fav,
+    #xiv-root[data-active="true"] #xiv-lightbox .xiv-lightbox-close,
+    #xiv-root[data-active="true"] #xiv-lightbox .xiv-lightbox-arrow,
+    #xiv-root[data-active="true"] #xiv-lightbox button {
+      position: fixed !important;
+      z-index: 2147483647 !important;
+      pointer-events: auto !important;
+      touch-action: manipulation !important;
+    }
     #xiv-fl-edge-cover { position:fixed!important; left:0!important; right:0!important; top:-6px!important; height:12px!important; background:#050505!important; z-index:2147483647!important; pointer-events:none!important; display:none; }
     html.xiv-active #xiv-fl-edge-cover { display:block!important; }
   `;
@@ -69,7 +78,7 @@
   }
 
   function isControl(target) {
-    return target?.closest?.('.xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow');
+    return target?.closest?.('.xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, button, a, [role="button"]');
   }
 
   function isImgTarget(target) {
@@ -161,7 +170,7 @@
 
   document.addEventListener('touchmove', (event) => {
     const box = lightbox();
-    if (!box || !isActualMode(box)) return;
+    if (!box || !isActualMode(box) || isControl(event.target)) return;
     if (pan && event.touches.length === 1) {
       const t = event.touches[0];
       movePan(box, t.clientX, t.clientY);
@@ -171,7 +180,7 @@
 
   document.addEventListener('touchend', (event) => {
     const box = lightbox();
-    if (!box || !isActualMode(box)) return;
+    if (!box || !isActualMode(box) || isControl(event.target)) return;
     const done = endPan(box);
     stop(event);
     suppressClickUntil = Date.now() + 350;
@@ -193,7 +202,7 @@
   document.addEventListener('pointermove', (event) => {
     if (Date.now() - lastTouchTime < 700) return;
     const box = lightbox();
-    if (!box || !box.contains(event.target)) return;
+    if (!box || !box.contains(event.target) || isControl(event.target)) return;
     if (isActualMode(box)) {
       if (pan) movePan(box, event.clientX, event.clientY);
       stop(event);
@@ -214,7 +223,7 @@
   document.addEventListener('pointerup', (event) => {
     if (Date.now() - lastTouchTime < 700) return;
     const box = lightbox();
-    if (!box || !pan) return;
+    if (!box || isControl(event.target) || !pan) return;
     const done = endPan(box) || pan;
     const dx = event.clientX - done.x;
     const dy = event.clientY - done.y;
@@ -249,6 +258,7 @@
   }, true);
 
   document.addEventListener('click', (event) => {
+    if (isControl(event.target)) return;
     if (Date.now() < suppressClickUntil && event.target?.closest?.('#xiv-lightbox')) stop(event);
   }, true);
 
