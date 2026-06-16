@@ -1,0 +1,30 @@
+name: Build FlowLens ZIP
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build project zip
+        run: |
+          rm -rf flowlens-package flowlens-project.zip
+          mkdir flowlens-package
+          rsync -a \
+            --exclude='.git' \
+            --exclude='flowlens-package' \
+            --exclude='flowlens-project.zip' \
+            ./ flowlens-package/
+          zip -r flowlens-project.zip flowlens-package
+
+      - name: Upload project zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowlens-project-zip
+          path: flowlens-project.zip
