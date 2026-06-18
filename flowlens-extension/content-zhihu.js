@@ -43,8 +43,9 @@
   }
 
   function zhimgKey(url) {
-    const match = String(url || "").match(/\/v2-([A-Za-z0-9]+)[_-]/i);
-    return match ? match[1] : url.replace(/\?.*$/, "");
+    const text = String(url || "");
+    const match = text.match(/\/(?:\d+\/)?(v2-[A-Za-z0-9]+)(?:[_-][^/.]+)?\.(?:webp|jpe?g|png)/i);
+    return match ? match[1].toLowerCase() : text.replace(/[?#].*$/, "");
   }
 
   function qualityScore(url) {
@@ -104,7 +105,8 @@
       "overflow:visible",
       "opacity:.01",
       "pointer-events:none",
-      "z-index:0"
+      "z-index:0",
+      "contain:content"
     ].join(";");
     document.body?.insertBefore(container, document.body.firstChild);
     return container;
@@ -115,19 +117,26 @@
     const urls = collectZhimgUrls();
     if (!urls.length) return 0;
     const container = ensureContainer();
-    const existing = new Set([...container.querySelectorAll("img[data-xiv-zhimg]")].map((img) => img.src));
+    const existingByKey = new Map([...container.querySelectorAll("img[data-xiv-zhimg]")].map((img) => [zhimgKey(img.src), img]));
     let added = 0;
     urls.forEach((url, index) => {
-      if (existing.has(url)) return;
+      const key = zhimgKey(url);
+      const existing = existingByKey.get(key);
+      if (existing) {
+        if (qualityScore(url) > qualityScore(existing.src)) existing.src = url;
+        return;
+      }
       const img = document.createElement("img");
       img.dataset.xivZhimg = "true";
+      img.dataset.xivZhimgKey = key;
       img.alt = `知乎图片 ${index + 1}`;
-      img.loading = "eager";
+      img.loading = index < 24 ? "eager" : "lazy";
       img.decoding = "async";
       img.referrerPolicy = "no-referrer";
       img.src = url;
-      img.style.cssText = "display:block;width:360px;height:240px;object-fit:cover;margin:0 0 2px 0;";
+      img.style.cssText = "display:block;width:360px;height:240px;object-fit:cover;margin:0 0 2px 0;content-visibility:auto;contain-intrinsic-size:360px 240px;";
       container.appendChild(img);
+      existingByKey.set(key, img);
       added += 1;
     });
     return added;
@@ -138,7 +147,7 @@
     scheduled = window.setTimeout(() => {
       syncPrecollector();
       maybeStartAnswerAutoload();
-    }, 120);
+    }, 180);
   }
 
   function viewerActive() {
@@ -182,10 +191,18 @@
     return document.querySelectorAll(`#${CONTAINER_ID} img[data-xiv-zhimg]`).length;
   }
 
+  function safeOriginalOverflow(value) {
+    return value === "hidden" && viewerActive() ? "" : value;
+  }
+
   function restoreOriginalPagePosition() {
     try {
-      document.documentElement.style.overflow = originalHtmlOverflow;
-      document.body.style.overflow = originalBodyOverflow;
+      document.documentElement.classList.remove("xiv-active");
+      document.documentElement.style.overflow = safeOriginalOverflow(originalHtmlOverflow);
+      if (document.body) {
+        document.body.style.overflow = safeOriginalOverflow(originalBodyOverflow);
+        if (document.body.style.pointerEvents === "none") document.body.style.pointerEvents = "";
+      }
       window.scrollTo({ top: originalScrollY, behavior: "auto" });
     } catch {
       // Keep current position if restoring is blocked.
@@ -252,8 +269,8 @@
     loaderRunning = true;
     loaderStartedAt = Date.now();
     originalScrollY = window.scrollY || document.documentElement.scrollTop || 0;
-    originalHtmlOverflow = document.documentElement.style.overflow || "";
-    originalBodyOverflow = document.body?.style?.overflow || "";
+    originalHtmlOverflow = safeOriginalOverflow(document.documentElement.style.overflow || "");
+    originalBodyOverflow = safeOriginalOverflow(document.body?.style?.overflow || "");
     lastHeight = pageHeight();
     lastCount = currentImageCount();
     idleTicks = 0;
@@ -266,7 +283,10 @@
   window.addEventListener("scroll", scheduleSync, { passive: true });
   window.addEventListener("keydown", () => setTimeout(maybeStartAnswerAutoload, 200), true);
   window.addEventListener("click", () => setTimeout(maybeStartAnswerAutoload, 200), true);
-  window.setInterval(maybeStartAnswerAutoload, 1200);
+  window.setInterval(() => {
+    if (loaderRunning && !viewerActive()) stopAnswerAutoload("就绪");
+    else maybeStartAnswerAutoload();
+  }, 1200);
   new MutationObserver(scheduleSync).observe(document.documentElement, {
     childList: true,
     subtree: true,
