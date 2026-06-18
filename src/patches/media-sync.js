@@ -2,14 +2,16 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.10";
+  const VERSION = "1.4.11";
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
   const FILTER_ORDER = ["all", "image", "video"];
-  const FILTER_SHORT = { all: "全", image: "图", video: "视" };
   const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
+  const FILTER_KEY = "flowlens-media-filter-v2";
   const SLIDESHOW_INTERVAL = 2800;
   const CONTROL_REFRESH_MS = 900;
 
+  let currentMode = localStorage.getItem(FILTER_KEY) || "all";
+  if (!FILTER_ORDER.includes(currentMode)) currentMode = "all";
   let rootObserver = null;
   let rootObserverTarget = null;
   let lightboxObserver = null;
@@ -22,48 +24,43 @@
   let slideshowActive = false;
   let lastLightboxState = "";
 
-  function isVideoUrl(url) {
-    return VIDEO_RE.test(String(url || ""));
-  }
-
-  function root() {
-    return document.getElementById("xiv-root");
-  }
-
-  function lightbox() {
-    return root()?.querySelector("#xiv-lightbox");
-  }
-
-  function filterSelect() {
-    return root()?.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]');
-  }
+  function root() { return document.getElementById("xiv-root"); }
+  function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
+  function filterSelect() { return root()?.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]'); }
+  function isVideoUrl(url) { return VIDEO_RE.test(String(url || "")); }
 
   function ensureStyle() {
     if (document.getElementById("xiv-media-sync-style")) return;
     const style = document.createElement("style");
     style.id = "xiv-media-sync-style";
     style.textContent = `
-      #xiv-root[data-fl-media-buttons="true"] #xiv-topbar .xiv-select[data-xiv="filter"] { display: none !important; }
-      #xiv-root .xiv-media-switch { pointer-events: auto; display: inline-flex; align-items: center; gap: 5px; min-height: 38px; padding: 3px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16); background: rgba(18,18,20,.74); backdrop-filter: blur(12px); }
-      #xiv-root[data-theme="light"] .xiv-media-switch { background: rgba(255,255,255,.78); border-color: rgba(0,0,0,.12); }
-      #xiv-root .xiv-media-switch button { height: 30px; min-width: 48px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: rgba(255,255,255,.76); font: 850 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; white-space: nowrap; }
-      #xiv-root[data-theme="light"] .xiv-media-switch button { color: rgba(20,20,20,.72); }
-      #xiv-root .xiv-media-switch button[data-active="true"] { background: rgba(255,255,255,.94); color: #111; box-shadow: 0 6px 18px rgba(0,0,0,.22); }
-      #xiv-root[data-theme="light"] .xiv-media-switch button[data-active="true"] { background: #111; color: #fff; }
-      #xiv-root .fl-top-filter-btn { font: 950 17px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; letter-spacing: 0 !important; }
+      #xiv-root .xiv-media-switch { display: none !important; }
+      #xiv-root[data-fl-filter="image"] .xiv-tile[data-fl-media="video"],
+      #xiv-root[data-fl-filter="video"] .xiv-tile[data-fl-media="image"] { display: none !important; }
+      #xiv-root .fl-top-filter-btn { font-size: 0 !important; letter-spacing: 0 !important; }
+      #xiv-root .fl-top-filter-btn svg { width: 23px; height: 23px; display: block; pointer-events: none; }
       #xiv-root .fl-version-row { display: flex; align-items: center; justify-content: space-between; min-height: 34px; padding: 6px 0 12px; margin: -2px 0 6px; border-bottom: 1px solid rgba(0,0,0,.08); color: rgba(0,0,0,.58); font: 750 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       #xiv-root[data-theme="dark"] .fl-version-row, #xiv-root:not([data-theme="light"]) .fl-version-row { border-bottom-color: rgba(255,255,255,.12); color: rgba(255,255,255,.66); }
       #xiv-root .fl-version-row strong { color: inherit; font-weight: 900; }
-      #xiv-lightbox .xiv-lightbox-slideshow { position: fixed; right: 118px; top: 18px; z-index: 6; width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72)); color: #fff; display: grid; place-items: center; pointer-events: auto; cursor: pointer; padding: 0; box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18); backdrop-filter: blur(12px); font: 950 18px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      #xiv-lightbox .xiv-lightbox-slideshow { position: fixed; right: 118px; top: 18px; z-index: 6; width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72)); color: #fff; display: grid; place-items: center; pointer-events: auto; cursor: pointer; padding: 0; box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18); backdrop-filter: blur(12px); }
       #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] { color: #111; background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76)); border-color: rgba(255,255,255,.7); }
       #xiv-lightbox .xiv-lightbox-slideshow svg { width: 20px; height: 20px; display: block; }
-      @media (max-width: 820px) {
-        #xiv-root .xiv-media-switch { gap: 3px; min-height: 34px; padding: 2px; }
-        #xiv-root .xiv-media-switch button { height: 30px; min-width: 40px; padding: 0 8px; font-size: 12px; }
-        #xiv-lightbox .xiv-lightbox-slideshow { right: 112px; top: 14px; width: 40px; height: 40px; }
-      }
+      @media (max-width: 820px) { #xiv-lightbox .xiv-lightbox-slideshow { right: 112px; top: 14px; width: 40px; height: 40px; } }
     `;
     document.documentElement.appendChild(style);
+  }
+
+  function mediaTypeForTile(tile) {
+    const url = tile?.dataset?.url || "";
+    return isVideoUrl(url) || !!tile?.querySelector?.("video") ? "video" : "image";
+  }
+
+  function markTiles() {
+    const app = root();
+    if (!app) return;
+    app.querySelectorAll(".xiv-tile").forEach((tile) => {
+      tile.dataset.flMedia = mediaTypeForTile(tile);
+    });
   }
 
   function mediaCounts(force = false) {
@@ -71,13 +68,12 @@
     if (!force && now - countCacheAt < 1000) return countCache;
     const app = root();
     if (!app) return countCache;
-    const tiles = app.querySelectorAll(".xiv-tile");
     let image = 0;
     let video = 0;
-    tiles.forEach((tile) => {
-      const url = tile.dataset.url || "";
-      const hasVideo = isVideoUrl(url) || !!tile.querySelector("video");
-      if (hasVideo) video += 1;
+    app.querySelectorAll(".xiv-tile").forEach((tile) => {
+      const type = mediaTypeForTile(tile);
+      tile.dataset.flMedia = type;
+      if (type === "video") video += 1;
       else image += 1;
     });
     countCache = { all: image + video, image, video };
@@ -85,51 +81,35 @@
     return countCache;
   }
 
-  function buttonLabel(value, count) {
-    if (value === "image") return `图片 ${count}`;
-    if (value === "video") return `视频 ${count}`;
-    return `全部 ${count}`;
-  }
-
-  function currentFilter() {
-    return filterSelect()?.value || "all";
-  }
-
-  function setFilter(value) {
+  function setFilter(mode) {
+    if (!FILTER_ORDER.includes(mode)) mode = "all";
+    currentMode = mode;
+    try { localStorage.setItem(FILTER_KEY, mode); } catch {}
+    const app = root();
+    if (app) app.dataset.flFilter = mode;
     const select = filterSelect();
-    if (!select) return;
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    if (select) {
+      select.value = mode;
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    markTiles();
     refreshControls(true);
   }
 
   function cycleFilter() {
-    const now = currentFilter();
-    const next = FILTER_ORDER[(FILTER_ORDER.indexOf(now) + 1 + FILTER_ORDER.length) % FILTER_ORDER.length];
+    const next = FILTER_ORDER[(FILTER_ORDER.indexOf(currentMode) + 1 + FILTER_ORDER.length) % FILTER_ORDER.length];
     setFilter(next);
   }
 
-  function ensureMediaSwitch() {
-    const app = root();
-    const select = filterSelect();
-    if (!app || !select) return;
-    if (!app.querySelector(".xiv-media-switch")) {
-      const group = document.createElement("div");
-      group.className = "xiv-media-switch";
-      group.setAttribute("role", "group");
-      group.setAttribute("aria-label", "媒体类型切换");
-      group.innerHTML = `<button type="button" data-fl-filter="all">全部</button><button type="button" data-fl-filter="image">图片</button><button type="button" data-fl-filter="video">视频</button>`;
-      group.addEventListener("click", (event) => {
-        const button = event.target?.closest?.("button[data-fl-filter]");
-        if (!button) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setFilter(button.dataset.flFilter || "all");
-      });
-      select.parentElement?.insertBefore(group, select);
-      select.addEventListener("change", () => refreshControls(true));
+  function filterIcon(mode) {
+    if (mode === "image") {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="m4 15 4.2-4.2a2 2 0 0 1 2.8 0L16 16"/><path d="m14 14 1.2-1.2a2 2 0 0 1 2.8 0L20 15"/><circle cx="15.5" cy="9.5" r="1.2"/></svg>';
     }
-    app.dataset.flMediaButtons = "true";
+    if (mode === "video") {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="12" height="12" rx="2"/><path d="m16 10 4-2.5v9L16 14"/></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.4"/><rect x="14" y="4" width="6" height="6" rx="1.4"/><rect x="4" y="14" width="6" height="6" rx="1.4"/><rect x="14" y="14" width="6" height="6" rx="1.4"/></svg>';
   }
 
   function ensureTopFilterButton() {
@@ -151,10 +131,10 @@
   function updateTopFilterButton() {
     const button = root()?.querySelector('[data-xiv="top"]');
     if (!button) return;
-    const value = currentFilter();
-    button.title = `切换图/视频：当前${FILTER_TEXT[value] || "全部"}`;
+    const counts = mediaCounts(false);
+    button.title = `切换图/视频：当前${FILTER_TEXT[currentMode]}｜全部${counts.all} 图片${counts.image} 视频${counts.video}`;
     button.setAttribute("aria-label", button.title);
-    button.textContent = FILTER_SHORT[value] || "全";
+    button.innerHTML = filterIcon(currentMode);
   }
 
   function ensureVersionRow() {
@@ -173,17 +153,9 @@
 
   function refreshControls(forceCount = false) {
     const app = root();
-    const select = filterSelect();
-    const group = app?.querySelector(".xiv-media-switch");
-    if (!app || !select || !group) return;
-    const value = select.value || "all";
-    const counts = mediaCounts(forceCount);
-    group.querySelectorAll("button[data-fl-filter]").forEach((button) => {
-      const mode = button.dataset.flFilter || "all";
-      button.dataset.active = mode === value ? "true" : "false";
-      button.textContent = buttonLabel(mode, counts[mode] || 0);
-      button.title = mode === "all" ? "显示全部媒体" : mode === "image" ? "只显示图片" : "只显示视频";
-    });
+    if (!app) return;
+    app.dataset.flFilter = currentMode;
+    mediaCounts(forceCount);
     updateTopFilterButton();
   }
 
@@ -201,11 +173,7 @@
         const p = video.play?.();
         if (p?.catch) {
           p.catch(() => {
-            try {
-              video.muted = true;
-              video.setAttribute("muted", "");
-              video.play?.().catch?.(() => {});
-            } catch {}
+            try { video.muted = true; video.setAttribute("muted", ""); video.play?.().catch?.(() => {}); } catch {}
           });
         }
       };
@@ -220,11 +188,7 @@
     iframe.dataset.flAutoplayTouched = "true";
     try {
       iframe.allow = `${iframe.allow || ""}; autoplay; fullscreen; picture-in-picture`;
-      const run = () => {
-        try {
-          iframe.contentDocument?.querySelectorAll("video").forEach(playVideoElement);
-        } catch {}
-      };
+      const run = () => { try { iframe.contentDocument?.querySelectorAll("video").forEach(playVideoElement); } catch {} };
       iframe.addEventListener("load", run, { once: true });
       setTimeout(run, 180);
     } catch {}
@@ -265,12 +229,21 @@
     button.innerHTML = slideshowIcon();
   }
 
-  function dispatchNextImage() {
-    if (!isLightboxActive()) {
+  function clickNextInLightbox() {
+    const box = lightbox();
+    if (!box || box.dataset.active !== "true") {
       stopSlideshow(false);
       return;
     }
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true }));
+    const rightArrow = box.querySelector('.xiv-lightbox-arrow[data-side="right"], .xiv-lightbox-next, [aria-label*="下一"], [title*="下一"]');
+    if (rightArrow) {
+      rightArrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      setTimeout(checkLightbox, 180);
+      return;
+    }
+    const evt = new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true });
+    document.dispatchEvent(evt);
+    window.dispatchEvent(evt);
     setTimeout(checkLightbox, 180);
   }
 
@@ -278,7 +251,7 @@
     if (slideshowActive) return;
     slideshowActive = true;
     clearInterval(slideshowTimer);
-    slideshowTimer = window.setInterval(dispatchNextImage, SLIDESHOW_INTERVAL);
+    slideshowTimer = window.setInterval(clickNextInLightbox, SLIDESHOW_INTERVAL);
     ensureSlideshowButton();
   }
 
@@ -302,13 +275,11 @@
       lastLightboxState = "";
       return;
     }
-    if (stateKey === lastLightboxState) {
-      ensureSlideshowButton();
-      return;
+    if (stateKey !== lastLightboxState) {
+      lastLightboxState = stateKey;
+      box.querySelectorAll("video").forEach(playVideoElement);
+      box.querySelectorAll("iframe").forEach(playIframeVideo);
     }
-    lastLightboxState = stateKey;
-    box.querySelectorAll("video").forEach(playVideoElement);
-    box.querySelectorAll("iframe").forEach(playIframeVideo);
     ensureSlideshowButton();
   }
 
@@ -332,7 +303,10 @@
 
   function refreshAll(forceCount = false) {
     ensureStyle();
-    ensureMediaSwitch();
+    document.querySelectorAll(".xiv-media-switch").forEach((node) => node.remove());
+    const app = root();
+    if (app) app.dataset.flFilter = currentMode;
+    markTiles();
     ensureTopFilterButton();
     ensureVersionRow();
     refreshControls(forceCount);
@@ -348,9 +322,7 @@
 
   function start() {
     refreshAll(true);
-    if (!pollTimer) {
-      pollTimer = window.setInterval(() => refreshAll(false), CONTROL_REFRESH_MS);
-    }
+    if (!pollTimer) pollTimer = window.setInterval(() => refreshAll(false), CONTROL_REFRESH_MS);
   }
 
   document.addEventListener("click", () => setTimeout(checkLightbox, 140), true);
