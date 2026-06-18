@@ -24,7 +24,7 @@
 
 ## 🧭 版本入口
 
-当前统一版本：`v1.4.7`。为了让电脑端和手机端每次升级都能同步享受功能，推荐电脑端、手机端都使用 Tampermonkey 油猴版，并分别安装对应入口；扩展版作为桌面备用方案保留。
+当前统一版本：`v1.4.7`。正式安装入口只保留两个：电脑端 `flowlens-desktop.user.js`，手机端 `flowlens-mobile-all.user.js`。两端共用同一批功能补丁，区别只在入口和移动端布局适配；旧的 `flowlens-mobile-v*`、`latest`、`stable` 安装文件已经清理，避免误装旧版本。
 
 ### 💻 电脑端：Tampermonkey 油猴版（推荐）
 
