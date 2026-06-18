@@ -2,7 +2,7 @@
   if (window.__flowLensDiagnosticsPatch) return;
   window.__flowLensDiagnosticsPatch = true;
 
-  const VERSION = "1.4.15";
+  const VERSION = "1.4.16";
   const MAX_EVENTS = 80;
   const failedMedia = [];
   const runtimeEvents = [];
@@ -64,7 +64,7 @@
         index: tile.dataset.index || "",
         kind: mediaKind(tile),
         url: tile.dataset.url || "",
-        visible: getComputedStyle(tile).display !== "none"
+        visible: getComputedStyle(tile).display !== "none" && !tile.hidden
       }))
     };
   }
@@ -78,7 +78,7 @@
   function buildLog() {
     const app = root();
     const box = app?.querySelector("#xiv-lightbox");
-    const snapshot = {
+    return JSON.stringify({
       version: VERSION,
       generatedAt: new Date().toISOString(),
       page: {
@@ -93,8 +93,6 @@
         active: app?.dataset.active || "",
         theme: app?.dataset.theme || "",
         filter: filterSelect()?.value || "",
-        counter: app?.querySelector('[data-xiv="counter"], .xiv-counter')?.textContent?.trim() || "",
-        status: app?.querySelector('[data-xiv="status"], .xiv-status')?.textContent?.trim() || "",
         lightboxActive: box?.dataset.active || "",
         lightboxZoom: box?.dataset.zoom || ""
       },
@@ -102,8 +100,7 @@
       storage: storageSnapshot(),
       failedMedia,
       runtimeEvents
-    };
-    return JSON.stringify(snapshot, null, 2);
+    }, null, 2);
   }
   async function copyLog() {
     const text = buildLog();
@@ -120,8 +117,7 @@
     }
   }
   function toast(message) {
-    const old = document.getElementById("fl-diagnostics-toast");
-    old?.remove();
+    document.getElementById("fl-diagnostics-toast")?.remove();
     const node = document.createElement("div");
     node.id = "fl-diagnostics-toast";
     node.textContent = message;
@@ -134,25 +130,40 @@
     const style = document.createElement("style");
     style.id = "fl-diagnostics-style";
     style.textContent = `
+      #xiv-root .fl-diagnostics-row {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 12px !important;
+      }
+      #xiv-root .fl-diagnostics-row > span {
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+      }
       #xiv-root .fl-diagnostics-row button {
-        min-width: 132px;
-        height: 44px;
-        border-radius: 999px;
-        border: 1px solid rgba(0,0,0,.12);
-        background: rgba(255,255,255,.92);
-        color: #111;
-        font: 900 14px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        cursor: pointer;
+        width: auto !important;
+        min-width: 112px !important;
+        max-width: 132px !important;
+        height: 38px !important;
+        padding: 0 16px !important;
+        border-radius: 999px !important;
+        border: 1px solid rgba(0,0,0,.12) !important;
+        background: rgba(255,255,255,.92) !important;
+        color: #111 !important;
+        font: 900 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        white-space: nowrap !important;
+        writing-mode: horizontal-tb !important;
+        cursor: pointer !important;
       }
       #xiv-root[data-theme="dark"] .fl-diagnostics-row button,
       #xiv-root:not([data-theme="light"]) .fl-diagnostics-row button {
-        border-color: rgba(255,255,255,.16);
-        background: rgba(255,255,255,.12);
-        color: #fff;
+        border-color: rgba(255,255,255,.16) !important;
+        background: rgba(255,255,255,.12) !important;
+        color: #fff !important;
       }
       #xiv-root .fl-diagnostics-row small { display:block; margin-top:6px; opacity:.58; font-size:12px; line-height:1.35; }
       @media (max-width: 820px) {
-        #xiv-root .fl-diagnostics-row button { min-width: 118px; height: 42px; font-size: 13px; }
+        #xiv-root .fl-diagnostics-row button { min-width: 96px !important; height: 36px !important; padding: 0 12px !important; font-size: 12px !important; }
       }
     `;
     document.documentElement.appendChild(style);
