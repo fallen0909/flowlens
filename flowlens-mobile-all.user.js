@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.4.14
-// @description  手机 Edge / Tampermonkey 整合版：修复大图幻灯片自动切换，恢复完整项目说明。
+// @version      1.4.15
+// @description  手机 Edge / Tampermonkey 整合版：新增分析日志复制功能，用于排查图片加载、筛选和大图切换问题。
 // @match        *://*/*
 // @run-at       document-idle
 // @noframes
@@ -13,19 +13,20 @@
 // @connect      *
 // @downloadURL  https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-mobile-all.user.js
 // @updateURL    https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-mobile-all.user.js
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/global-settings.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/flowlens-core.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/optimizer.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/fixes.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/product.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/ui-cleanup.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-stable.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/settings-compact.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/zhihu.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/topfix.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-sync.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/slideshow-native.js?v=1.4.14
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/mobile/mobile-center.js?v=1.4.14
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/global-settings.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/flowlens-core.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/optimizer.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/fixes.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/product.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/ui-cleanup.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-stable.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/settings-compact.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/zhihu.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/topfix.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-sync.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/slideshow-native.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/diagnostics-log.js?v=1.4.15
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/mobile/mobile-center.js?v=1.4.15
 // ==/UserScript==
 
-/* FlowLens mobile integrated loader v1.4.14. Official mobile entry. Shared source lives under src/. */
+/* FlowLens mobile integrated loader v1.4.15. Official mobile entry. Shared source lives under src/. */
