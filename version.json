@@ -1,12 +1,12 @@
 {
-  "version": "1.4.12",
+  "version": "1.4.13",
   "desktop": {
-    "version": "1.4.12",
+    "version": "1.4.13",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.12",
+    "version": "1.4.13",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,13 +14,12 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
-    "lightbox-slideshow-click-fix",
-    "slideshow-speed-setting",
-    "remove-segmented-filter-bar",
+    "event-driven-media-patch",
+    "compact-mobile-settings-panel",
+    "lightbox-slideshow-speed-setting",
     "icon-only-top-filter-button",
-    "direct-css-media-filter",
+    "native-media-filter",
     "settings-version-display",
-    "lightbox-video-autoplay",
     "clean-source-layout"
   ]
 }
