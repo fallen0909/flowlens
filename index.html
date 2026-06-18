@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>瀑光 FlowLens 安装</title>
+<style>
+  body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #1f2328; }
+  main { max-width: 860px; margin: 0 auto; padding: 36px 18px; }
+  h1 { margin: 0 0 12px; font-size: 30px; }
+  h2 { margin: 28px 0 12px; font-size: 19px; }
+  p { line-height: 1.75; }
+  a.install { display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 18px; border-radius: 16px; color: white; font-weight: 900; text-decoration: none; margin: 0 0 12px; }
+  a.desktop { background: linear-gradient(135deg, #1f6feb, #0969da); }
+  a.mobile { background: linear-gradient(135deg, #0969da, #6f42c1); }
+  .note, details { padding: 14px 16px; border-radius: 14px; background: #fff; border: 1px solid #d0d7de; }
+  .muted { color: #57606a; }
+  code { word-break: break-all; }
+</style>
+<main>
+  <h1>瀑光 FlowLens 安装</h1>
+  <p class="note"><strong>当前统一版本：v1.4.8。</strong>正式入口只保留两个：电脑端油猴版和手机端整合版。两端共用 <code>src/core</code> 与 <code>src/patches</code>，手机端只额外加载 <code>src/mobile</code> 适配。</p>
+
+  <h2>💻 电脑端</h2>
+  <a class="install desktop" href="https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop.user.js">安装/更新电脑油猴版 v1.4.8</a>
+  <p class="muted">适合 Edge、Chrome、Firefox 安装 Tampermonkey 后使用。</p>
+
+  <h2>📱 手机端</h2>
+  <a class="install mobile" href="https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-mobile-all.user.js">安装/更新手机整合版 v1.4.8</a>
+  <p class="muted">适合 Android Edge、Kiwi、Firefox 等支持脚本管理器的移动浏览器。</p>
+
+  <details>
+    <summary>手动从 URL 安装</summary>
+    <p>电脑端：<code>https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop.user.js</code></p>
+    <p>手机端：<code>https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-mobile-all.user.js</code></p>
+  </details>
+</main>
+</html>
