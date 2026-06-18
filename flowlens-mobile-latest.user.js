@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.4.3
-// @description  手机 Edge / Tampermonkey 稳定更新版：统一大图控制，按当前筛选切换图片/视频，增强无扩展名媒体抓取。
+// @version      1.4.4
+// @description  手机 Edge / Tampermonkey 稳定更新版：回顶部改筛选切换，修复大图自动切换、视频结束下一条和 1:1 闪烁。
 // @match        *://*/*
 // @run-at       document-idle
 // @noframes
@@ -23,7 +23,7 @@
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-extension/content-settings-compact-v2.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-extension/content-zhihu.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-media-bridge-v4.user.js
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-mobile-unified-v3.user.js
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-mobile-clean-control-v4.user.js
 // ==/UserScript==
 
 /*
