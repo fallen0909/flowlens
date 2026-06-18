@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "瀑光 FlowLens",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "把网页里的零散图片和视频整理成全屏瀑布流，支持沉浸浏览、原尺寸查看和打包下载。",
   "permissions": ["activeTab", "scripting", "downloads", "downloads.ui", "alarms", "storage"],
   "host_permissions": ["<all_urls>"],
@@ -31,7 +31,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js", "content-patch.js", "content-fixes.js", "content-product.js", "content-ui-cleanup.js", "content-zhihu.js", "content-topfix.js", "content-settings-sync.js"],
+      "js": ["content.js", "content-patch.js", "content-fixes.js", "content-product.js", "content-ui-cleanup.js", "content-lightbox-stable.js", "content-zhihu.js", "content-topfix.js", "content-settings-sync.js"],
       "run_at": "document_idle"
     }
   ]
