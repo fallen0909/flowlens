@@ -9,12 +9,15 @@
   const IMAGE_RE = /(?:\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)|[?&]format=(?:avif|gif|jpe?g|png|webp)\b)/i;
   const selectedKeys = new Set();
   let selectionMode = false;
-  let toolbarTimer = 0;
+  let applyTimer = 0;
   let historyTimer = 0;
   let preloadTimer = 0;
   let mediaObserver = null;
+  let lightboxAutoTimer = 0;
+  let lightboxAutoPlaying = false;
 
   const css = `
+    #xiv-topbar .xiv-fl-product-btn { display: none !important; }
     #xiv-root[data-fl-selecting="true"] .xiv-tile { cursor: copy !important; }
     #xiv-root .xiv-tile[data-fl-selected="true"] {
       outline: 3px solid #4f8cff !important;
@@ -38,36 +41,10 @@
       z-index: 4;
       pointer-events: none;
     }
-    .xiv-fl-product-btn {
-      min-width: 38px;
-      height: 38px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,.18);
-      background: rgba(18,18,20,.76);
-      color: #fff;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 11px;
-      font: 850 13px/1 system-ui, sans-serif;
-      backdrop-filter: blur(12px);
-      white-space: nowrap;
-    }
-    #xiv-root[data-theme="light"] .xiv-fl-product-btn {
-      background: rgba(255,255,255,.78);
-      color: #151515;
-      border-color: rgba(0,0,0,.12);
-    }
-    .xiv-fl-product-btn[data-active="true"] {
-      background: #1d6fff !important;
-      color: #fff !important;
-      border-color: rgba(255,255,255,.35) !important;
-    }
     #xiv-fl-help {
       position: fixed;
       inset: 0;
-      z-index: 2147483647;
+      z-index: 999999;
       display: none;
       place-items: center;
       background: rgba(0,0,0,.42);
@@ -81,7 +58,7 @@
       max-height: min(78vh, 680px);
       overflow: auto;
       border-radius: 18px;
-      background: rgba(18,18,22,.94);
+      background: rgba(18,18,22,.96);
       border: 1px solid rgba(255,255,255,.16);
       box-shadow: 0 28px 90px rgba(0,0,0,.45);
       padding: 20px;
@@ -98,7 +75,7 @@
       left: 50%;
       bottom: 28px;
       transform: translateX(-50%);
-      z-index: 2147483647;
+      z-index: 999999;
       max-width: min(720px, calc(100vw - 28px));
       padding: 10px 14px;
       border-radius: 999px;
@@ -111,17 +88,38 @@
       pointer-events: none;
     }
     #xiv-fl-toast[data-open="true"] { display: block; }
+    .xiv-fl-lightbox-auto {
+      position: absolute;
+      right: 82px;
+      top: max(18px, env(safe-area-inset-top, 0px) + 14px);
+      z-index: 12;
+      width: 58px;
+      height: 58px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(0,0,0,.46);
+      color: #fff;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 12px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.16);
+      backdrop-filter: blur(10px);
+      font: 900 22px/1 system-ui, sans-serif;
+    }
+    .xiv-fl-lightbox-auto[data-playing="true"] { background: rgba(29,111,255,.75); }
+    .xiv-fl-lightbox-auto::before { content: "▶"; margin-left: 3px; }
+    .xiv-fl-lightbox-auto[data-playing="true"]::before { content: "Ⅱ"; margin-left: 0; letter-spacing: -2px; }
     @media (max-width: 820px) {
-      .xiv-fl-product-btn { min-width: 36px; width: auto; height: 36px; padding: 0 9px; font-size: 12px; }
       #xiv-fl-help-card { padding: 16px; }
       #xiv-fl-help-card table { font-size: 13px; }
+      .xiv-fl-lightbox-auto { right: 74px; width: 54px; height: 54px; }
     }
   `;
 
   function root() { return document.getElementById("xiv-root"); }
-  function grid() { return document.getElementById("xiv-grid"); }
   function active() { return root()?.dataset.active === "true"; }
-  function lightboxActive() { return document.getElementById("xiv-lightbox")?.dataset.active === "true"; }
+  function lightbox() { return document.getElementById("xiv-lightbox"); }
+  function lightboxActive() { return lightbox()?.dataset.active === "true"; }
   function tiles() { return [...document.querySelectorAll("#xiv-grid .xiv-tile")].sort((a, b) => Number(a.dataset.index || 0) - Number(b.dataset.index || 0)); }
   function visibleTiles() { return tiles().filter((tile) => !tile.hidden && tile.style.display !== "none" && tile.dataset.flDuplicate !== "true"); }
   function selectedTiles() { return tiles().filter((tile) => selectedKeys.has(tileKey(tile))); }
@@ -185,20 +183,26 @@
     return isVideo(url) ? "mp4" : "jpg";
   }
 
-  function filenameFor(url, index, scope = "selected") {
+  function filenameFor(url, index) {
     const folder = safePart(settings().downloadFolder || pageTitle());
     const mediaFolder = isVideo(url) ? "视频" : "图片";
     const ext = extFromUrl(url);
     return `${folder}/${mediaFolder}/${String(index + 1).padStart(4, "0")}.${ext}`;
   }
 
-  function toast(text, ms = 1800) {
+  function mountInRoot(node) {
+    const r = root();
+    if (r && node.parentElement !== r) r.appendChild(node);
+    else if (!node.parentElement) document.documentElement.appendChild(node);
+  }
+
+  function toast(text, ms = 1600) {
     let node = document.getElementById("xiv-fl-toast");
     if (!node) {
       node = document.createElement("div");
       node.id = "xiv-fl-toast";
-      document.documentElement.appendChild(node);
     }
+    mountInRoot(node);
     node.textContent = text;
     node.dataset.open = "true";
     clearTimeout(Number(node.dataset.timer || 0));
@@ -208,38 +212,40 @@
   function setStatus(text) {
     const status = document.getElementById("xiv-status");
     if (status) status.textContent = text;
-    toast(text, 1400);
+    toast(text);
   }
 
   function ensureHelp() {
     let help = document.getElementById("xiv-fl-help");
-    if (help) return help;
-    help = document.createElement("div");
-    help.id = "xiv-fl-help";
-    help.innerHTML = `
-      <div id="xiv-fl-help-card">
-        <button id="xiv-fl-help-close" type="button">×</button>
-        <h2>瀑光 FlowLens 快捷键</h2>
-        <table>
-          <tr><td><kbd>G</kbd></td><td>打开 / 关闭图片流</td></tr>
-          <tr><td><kbd>Esc</kbd></td><td>关闭大图；再次按关闭图片流</td></tr>
-          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>筛选：全部 / 图片 / 视频</td></tr>
-          <tr><td><kbd>V</kbd></td><td>循环切换全部、图片、视频</td></tr>
-          <tr><td><kbd>S</kbd></td><td>开启 / 关闭选择模式</td></tr>
-          <tr><td><kbd>Shift</kbd> + <kbd>D</kbd></td><td>下载已选；没有选择时下载当前筛选可见内容</td></tr>
-          <tr><td><kbd>E</kbd></td><td>复制已选或可见链接</td></tr>
-          <tr><td><kbd>X</kbd></td><td>清空选择</td></tr>
-          <tr><td><kbd>A</kbd></td><td>自动滚动</td></tr>
-          <tr><td><kbd>+</kbd> <kbd>-</kbd></td><td>调整列数</td></tr>
-          <tr><td><kbd>F</kbd></td><td>全屏</td></tr>
-          <tr><td><kbd>T</kbd></td><td>切换主题</td></tr>
-          <tr><td><kbd>?</kbd></td><td>打开 / 关闭本说明</td></tr>
-        </table>
-      </div>`;
-    help.addEventListener("click", (event) => {
-      if (event.target === help || event.target?.id === "xiv-fl-help-close") toggleHelp(false);
-    });
-    document.documentElement.appendChild(help);
+    if (!help) {
+      help = document.createElement("div");
+      help.id = "xiv-fl-help";
+      help.innerHTML = `
+        <div id="xiv-fl-help-card">
+          <button id="xiv-fl-help-close" type="button">×</button>
+          <h2>瀑光 FlowLens 快捷键</h2>
+          <table>
+            <tr><td><kbd>G</kbd></td><td>打开 / 关闭图片流</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>关闭大图；再次按关闭图片流</td></tr>
+            <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>筛选：全部 / 图片 / 视频</td></tr>
+            <tr><td><kbd>V</kbd></td><td>循环切换全部、图片、视频</td></tr>
+            <tr><td><kbd>S</kbd></td><td>开启 / 关闭选择模式</td></tr>
+            <tr><td><kbd>Shift</kbd> + <kbd>D</kbd></td><td>下载已选；没有选择时下载当前可见内容</td></tr>
+            <tr><td><kbd>E</kbd></td><td>复制已选或可见链接</td></tr>
+            <tr><td><kbd>X</kbd></td><td>清空选择</td></tr>
+            <tr><td><kbd>A</kbd></td><td>瀑布流自动滚动</td></tr>
+            <tr><td><kbd>P</kbd></td><td>大图自动播放下一张</td></tr>
+            <tr><td><kbd>+</kbd> <kbd>-</kbd></td><td>调整列数</td></tr>
+            <tr><td><kbd>F</kbd></td><td>全屏</td></tr>
+            <tr><td><kbd>T</kbd></td><td>切换主题</td></tr>
+            <tr><td><kbd>?</kbd></td><td>打开 / 关闭本说明</td></tr>
+          </table>
+        </div>`;
+      help.addEventListener("click", (event) => {
+        if (event.target === help || event.target?.id === "xiv-fl-help-close") toggleHelp(false);
+      });
+    }
+    mountInRoot(help);
     return help;
   }
 
@@ -249,39 +255,9 @@
     help.dataset.open = open ? "true" : "false";
   }
 
-  function ensureToolbar() {
-    const actions = document.querySelector("#xiv-topbar .xiv-actions");
-    if (!actions || actions.dataset.flProductReady === "true") return;
-    actions.dataset.flProductReady = "true";
-    const helpBtn = makeButton("?", "快捷键说明 (?)", () => toggleHelp());
-    const selectBtn = makeButton("选择", "选择模式 (S)", () => toggleSelectionMode());
-    selectBtn.dataset.flSelectButton = "true";
-    const downloadBtn = makeButton("下选", "下载已选；没有选择时下载当前可见内容 (Shift+D)", downloadSelectedOrVisible);
-    const copyBtn = makeButton("链接", "复制已选/可见链接 (E)", copySelectedOrVisibleLinks);
-    actions.insertBefore(helpBtn, actions.firstChild);
-    actions.insertBefore(selectBtn, actions.children[1] || null);
-    actions.insertBefore(downloadBtn, actions.children[2] || null);
-    actions.insertBefore(copyBtn, actions.children[3] || null);
-  }
-
-  function makeButton(text, title, onClick) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "xiv-fl-product-btn";
-    button.title = title;
-    button.textContent = text;
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onClick();
-    });
-    return button;
-  }
-
   function syncSelectionUi() {
     const r = root();
     if (r) r.dataset.flSelecting = selectionMode ? "true" : "false";
-    document.querySelector('[data-fl-select-button]')?.setAttribute("data-active", selectionMode ? "true" : "false");
     for (const tile of tiles()) {
       tile.dataset.flSelected = selectedKeys.has(tileKey(tile)) ? "true" : "false";
     }
@@ -369,7 +345,6 @@
     const text = [...new Set(urls)].join("\n");
     try {
       await navigator.clipboard.writeText(text);
-      setStatus(`已复制 ${urls.length} 条链接`);
     } catch {
       const area = document.createElement("textarea");
       area.value = text;
@@ -377,24 +352,86 @@
       area.select();
       document.execCommand("copy");
       area.remove();
-      setStatus(`已复制 ${urls.length} 条链接`);
     }
+    setStatus(`已复制 ${urls.length} 条链接`);
   }
 
   function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+  function stopLightboxAuto() {
+    lightboxAutoPlaying = false;
+    clearInterval(lightboxAutoTimer);
+    lightboxAutoTimer = 0;
+    syncLightboxAutoButton();
+  }
+
+  function playNextLightbox() {
+    const lb = lightbox();
+    if (!lb || lb.dataset.active !== "true") {
+      stopLightboxAuto();
+      return;
+    }
+    const right = lb.querySelector('.xiv-lightbox-arrow[data-side="right"]');
+    if (right) right.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    else document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+  }
+
+  function toggleLightboxAuto() {
+    if (lightboxAutoPlaying) {
+      stopLightboxAuto();
+      setStatus("大图自动播放已暂停");
+      return;
+    }
+    lightboxAutoPlaying = true;
+    clearInterval(lightboxAutoTimer);
+    lightboxAutoTimer = window.setInterval(playNextLightbox, Math.max(1200, Number(settings().lightboxAutoDelay || 2600)));
+    syncLightboxAutoButton();
+    setStatus("大图自动播放已开启");
+  }
+
+  function syncLightboxAutoButton() {
+    const button = document.querySelector(".xiv-fl-lightbox-auto");
+    if (!button) return;
+    button.dataset.playing = lightboxAutoPlaying ? "true" : "false";
+    button.title = lightboxAutoPlaying ? "暂停自动播放 (P)" : "自动播放下一张 (P)";
+  }
+
+  function ensureLightboxAutoButton() {
+    const lb = lightbox();
+    if (!lb || lb.dataset.active !== "true") {
+      stopLightboxAuto();
+      return;
+    }
+    let button = lb.querySelector(".xiv-fl-lightbox-auto");
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "xiv-fl-lightbox-auto";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        toggleLightboxAuto();
+      });
+      lb.appendChild(button);
+    }
+    syncLightboxAutoButton();
+  }
 
   function isTypingTarget(target) { return target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']"); }
 
   document.addEventListener("keydown", (event) => {
     if (isTypingTarget(event.target)) return;
     if (event.key === "?" || (event.shiftKey && event.key === "/")) {
-      if (active()) {
-        event.preventDefault(); event.stopPropagation(); toggleHelp();
+      if (active() || lightboxActive()) {
+        event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation?.(); toggleHelp();
       }
       return;
     }
-    if (!active()) return;
-    if (!event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "s") {
+    if (!active() && !lightboxActive()) return;
+    if (lightboxActive() && !event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "p") {
+      event.preventDefault(); event.stopPropagation(); toggleLightboxAuto();
+    } else if (!event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "s") {
       event.preventDefault(); event.stopPropagation(); toggleSelectionMode();
     } else if (!event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "x") {
       event.preventDefault(); event.stopPropagation(); clearSelection();
@@ -402,6 +439,8 @@
       event.preventDefault(); event.stopPropagation(); downloadSelectedOrVisible();
     } else if (!event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "e") {
       event.preventDefault(); event.stopPropagation(); copySelectedOrVisibleLinks();
+    } else if (event.key === "Escape" && lightboxAutoPlaying) {
+      stopLightboxAuto();
     }
   }, true);
 
@@ -432,7 +471,7 @@
     clearTimeout(preloadTimer);
     preloadTimer = window.setTimeout(() => {
       if (!lightboxActive()) return;
-      const lb = document.getElementById("xiv-lightbox");
+      const lb = lightbox();
       const current = lb?.querySelector("img")?.currentSrc || lb?.querySelector("img")?.src || "";
       const list = tiles();
       let index = list.findIndex((tile) => mediaUrl(tile) === current || current.includes(mediaUrl(tile)) || mediaUrl(tile).includes(current));
@@ -485,23 +524,23 @@
 
   function applyAll() {
     injectStyle();
-    ensureToolbar();
     ensureHelp();
     observeTiles();
     syncSelectionUi();
+    ensureLightboxAutoButton();
     scheduleHistory();
     preloadAroundLightbox();
+    if (!lightboxActive() && lightboxAutoPlaying) stopLightboxAuto();
   }
 
   function scheduleApplyAll() {
-    clearTimeout(toolbarTimer);
-    toolbarTimer = window.setTimeout(applyAll, 160);
+    clearTimeout(applyTimer);
+    applyTimer = window.setTimeout(applyAll, 120);
   }
 
   injectStyle();
-  ensureHelp();
   new MutationObserver(scheduleApplyAll).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "src", "style", "hidden", "class"] });
   window.addEventListener("scroll", scheduleHistory, { passive: true });
   window.addEventListener("resize", scheduleApplyAll, { passive: true });
-  window.setInterval(() => { if (active()) applyAll(); }, 1800);
+  window.setInterval(() => { if (active() || lightboxActive()) applyAll(); }, 1000);
 })();
