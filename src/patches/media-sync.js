@@ -2,9 +2,15 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
+  const VERSION = "1.4.9";
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
+  const FILTER_ORDER = ["all", "image", "video"];
+  const FILTER_SHORT = { all: "全", image: "图", video: "视" };
+  const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
   let observer = null;
   let refreshTimer = 0;
+  let slideshowTimer = 0;
+  let slideshowActive = false;
 
   function isVideoUrl(url) {
     return VIDEO_RE.test(String(url || ""));
@@ -58,6 +64,60 @@
         background: #111;
         color: #fff;
       }
+      #xiv-root .fl-top-filter-btn {
+        font: 950 17px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        letter-spacing: 0 !important;
+      }
+      #xiv-root .fl-version-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 34px;
+        padding: 6px 0 12px;
+        margin: -2px 0 6px;
+        border-bottom: 1px solid rgba(0,0,0,.08);
+        color: rgba(0,0,0,.58);
+        font: 750 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      #xiv-root[data-theme="dark"] .fl-version-row,
+      #xiv-root:not([data-theme="light"]) .fl-version-row {
+        border-bottom-color: rgba(255,255,255,.12);
+        color: rgba(255,255,255,.66);
+      }
+      #xiv-root .fl-version-row strong {
+        color: inherit;
+        font-weight: 900;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow {
+        position: fixed;
+        right: 118px;
+        top: 18px;
+        z-index: 6;
+        width: 42px;
+        height: 42px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,.26);
+        background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72));
+        color: #fff;
+        display: grid;
+        place-items: center;
+        pointer-events: auto;
+        cursor: pointer;
+        padding: 0;
+        box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18);
+        backdrop-filter: blur(12px);
+        font: 950 18px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] {
+        color: #111;
+        background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76));
+        border-color: rgba(255,255,255,.7);
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow svg {
+        width: 20px;
+        height: 20px;
+        display: block;
+      }
       @media (max-width: 820px) {
         #xiv-root .xiv-media-switch {
           gap: 3px;
@@ -69,6 +129,12 @@
           min-width: 40px;
           padding: 0 8px;
           font-size: 12px;
+        }
+        #xiv-lightbox .xiv-lightbox-slideshow {
+          right: 112px;
+          top: 14px;
+          width: 40px;
+          height: 40px;
         }
       }
     `;
@@ -110,6 +176,16 @@
     refreshControls();
   }
 
+  function currentFilter() {
+    return filterSelect()?.value || "all";
+  }
+
+  function cycleFilter() {
+    const now = currentFilter();
+    const next = FILTER_ORDER[(FILTER_ORDER.indexOf(now) + 1 + FILTER_ORDER.length) % FILTER_ORDER.length];
+    setFilter(next);
+  }
+
   function ensureControls() {
     const app = root();
     const select = filterSelect();
@@ -136,7 +212,49 @@
       select.parentElement?.insertBefore(group, select);
       select.addEventListener("change", refreshControls);
     }
+    ensureTopFilterButton();
+    ensureVersionRow();
     refreshControls();
+  }
+
+  function ensureTopFilterButton() {
+    const button = root()?.querySelector('[data-xiv="top"]');
+    if (!button) return;
+    ensureStyle();
+    button.classList.add("fl-top-filter-btn");
+    if (button.dataset.flFilterBound !== "true") {
+      button.dataset.flFilterBound = "true";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        cycleFilter();
+      }, true);
+    }
+    updateTopFilterButton();
+  }
+
+  function updateTopFilterButton() {
+    const button = root()?.querySelector('[data-xiv="top"]');
+    if (!button) return;
+    const value = currentFilter();
+    button.title = `切换图/视频：当前${FILTER_TEXT[value] || "全部"}`;
+    button.setAttribute("aria-label", button.title);
+    button.textContent = FILTER_SHORT[value] || "全";
+  }
+
+  function ensureVersionRow() {
+    const panel = root()?.querySelector('[data-panel="settings"]');
+    if (!panel) return;
+    let row = panel.querySelector(".fl-version-row");
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "fl-version-row";
+      const h3 = panel.querySelector("h3");
+      if (h3?.nextSibling) panel.insertBefore(row, h3.nextSibling);
+      else panel.prepend(row);
+    }
+    row.innerHTML = `<span>当前版本</span><strong>v${VERSION}</strong>`;
   }
 
   function refreshControls() {
@@ -152,6 +270,7 @@
       button.textContent = buttonLabel(mode, counts[mode] || 0);
       button.title = mode === "all" ? "显示全部媒体" : mode === "image" ? "只显示图片" : "只显示视频";
     });
+    updateTopFilterButton();
   }
 
   function playVideoElement(video) {
@@ -208,11 +327,89 @@
     }
   }
 
+  function lightbox() {
+    return root()?.querySelector("#xiv-lightbox");
+  }
+
+  function isLightboxActive() {
+    return lightbox()?.dataset.active === "true";
+  }
+
+  function slideshowIcon() {
+    return slideshowActive
+      ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.8" height="14" rx="1.2"/><rect x="13.2" y="5" width="3.8" height="14" rx="1.2"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.8v12.4c0 .8.9 1.3 1.6.9l9.2-6.2c.6-.4.6-1.4 0-1.8L9.6 4.9C8.9 4.5 8 5 8 5.8Z"/></svg>';
+  }
+
+  function ensureSlideshowButton() {
+    const box = lightbox();
+    if (!box || box.dataset.active !== "true") {
+      stopSlideshow(false);
+      return;
+    }
+    ensureStyle();
+    let button = box.querySelector(".xiv-lightbox-slideshow");
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "xiv-lightbox-slideshow";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        toggleSlideshow();
+      });
+      box.appendChild(button);
+    }
+    button.dataset.active = slideshowActive ? "true" : "false";
+    button.title = slideshowActive ? "暂停幻灯片自动切换" : "开始幻灯片自动切换";
+    button.setAttribute("aria-label", button.title);
+    button.innerHTML = slideshowIcon();
+  }
+
+  function dispatchNextImage() {
+    if (!isLightboxActive()) {
+      stopSlideshow(false);
+      return;
+    }
+    window.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "ArrowRight",
+      code: "ArrowRight",
+      bubbles: true,
+      cancelable: true
+    }));
+    setTimeout(ensureLightboxAutoplay, 160);
+  }
+
+  function startSlideshow() {
+    if (slideshowActive) return;
+    slideshowActive = true;
+    clearInterval(slideshowTimer);
+    slideshowTimer = window.setInterval(dispatchNextImage, 2800);
+    ensureSlideshowButton();
+  }
+
+  function stopSlideshow(update = true) {
+    slideshowActive = false;
+    clearInterval(slideshowTimer);
+    slideshowTimer = 0;
+    if (update) ensureSlideshowButton();
+  }
+
+  function toggleSlideshow() {
+    if (slideshowActive) stopSlideshow();
+    else startSlideshow();
+  }
+
   function ensureLightboxAutoplay() {
-    const lightbox = root()?.querySelector("#xiv-lightbox");
-    if (!lightbox || lightbox.dataset.active !== "true") return;
-    lightbox.querySelectorAll("video").forEach(playVideoElement);
-    lightbox.querySelectorAll("iframe").forEach(playIframeVideo);
+    const box = lightbox();
+    if (!box || box.dataset.active !== "true") {
+      stopSlideshow(false);
+      return;
+    }
+    box.querySelectorAll("video").forEach(playVideoElement);
+    box.querySelectorAll("iframe").forEach(playIframeVideo);
+    ensureSlideshowButton();
   }
 
   function scheduleRefresh() {
@@ -231,12 +428,13 @@
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["data-active", "hidden", "src", "data-url"]
+      attributeFilter: ["data-active", "hidden", "src", "data-url", "data-theme"]
     });
   }
 
   document.addEventListener("click", () => setTimeout(ensureLightboxAutoplay, 120), true);
   document.addEventListener("keydown", () => setTimeout(ensureLightboxAutoplay, 120), true);
+  document.addEventListener("fullscreenchange", scheduleRefresh, true);
   startObserver();
   scheduleRefresh();
 })();
