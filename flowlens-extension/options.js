@@ -1,5 +1,6 @@
 (() => {
   const KEY = "flowlens-settings-v2";
+  const SPEEDS = [1200, 1800, 2600, 3600, 5000, 7000];
   const DEFAULTS = {
     launchCompact: false,
     launchHidden: false,
@@ -10,12 +11,27 @@
     autoScrollSpeed: 3,
     autoFullscreen: true,
     videoPreview: true,
-    downloadFolder: ""
+    downloadFolder: "",
+    lightboxAutoDelay: 2600
   };
 
   function clamp(value, min, max, fallback) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+  }
+
+  function nearestSpeed(value) {
+    const raw = Number(value || DEFAULTS.lightboxAutoDelay);
+    return SPEEDS.reduce((best, item) => Math.abs(item - raw) < Math.abs(best - raw) ? item : best, SPEEDS[0]);
+  }
+
+  function speedLabel(ms) {
+    if (ms <= 1400) return "很快";
+    if (ms <= 2000) return "较快";
+    if (ms <= 3000) return "适中";
+    if (ms <= 4200) return "较慢";
+    if (ms <= 5500) return "慢速";
+    return "很慢";
   }
 
   function read(callback) {
@@ -39,26 +55,44 @@
 
   function $(id) { return document.getElementById(id); }
 
+  let current = { ...DEFAULTS };
+
+  function updateSpeedLabel() {
+    const ms = nearestSpeed(current.lightboxAutoDelay);
+    const node = $("lightboxSpeedLabel");
+    if (node) node.textContent = `${speedLabel(ms)} ${Math.round(ms / 100) / 10}秒`;
+  }
+
+  function changeSpeed(delta) {
+    const ms = nearestSpeed(current.lightboxAutoDelay);
+    const index = Math.max(0, SPEEDS.indexOf(ms));
+    current.lightboxAutoDelay = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, index + delta))];
+    updateSpeedLabel();
+  }
+
   function fill(settings) {
-    $("columns").value = clamp(settings.columns, 2, 8, 3);
-    $("theme").value = ["system", "dark", "light"].includes(settings.theme) ? settings.theme : "system";
-    $("autoFullscreen").checked = settings.autoFullscreen !== false;
-    $("videoPreview").checked = settings.videoPreview !== false;
-    $("launchHidden").checked = settings.launchHidden === true;
-    $("autoScrollSpeed").value = clamp(settings.autoScrollSpeed, 1, 10, 3);
-    $("downloadFolder").value = settings.downloadFolder || "";
+    current = { ...DEFAULTS, ...settings, lightboxAutoDelay: nearestSpeed(settings.lightboxAutoDelay) };
+    $("columns").value = clamp(current.columns, 2, 8, 3);
+    $("theme").value = ["system", "dark", "light"].includes(current.theme) ? current.theme : "system";
+    $("autoFullscreen").checked = current.autoFullscreen !== false;
+    $("videoPreview").checked = current.videoPreview !== false;
+    $("launchHidden").checked = current.launchHidden === true;
+    $("autoScrollSpeed").value = clamp(current.autoScrollSpeed, 1, 10, 3);
+    $("downloadFolder").value = current.downloadFolder || "";
+    updateSpeedLabel();
   }
 
   function collect() {
     return {
-      ...DEFAULTS,
+      ...current,
       columns: clamp($("columns").value, 2, 8, 3),
       theme: $("theme").value,
       autoFullscreen: $("autoFullscreen").checked,
       videoPreview: $("videoPreview").checked,
       launchHidden: $("launchHidden").checked,
       autoScrollSpeed: clamp($("autoScrollSpeed").value, 1, 10, 3),
-      downloadFolder: $("downloadFolder").value.trim()
+      downloadFolder: $("downloadFolder").value.trim(),
+      lightboxAutoDelay: nearestSpeed(current.lightboxAutoDelay)
     };
   }
 
@@ -70,6 +104,8 @@
   }
 
   read(fill);
+  $("lightboxSpeedSlower")?.addEventListener("click", () => changeSpeed(1));
+  $("lightboxSpeedFaster")?.addEventListener("click", () => changeSpeed(-1));
   $("save").addEventListener("click", () => write(collect(), () => status("设置已保存，刷新网页后完全生效。")));
   $("reset").addEventListener("click", () => {
     fill(DEFAULTS);
