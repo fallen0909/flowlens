@@ -1,0 +1,36 @@
+name: Build FlowLens Extension
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate
+        run: |
+          node --check flowlens-extension/content.js
+          node --check flowlens-extension/content-patch.js
+          node --check flowlens-extension/content-fixes.js
+          node --check flowlens-extension/content-product.js
+          node --check flowlens-extension/content-zhihu.js
+          node --check flowlens-extension/content-topfix.js
+          node --check flowlens-extension/content-settings-sync.js
+          node --check flowlens-extension/background.js
+          node --check flowlens-extension/options.js
+          node --check flowlens-extension/popup.js
+          node -e "JSON.parse(require('fs').readFileSync('flowlens-extension/manifest.json','utf8')); console.log('manifest ok')"
+      - name: Package
+        run: |
+          mkdir -p dist
+          cd flowlens-extension
+          zip -r ../dist/flowlens-extension.zip . -x '*.DS_Store'
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowlens-extension
+          path: dist/flowlens-extension.zip
