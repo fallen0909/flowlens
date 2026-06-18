@@ -1,12 +1,16 @@
 {
-  "version": "1.4.6",
+  "version": "1.4.7",
   "desktop": {
-    "version": "1.4.6",
+    "version": "1.4.7",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.6",
+    "version": "1.4.7",
     "entry": "flowlens-mobile-all.user.js"
-  }
+  },
+  "features": [
+    "media-switch-buttons",
+    "lightbox-video-autoplay"
+  ]
 }
