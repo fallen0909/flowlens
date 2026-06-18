@@ -2,7 +2,7 @@
   if (window.__flowLensSlideshowNativePatch) return;
   window.__flowLensSlideshowNativePatch = true;
 
-  const VERSION = "1.4.16";
+  const VERSION = "1.4.17";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
   const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
   let delay = Number(localStorage.getItem(SPEED_KEY) || 2800);
@@ -14,16 +14,19 @@
   function root() { return document.getElementById("xiv-root"); }
   function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
   function isOpen() { return lightbox()?.dataset.active === "true"; }
+  function coreApi() { return window.__flowLensControl || null; }
 
   function nativeNext() {
     if (!isOpen()) {
       stop(false);
       return;
     }
+    if (coreApi()?.showAdjacent?.(1)) return;
     const box = lightbox();
     const arrow = box?.querySelector('.xiv-lightbox-arrow[data-side="right"]');
     if (arrow) {
       arrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      return;
     }
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true }));
   }
@@ -56,8 +59,9 @@
     const app = root();
     const btn = button();
     if (!app || !btn) return;
-    app.dataset.flLightbox = isOpen() ? "true" : "false";
-    if (!isOpen()) {
+    const open = coreApi()?.isLightboxOpen?.() ?? isOpen();
+    app.dataset.flLightbox = open ? "true" : "false";
+    if (!open) {
       stop(false);
       return;
     }
@@ -67,11 +71,11 @@
   }
   function rebindButton() {
     const old = button();
-    if (!old || old.dataset.flNativeBound === "1.4.16") return;
+    if (!old || old.dataset.flNativeBound === VERSION) return;
     const fresh = old.cloneNode(false);
     fresh.className = old.className;
     fresh.type = "button";
-    fresh.dataset.flNativeBound = "1.4.16";
+    fresh.dataset.flNativeBound = VERSION;
     fresh.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -99,8 +103,8 @@
     const version = panel.querySelector(".fl-version-row strong");
     if (version) version.textContent = `v${VERSION}`;
     const select = panel.querySelector(".fl-slideshow-speed");
-    if (select && select.dataset.flNativeBound !== "1.4.16") {
-      select.dataset.flNativeBound = "1.4.16";
+    if (select && select.dataset.flNativeBound !== VERSION) {
+      select.dataset.flNativeBound = VERSION;
       select.addEventListener("change", () => {
         const value = Number(select.value || 2800);
         delay = SPEED_OPTIONS.includes(value) ? value : 2800;

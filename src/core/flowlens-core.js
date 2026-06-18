@@ -645,6 +645,10 @@
     }
   }
 
+  function isFavoriteMediaUrl(url) {
+    return isVideoUrl(url) || isFavoriteImageUrl(url);
+  }
+
   function isSiteAlbumImageUrl(url) {
     try {
       const parsed = new URL(url, location.href);
@@ -2482,6 +2486,13 @@
 
   function setMediaFilter(value) {
     state.mediaFilter = ["image", "video"].includes(value) ? value : "all";
+    const select = state.root?.querySelector('[data-xiv="filter"]');
+    if (select && select.value !== state.mediaFilter) select.value = state.mediaFilter;
+    try {
+      localStorage.setItem("flowlens-media-filter-v1", state.mediaFilter);
+    } catch {
+      // Filter persistence is best-effort.
+    }
     applyMediaFilter();
     updateCounter();
   }
@@ -3455,7 +3466,7 @@
     const button = state.lightbox?.querySelector(".xiv-lightbox-fav");
     if (!button) return;
     const key = keyForUrl(sourceUrl || saveUrl);
-    button.dataset.url = isFavoriteImageUrl(saveUrl) ? saveUrl : "";
+    button.dataset.url = isFavoriteMediaUrl(saveUrl) ? saveUrl : "";
     button.dataset.sourceUrl = sourceUrl || saveUrl || "";
     button.dataset.favorited = state.favoriteKeys.has(key) ? "true" : "false";
     button.innerHTML = heartIcon();
@@ -3490,20 +3501,21 @@
       // Keep the generated fallback filename.
     }
     const safeName = `${prefix}${basename}`.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim();
-    return `图片/${safeName || basename}`;
+    const folder = isVideoUrl(url) ? "视频" : "图片";
+    return `${folder}/${safeName || basename}`;
   }
 
   function favoriteExtension(url) {
     try {
       const parsed = new URL(url, location.href);
       const format = parsed.searchParams.get("format")?.toLowerCase();
-      if (format && ["jpg", "jpeg", "png", "webp", "avif", "gif"].includes(format)) return format === "jpeg" ? "jpg" : format;
+      if (format && ["jpg", "jpeg", "png", "webp", "avif", "gif", "mp4", "webm", "mov", "m4v"].includes(format)) return format === "jpeg" ? "jpg" : format;
       const ext = parsed.pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase();
-      if (ext && ["jpg", "jpeg", "png", "webp", "avif", "gif"].includes(ext)) return ext === "jpeg" ? "jpg" : ext;
+      if (ext && ["jpg", "jpeg", "png", "webp", "avif", "gif", "mp4", "webm", "mov", "m4v"].includes(ext)) return ext === "jpeg" ? "jpg" : ext;
     } catch {
       // Fall through to jpg for image-like URLs without extensions.
     }
-    return "jpg";
+    return isVideoUrl(url) ? "mp4" : "jpg";
   }
 
   function downloadUrlViaBackground(url, filename, options = {}) {
@@ -3512,7 +3524,7 @@
         try {
           GM_download({
             url,
-            name: filename.replace(/^图片\//, ""),
+            name: filename.replace(/^(?:图片|视频)\//, ""),
             saveAs: false,
             onload: () => resolve({ ok: true, via: "GM_download" }),
             onerror: (error) => resolve({ ok: false, error: String(error?.error || error?.message || "download failed") }),
@@ -3571,7 +3583,7 @@
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = filename.replace(/^图片\//, "");
+      a.download = filename.replace(/^(?:图片|视频)\//, "");
       document.documentElement.appendChild(a);
       a.click();
       a.remove();
@@ -3586,7 +3598,7 @@
     try {
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename.replace(/^图片\//, "");
+      a.download = filename.replace(/^(?:图片|视频)\//, "");
       a.rel = "noopener";
       document.documentElement.appendChild(a);
       a.click();
@@ -3658,10 +3670,9 @@
       updateStatus("图片还没加载出来");
       return;
     }
-    if (isVideoUrl(currentUrl)) {
-      updateStatus("视频暂不支持红心保存");
-      return;
-    }
+    const currentIsVideo = isVideoUrl(currentUrl)
+      || isVideoUrl(sourceUrl)
+      || !!state.lightbox?.querySelector("video, .xiv-video-frame");
 
     const favoriteKey = keyForUrl(sourceUrl || currentUrl);
     if (button.dataset.favorited === "true" && state.favoriteKeys.has(favoriteKey)) {
@@ -3672,36 +3683,51 @@
     state.savingFavorite = true;
     button.title = "正在保存";
     try {
-      const siteAlbumCandidates = await siteAlbumFavoriteCandidates(sourceUrl, currentUrl);
-      const highResUrl = siteAlbumCandidates.length
-        ? ""
-        : await resolveHighResUrl(sourceUrl || currentUrl, true);
       const candidates = [];
       const candidateKeys = new Set();
-      [loadedUrl, ...siteAlbumCandidates, highResUrl, currentUrl, sourceUrl]
-        .filter(Boolean)
-        .forEach((url) => {
-          [url, siteAlbumOriginalImageUrl(url)].forEach((candidate) => {
-            if (!isFavoriteImageUrl(candidate)) return;
-            const key = keyForUrl(candidate);
-            if (candidateKeys.has(key)) return;
-            candidateKeys.add(key);
-            candidates.push(candidate);
+
+      function rememberCandidate(candidate) {
+        if (!candidate) return;
+        if (currentIsVideo ? !isVideoUrl(candidate) : !isFavoriteImageUrl(candidate)) return;
+        const key = keyForUrl(candidate);
+        if (candidateKeys.has(key)) return;
+        candidateKeys.add(key);
+        candidates.push(candidate);
+      }
+
+      if (currentIsVideo) {
+        [currentUrl, sourceUrl, state.images[state.index] || ""].forEach(rememberCandidate);
+      } else {
+        const siteAlbumCandidates = await siteAlbumFavoriteCandidates(sourceUrl, currentUrl);
+        const highResUrl = siteAlbumCandidates.length
+          ? ""
+          : await resolveHighResUrl(sourceUrl || currentUrl, true);
+        [loadedUrl, ...siteAlbumCandidates, highResUrl, currentUrl, sourceUrl]
+          .filter(Boolean)
+          .forEach((url) => {
+            [url, siteAlbumOriginalImageUrl(url)].forEach(rememberCandidate);
           });
-        });
+      }
+
+      if (!candidates.length && currentIsVideo) {
+        const frameUrl = state.lightbox?.querySelector(".xiv-video-frame")?.dataset.mediaUrl || "";
+        const videoUrl = state.lightbox?.querySelector("video")?.dataset.mediaUrl || state.lightbox?.querySelector("video")?.currentSrc || "";
+        [frameUrl, videoUrl].forEach(rememberCandidate);
+      }
+
       if (!candidates.length) {
-        button.title = "没有可保存的图片地址";
-        debugLog("红心保存无候选", { sourceUrl, currentUrl, index: state.index });
-        updateStatus("没有可保存的图片地址");
+        button.title = currentIsVideo ? "没有可保存的视频地址" : "没有可保存的图片地址";
+        debugLog("红心保存无候选", { sourceUrl, currentUrl, index: state.index, currentIsVideo });
+        updateStatus(currentIsVideo ? "没有可保存的视频地址" : "没有可保存的图片地址");
         return;
       }
       debugLog("红心保存候选", candidates);
       let savedUrl = "";
       let lastError = "";
       for (const saveUrl of candidates) {
-        updateStatus(`保存 ${saveUrl.split("/").pop() || "图片"}`);
+        updateStatus(`保存 ${saveUrl.split("/").pop() || (currentIsVideo ? "视频" : "图片")}`);
         let result = null;
-        if (isSiteAlbumImageUrl(saveUrl)) {
+        if (currentIsVideo || isSiteAlbumImageUrl(saveUrl)) {
           result = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl), { direct: true });
         } else {
           try {
@@ -3710,14 +3736,14 @@
             result = { ok: false, error: String(error?.message || error), via: "page-blob" };
           }
         }
-        if (!result?.ok && !isSiteAlbumImageUrl(saveUrl)) {
+        if (!result?.ok && !currentIsVideo && !isSiteAlbumImageUrl(saveUrl)) {
           const fallback = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl));
           result = fallback?.ok ? fallback : {
             ok: false,
             error: `${result?.error || "page failed"}; ${fallback?.error || "background failed"}`
           };
         }
-        if (!result?.ok && isExtensionContextError(result?.error)) {
+        if (!result?.ok && (currentIsVideo || isExtensionContextError(result?.error))) {
           result = downloadUrlViaDirectAnchor(saveUrl, favoriteFilename(saveUrl));
           if (result?.ok) {
             updateStatus("已触发下载；扩展刚重载，刷新页面可恢复完整保存");
@@ -3832,7 +3858,7 @@
     url = normalizeMediaUrl(url);
     pauseLightboxMedia();
     state.lightbox.innerHTML = lightboxArrows();
-    state.lightbox.querySelector(".xiv-lightbox-fav")?.remove();
+    updateFavoriteButton(url);
     const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
     const iframe = document.createElement("iframe");
     iframe.title = "video-player";
@@ -3855,7 +3881,7 @@
     }
     pauseLightboxMedia();
     state.lightbox.innerHTML = lightboxArrows();
-    state.lightbox.querySelector(".xiv-lightbox-fav")?.remove();
+    updateFavoriteButton(url);
     const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
     const video = createVideoElement(url, {
       autoplay: true,
@@ -4119,6 +4145,29 @@
     if (nearBottom) fetchRemainingPages();
   }
 
+  function installControlApi() {
+    window.__flowLensControl = {
+      getMediaFilter() {
+        return state.mediaFilter;
+      },
+      setMediaFilter(value) {
+        setMediaFilter(value);
+        return state.mediaFilter;
+      },
+      isLightboxOpen() {
+        return state.lightbox?.dataset.active === "true";
+      },
+      getLightboxIndex() {
+        return state.index;
+      },
+      showAdjacent(delta = 1) {
+        if (state.lightbox?.dataset.active !== "true") return false;
+        showAdjacentImage(delta >= 0 ? 1 : -1);
+        return true;
+      }
+    };
+  }
+
   if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type === "XIV_TOGGLE") {
@@ -4128,5 +4177,6 @@
     });
   }
 
+  installControlApi();
   ensureUi();
 })();

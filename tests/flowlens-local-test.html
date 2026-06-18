@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlowLens local behavior test</title>
+<style>
+  body {
+    margin: 0;
+    padding: 32px;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f4f5f7;
+    color: #1f2328;
+  }
+  main {
+    max-width: 880px;
+    margin: 0 auto;
+  }
+  .gallery {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+  img,
+  video {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #111;
+  }
+</style>
+<main>
+  <h1>FlowLens local behavior test</h1>
+  <p>Used by local automated checks for filter switching, video lightbox controls, and slideshow switching.</p>
+  <div class="gallery">
+    <img src="https://picsum.photos/seed/flowlens-a/640/420.jpg" alt="Test image A">
+    <video src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" poster="https://picsum.photos/seed/flowlens-video/640/420.jpg" muted playsinline controls></video>
+    <img src="https://picsum.photos/seed/flowlens-b/640/420.jpg" alt="Test image B">
+  </div>
+</main>
+<script src="../src/core/global-settings.js"></script>
+<script src="../src/core/flowlens-core.js"></script>
+<script src="../src/core/optimizer.js"></script>
+<script src="../src/patches/fixes.js"></script>
+<script src="../src/patches/product.js"></script>
+<script src="../src/patches/ui-cleanup.js"></script>
+<script src="../src/patches/lightbox-stable.js"></script>
+<script src="../src/patches/settings-compact.js"></script>
+<script src="../src/patches/zhihu.js"></script>
+<script src="../src/patches/topfix.js"></script>
+<script src="../src/patches/media-sync.js"></script>
+<script src="../src/patches/slideshow-native.js"></script>
+<script src="../src/patches/diagnostics-log.js"></script>
+</html>

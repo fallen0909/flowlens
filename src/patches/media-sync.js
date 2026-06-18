@@ -2,14 +2,15 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.13";
+  const VERSION = "1.4.17";
   const FILTER_ORDER = ["all", "image", "video"];
   const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
-  const FILTER_KEY = "flowlens-media-filter-v2";
+  const FILTER_KEY = "flowlens-media-filter-v1";
+  const LEGACY_FILTER_KEY = "flowlens-media-filter-v2";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
   const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
 
-  let currentMode = localStorage.getItem(FILTER_KEY) || "all";
+  let currentMode = localStorage.getItem(FILTER_KEY) || localStorage.getItem(LEGACY_FILTER_KEY) || "all";
   if (!FILTER_ORDER.includes(currentMode)) currentMode = "all";
   let slideshowDelay = Number(localStorage.getItem(SPEED_KEY) || 2800);
   if (!SPEED_OPTIONS.includes(slideshowDelay)) slideshowDelay = 2800;
@@ -24,6 +25,16 @@
   function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
   function filterSelect() { return root()?.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]'); }
   function isLightboxOpen() { return lightbox()?.dataset.active === "true"; }
+  function coreApi() { return window.__flowLensControl || null; }
+
+  function liveFilter() {
+    const apiValue = coreApi()?.getMediaFilter?.();
+    if (FILTER_ORDER.includes(apiValue)) return apiValue;
+    const selectValue = filterSelect()?.value;
+    if (FILTER_ORDER.includes(selectValue)) return selectValue;
+    const stored = localStorage.getItem(FILTER_KEY) || localStorage.getItem(LEGACY_FILTER_KEY);
+    return FILTER_ORDER.includes(stored) ? stored : "all";
+  }
 
   function ensureStyle() {
     if (document.getElementById("xiv-media-sync-style")) return;
@@ -66,16 +77,27 @@
   function setFilter(mode) {
     if (!FILTER_ORDER.includes(mode)) mode = "all";
     currentMode = mode;
-    try { localStorage.setItem(FILTER_KEY, mode); } catch {}
+    try {
+      localStorage.setItem(FILTER_KEY, mode);
+      localStorage.setItem(LEGACY_FILTER_KEY, mode);
+    } catch {}
+    coreApi()?.setMediaFilter?.(mode);
     const select = filterSelect();
     if (select) {
       select.value = mode;
       select.dispatchEvent(new Event("change", { bubbles: true }));
     }
+    document.querySelectorAll('[data-fl-setting="mediaFilter"]').forEach((node) => {
+      node.value = mode;
+    });
+    [0, 80, 180].forEach((delay) => setTimeout(() => {
+      coreApi()?.setMediaFilter?.(mode);
+    }, delay));
     updateTopFilterButton();
   }
 
   function cycleFilter() {
+    currentMode = liveFilter();
     const next = FILTER_ORDER[(FILTER_ORDER.indexOf(currentMode) + 1 + FILTER_ORDER.length) % FILTER_ORDER.length];
     setFilter(next);
   }
@@ -99,8 +121,7 @@
   function updateTopFilterButton() {
     const button = root()?.querySelector('[data-xiv="top"]');
     if (!button) return;
-    const selectValue = filterSelect()?.value;
-    if (FILTER_ORDER.includes(selectValue)) currentMode = selectValue;
+    currentMode = liveFilter();
     button.title = `切换图/视频：当前${FILTER_TEXT[currentMode]}`;
     button.setAttribute("aria-label", button.title);
     button.innerHTML = filterIcon(currentMode);
