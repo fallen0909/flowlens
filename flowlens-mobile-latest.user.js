@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.4.1
-// @description  手机 Edge / Tampermonkey 稳定更新版：修复左上角字号、自动切换按钮、1:1 手动移动、增强媒体抓取。
+// @version      1.4.2
+// @description  手机 Edge / Tampermonkey 稳定更新版：恢复按钮样式、修复大图自动切换、视频结束自动下一条、增强媒体抓取。
 // @match        *://*/*
 // @run-at       document-idle
 // @noframes
@@ -22,8 +22,8 @@
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-extension/content-lightbox-stable.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-extension/content-settings-compact-v2.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-extension/content-zhihu.js
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-media-bridge-v2.user.js
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-mobile-final-fixes.user.js
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-media-bridge-v3.user.js
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-mobile-control-v2.user.js
 // ==/UserScript==
 
 /*
