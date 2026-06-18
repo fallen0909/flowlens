@@ -22,11 +22,13 @@
 
 ## 🧭 版本入口
 
+当前统一版本：`v1.4.6`。电脑端与手机端入口分离，版本号保持同步；手机端通过稳定的 `flowlens-mobile-all.user.js` 更新通道升级，电脑端通过 `flowlens-extension/manifest.json` 维护版本。
+
 ### 💻 电脑端：Edge / Chrome 扩展
 
 目录：`flowlens-extension/`
 
-适合桌面 Edge、Chrome 使用。打开浏览器扩展管理页，开启开发者模式，然后选择这个目录“加载解压缩的扩展”。
+适合桌面 Edge、Chrome 使用。打开浏览器扩展管理页，开启开发者模式，然后选择这个目录“加载解压缩的扩展”。更新后在扩展管理页点击“重新加载”。
 
 主要文件：
 
@@ -39,12 +41,13 @@
 
 目录：`mobile-userscript/`
 
-适合 Android Edge 安装 Tampermonkey 后使用。手机端不加载未打包扩展，而是安装 `flowlens.user.js`。
+适合 Android Edge 安装 Tampermonkey 后使用。手机端推荐安装根目录的 `flowlens-mobile-all.user.js` 整合版；不要在电脑端安装手机整合版。
 
 主要文件：
 
-- `flowlens.user.js`：手机端油猴脚本
-- `install-userscript.html`：本地安装/更新入口
+- `flowlens-mobile-all.user.js`：手机端整合安装入口
+- `flowlens.user.js`：手机端主脚本
+- `install-userscript.html`：安装/更新入口页
 - `build-userscript.js`：从电脑端共享逻辑重新生成手机脚本
 
 重新生成手机脚本：
