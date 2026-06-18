@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 全局设置同步
 // @namespace    local.flowlens.settings
-// @version      1.2.7
-// @description  让隐藏入口图标、主题、列数、自动滚动速度等设置在所有网站共用一份。
+// @version      1.3.5
+// @description  让隐藏入口图标、主题、列数、自动滚动速度、大图切换速度等设置在所有网站共用一份。
 // @match        *://*/*
 // @run-at       document-start
 // @noframes
@@ -16,7 +16,7 @@
 
   const SETTINGS_KEY = "flowlens-settings-v2";
   const GLOBAL_KEY = "flowlens-global-settings-v2";
-  const SYNC_KEYS = ["launchHidden", "launchCompact", "autoFullscreen", "videoPreview", "theme", "columns", "autoScrollSpeed"];
+  const SYNC_KEYS = ["launchHidden", "launchCompact", "autoFullscreen", "videoPreview", "theme", "columns", "autoScrollSpeed", "lightboxAutoDelay"];
   let saveTimer = 0;
 
   function safeJsonParse(text) {
@@ -60,29 +60,21 @@
     return merged;
   }
 
-  function syncThisSiteToGlobalSoon() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      const local = readLocalSettings();
-      writeGlobalSettings(local);
-      applyLaunchVisibility(local);
-    }, 120);
-  }
-
-  function bindUiChanges() {
-    document.addEventListener("change", (event) => {
-      const target = event.target;
-      if (!target || !target.closest || !target.closest("#xiv-root [data-setting], #xiv-root [data-fl-setting]")) return;
-      setTimeout(syncThisSiteToGlobalSoon, 80);
-    }, true);
-    document.addEventListener("click", (event) => {
-      const target = event.target;
-      if (!target || !target.closest || !target.closest("#xiv-root [data-fl-stepper], #xiv-root [data-xiv]")) return;
-      setTimeout(syncThisSiteToGlobalSoon, 160);
-    }, true);
+  function syncThisSiteToGlobal() {
+    const local = readLocalSettings();
+    writeGlobalSettings(local);
+    applyLaunchVisibility(local);
   }
 
   applyGlobalToThisSite();
-  bindUiChanges();
-  setInterval(() => applyLaunchVisibility(readGlobalSettings()), 1200);
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== SETTINGS_KEY) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(syncThisSiteToGlobal, 120);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") syncThisSiteToGlobal();
+  });
 })();
