@@ -430,10 +430,11 @@
     }
     #xiv-lightbox[data-zoom="actual"] {
       display: block;
+      scroll-behavior: auto;
     }
     #xiv-lightbox[data-zoom="actual"] img,
     #xiv-lightbox[data-zoom="actual"] video {
-      width: auto; height: auto; max-width: none; max-height: none; margin: 28px auto; cursor: grab;
+      width: auto !important; height: auto !important; max-width: none !important; max-height: none !important; margin: 28px auto; cursor: grab;
       touch-action: none;
     }
     #xiv-lightbox[data-zoom="actual"][data-dragging="true"] img,
@@ -1436,7 +1437,7 @@
         preload: "none",
         keepFirstFrame: true,
         previewTime: 1,
-        previewMode: "canvas",
+        previewMode: isGenericX810114Page() || /\/\/video(?:-cf)?\.twimg\.com\//i.test(url) ? "seek" : "canvas",
         deferSource: true
       });
       const size = videoSizeFromUrl(url);
@@ -1543,9 +1544,37 @@
         video.removeAttribute("src");
         video.load();
         observeVideoPreview(video);
+      } else {
+        loadVideoPreviewViaBlob(video);
       }
     }
     pumpVideoPreviewQueue();
+  }
+
+  function loadVideoPreviewViaBlob(video) {
+    const url = video?.dataset?.previewUrl || video?.dataset?.sourceUrl || "";
+    if (!video?.isConnected || !url || video.dataset.previewBlobTried === "true") return;
+    if (typeof GM_xmlhttpRequest !== "function") return;
+    video.dataset.previewBlobTried = "true";
+    GM_xmlhttpRequest({
+      method: "GET",
+      url,
+      responseType: "blob",
+      timeout: 30000,
+      onload: (response) => {
+        if (!video.isConnected || response.status < 200 || response.status >= 300 || !response.response) return;
+        const objectUrl = URL.createObjectURL(response.response);
+        video.dataset.previewObjectUrl = objectUrl;
+        video.dataset.previewMode = "canvas";
+        video.dataset.previewLoaded = "true";
+        video.dataset.previewLoading = "false";
+        video.dataset.sourceUrl = url;
+        video.src = objectUrl;
+        video.load();
+      },
+      onerror: () => {},
+      ontimeout: () => {}
+    });
   }
 
   function startVideoPreviewLoad(video) {
@@ -1605,9 +1634,11 @@
       video.dataset.previewCaptured = "true";
       rememberMediaRatio(video.dataset.previewUrl || video.dataset.sourceUrl || "", width, height);
       clearTimeout(Number(video.dataset.loadTimer || 0));
+      const objectUrl = video.dataset.previewObjectUrl || "";
       video.pause();
       video.removeAttribute("src");
       video.load();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       video.replaceWith(img);
       scheduleMasonryLayout();
     } catch {
@@ -1671,7 +1702,7 @@
     const video = document.createElement("video");
     const poster = state.posterByImage.get(keyForUrl(url));
     if (poster) video.poster = poster;
-    if (previewMode === "canvas") video.crossOrigin = "anonymous";
+    if (previewMode === "canvas" && !/\/\/video(?:-cf)?\.twimg\.com\//i.test(url)) video.crossOrigin = "anonymous";
     video.muted = muted;
     video.defaultMuted = muted;
     video.volume = muted ? 0 : 1;
@@ -3413,6 +3444,7 @@
     pauseAutoScrollForLightbox();
     state.index = index;
     state.lightbox.dataset.zoom = "fit";
+    state.lightbox.dataset.flVideoEnded = "false";
     state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     const thumbUrl = state.images[index];
     if (isVideoUrl(thumbUrl)) {
@@ -3918,12 +3950,16 @@
     if (message.type !== "XIV_VIDEO_TIME") return;
     const url = normalizeMediaUrl(String(message.url || ""));
     const time = Number(message.currentTime || 0);
+    if (message.eventName === "ended" && state.lightbox?.dataset.active === "true") {
+      state.lightbox.dataset.flVideoEnded = "true";
+    }
     if (!url || !Number.isFinite(time) || time <= 0) return;
     state.videoTimeByImage.set(keyForUrl(url), time);
   }
 
   function showAdjacentImage(delta) {
     if (!state.images.length) return;
+    if (state.lightbox?.dataset.zoom === "actual") return;
     let next = state.index;
     for (let step = 0; step < state.images.length; step += 1) {
       next = (next + delta + state.images.length) % state.images.length;
@@ -3933,12 +3969,30 @@
     openLightbox(next);
   }
 
+  function centerActualLightboxMedia() {
+    const lb = state.lightbox;
+    if (!lb || lb.dataset.active !== "true" || lb.dataset.zoom !== "actual") return;
+    const media = lb.querySelector("img, video");
+    if (!media) return;
+    const run = () => {
+      if (!state.lightbox || state.lightbox.dataset.zoom !== "actual" || state.lightbox.dataset.dragging === "true") return;
+      const left = Math.max(0, Math.round((state.lightbox.scrollWidth - state.lightbox.clientWidth) / 2));
+      const top = Math.max(0, Math.round((state.lightbox.scrollHeight - state.lightbox.clientHeight) / 2));
+      state.lightbox.scrollTo({ left, top, behavior: "auto" });
+    };
+    if (media.tagName !== "IMG" || media.complete) run();
+    else media.addEventListener("load", run, { once: true });
+    requestAnimationFrame(run);
+  }
+
   function toggleLightboxZoom() {
     if (!state.lightbox) return;
     const zoomed = state.lightbox.dataset.zoom === "actual";
     state.lightbox.dataset.zoom = zoomed ? "fit" : "actual";
     if (zoomed) {
       state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+    } else {
+      centerActualLightboxMedia();
     }
   }
 

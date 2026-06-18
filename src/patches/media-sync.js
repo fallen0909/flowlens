@@ -2,7 +2,7 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.17";
+  const VERSION = "1.4.18";
   const FILTER_ORDER = ["all", "image", "video"];
   const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
   const FILTER_KEY = "flowlens-media-filter-v1";
@@ -26,6 +26,7 @@
   function filterSelect() { return root()?.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]'); }
   function isLightboxOpen() { return lightbox()?.dataset.active === "true"; }
   function coreApi() { return window.__flowLensControl || null; }
+  function nativeSlideshowOwnsButton() { return !!window.__flowLensSlideshowNativePatch; }
 
   function liveFilter() {
     const apiValue = coreApi()?.getMediaFilter?.();
@@ -208,6 +209,10 @@
     }
     const open = isLightboxOpen();
     app.dataset.flLightbox = open ? "true" : "false";
+    if (nativeSlideshowOwnsButton()) {
+      if (slideshowActive) stopSlideshow(false);
+      return;
+    }
     if (!open) {
       stopSlideshow(false);
       return;
@@ -246,7 +251,6 @@
     if (slideshowActive) return;
     slideshowActive = true;
     restartSlideshowTimer();
-    setTimeout(clickNextInLightbox, 80);
   }
 
   function stopSlideshow(update = true) {

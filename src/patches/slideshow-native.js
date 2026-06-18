@@ -2,7 +2,7 @@
   if (window.__flowLensSlideshowNativePatch) return;
   window.__flowLensSlideshowNativePatch = true;
 
-  const VERSION = "1.4.17";
+  const VERSION = "1.4.18";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
   const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
   let delay = Number(localStorage.getItem(SPEED_KEY) || 2800);
@@ -15,10 +15,41 @@
   function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
   function isOpen() { return lightbox()?.dataset.active === "true"; }
   function coreApi() { return window.__flowLensControl || null; }
+  function currentVideoElement() { return lightbox()?.querySelector("video") || null; }
+  function currentVideoFrame() { return lightbox()?.querySelector(".xiv-video-frame[data-media-url], iframe[data-media-url]") || null; }
+  function zoomPaused() { return lightbox()?.dataset.zoom === "actual"; }
+  function videoStillPlaying() {
+    const video = currentVideoElement();
+    if (video) {
+      const duration = Number(video.duration || 0);
+      if (!video.ended && (!Number.isFinite(duration) || duration <= 0 || video.currentTime < duration - 0.35)) {
+        video.play?.().catch?.(() => {});
+        if (video.dataset.flSlideEndedBound !== VERSION) {
+          video.dataset.flSlideEndedBound = VERSION;
+          video.addEventListener("ended", () => {
+            if (active && isOpen()) setTimeout(nativeNext, 120);
+          });
+        }
+        return true;
+      }
+      return false;
+    }
+    const frame = currentVideoFrame();
+    if (frame && lightbox()?.dataset.flVideoEnded !== "true") return true;
+    return false;
+  }
 
   function nativeNext() {
     if (!isOpen()) {
       stop(false);
+      return;
+    }
+    if (zoomPaused()) {
+      syncButton();
+      return;
+    }
+    if (videoStillPlaying()) {
+      syncButton();
       return;
     }
     if (coreApi()?.showAdjacent?.(1)) return;
@@ -40,7 +71,6 @@
     if (active) return;
     active = true;
     restart();
-    setTimeout(nativeNext, 180);
   }
   function stop(update = true) {
     active = false;
@@ -65,9 +95,21 @@
       stop(false);
       return;
     }
+    const title = active
+      ? zoomPaused()
+        ? "1:1 查看中，自动切换已暂停"
+        : videoStillPlaying()
+          ? "等待当前视频播放完"
+          : "暂停幻灯片自动切换"
+      : "开始幻灯片自动切换";
+    const nextIcon = icon();
     btn.dataset.active = active ? "true" : "false";
-    btn.innerHTML = icon();
-    btn.title = active ? "暂停幻灯片自动切换" : "开始幻灯片自动切换";
+    if (btn.dataset.flIconState !== String(active)) {
+      btn.innerHTML = nextIcon;
+      btn.dataset.flIconState = String(active);
+    }
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
   }
   function rebindButton() {
     const old = button();
@@ -131,6 +173,13 @@
   document.addEventListener("click", () => setTimeout(tick, 120), true);
   document.addEventListener("keydown", () => setTimeout(tick, 120), true);
   document.addEventListener("fullscreenchange", tick, true);
+  window.addEventListener("message", (event) => {
+    const message = event.data || {};
+    if (message.type === "XIV_VIDEO_TIME" && message.eventName === "ended" && active && isOpen()) {
+      lightbox().dataset.flVideoEnded = "true";
+      setTimeout(nativeNext, 120);
+    }
+  });
   setInterval(tick, 1200);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
   else boot();
