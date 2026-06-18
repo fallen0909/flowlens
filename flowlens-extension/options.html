@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>瀑光 FlowLens 设置</title>
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f6f8;color:#151515}.wrap{max-width:860px;margin:0 auto;padding:34px 20px 48px}h1{margin:0 0 8px;font-size:30px}p{color:#666;line-height:1.65}.card{background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:18px;padding:18px;margin-top:16px;box-shadow:0 18px 48px rgba(0,0,0,.06)}.row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid rgba(0,0,0,.08)}.row:first-child{border-top:0}.label strong{display:block;font-size:15px}.label span{display:block;margin-top:5px;color:#777;font-size:13px;line-height:1.45}input[type=text],input[type=number],select{width:220px;max-width:44vw;box-sizing:border-box;border:1px solid rgba(0,0,0,.16);border-radius:12px;padding:10px 12px;background:#fff;color:#111;font:700 14px/1 system-ui,sans-serif}input[type=checkbox]{width:20px;height:20px}.actions{display:flex;gap:10px;margin-top:18px}button{border:0;border-radius:999px;padding:11px 18px;background:#176bff;color:#fff;font:850 14px/1 system-ui,sans-serif;cursor:pointer}button.secondary{background:#e9edf5;color:#1c2636}#status{margin-top:12px;min-height:22px;font-weight:800;color:#176bff}@media(prefers-color-scheme:dark){body{background:#0f1013;color:#f1f1f1}p,.label span{color:#aaa}.card{background:#181a20;border-color:rgba(255,255,255,.1);box-shadow:none}.row{border-top-color:rgba(255,255,255,.1)}input[type=text],input[type=number],select{background:#111319;color:#fff;border-color:rgba(255,255,255,.16)}button.secondary{background:#2a2e38;color:#fff}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>瀑光 FlowLens 设置</h1>
+    <p>这里设置电脑端扩展的默认行为。页面内即时设置仍然保留，二者会共同写入同一套配置。</p>
+    <section class="card">
+      <div class="row"><div class="label"><strong>默认列数</strong><span>图片流打开后的默认列数，2—8 列。</span></div><input id="columns" type="number" min="2" max="8" step="1"></div>
+      <div class="row"><div class="label"><strong>默认主题</strong><span>可跟随系统，也可固定深色或浅色。</span></div><select id="theme"><option value="system">跟随系统</option><option value="dark">深色</option><option value="light">浅色</option></select></div>
+      <div class="row"><div class="label"><strong>自动全屏</strong><span>打开图片流时自动进入全屏模式。</span></div><input id="autoFullscreen" type="checkbox"></div>
+      <div class="row"><div class="label"><strong>视频预览</strong><span>在网格中尝试生成视频首帧预览，关闭后更省资源。</span></div><input id="videoPreview" type="checkbox"></div>
+      <div class="row"><div class="label"><strong>隐藏悬浮入口</strong><span>隐藏页面右下角入口后，可用 G 或扩展图标打开。</span></div><input id="launchHidden" type="checkbox"></div>
+      <div class="row"><div class="label"><strong>自动滚动速度</strong><span>自动滚动默认速度，1—10 档。</span></div><input id="autoScrollSpeed" type="number" min="1" max="10" step="1"></div>
+      <div class="row"><div class="label"><strong>下载文件夹名</strong><span>批量选择下载时使用，留空则使用网页标题。</span></div><input id="downloadFolder" type="text" placeholder="默认：网页标题"></div>
+    </section>
+    <div class="actions"><button id="save">保存设置</button><button id="reset" class="secondary">恢复默认</button></div>
+    <div id="status"></div>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
