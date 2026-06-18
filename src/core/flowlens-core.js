@@ -1059,6 +1059,8 @@
       }
     });
 
+    added += collectArticleImageUrls(doc, base);
+
     if (isKnownGalleryUrl(base)) {
       added += collectFallbackImageUrls(doc, base);
     }
@@ -1329,6 +1331,7 @@
   }
 
   function setImageSourceWithFallback(img, url) {
+    img.dataset.sourceUrl = url || "";
     img.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
     const previousSrc = img.currentSrc || img.src || "";
     img.dataset.fallbackTried = "";
@@ -1343,6 +1346,7 @@
       }
       const fallback = alternateImageUrl(img.currentSrc || img.src || url) || (previousSrc && previousSrc !== url ? previousSrc : "");
       if (!fallback) {
+        loadImageViaBlob(img, img.currentSrc || img.src || url);
         img.dataset.awaitingFallback = "";
         return;
       }
@@ -1353,10 +1357,41 @@
     img.src = url;
   }
 
+  function loadImageViaBlob(img, url) {
+    if (!img?.isConnected || !url || img.dataset.blobFallbackTried === "true") return;
+    if (typeof GM_xmlhttpRequest !== "function") return;
+    img.dataset.blobFallbackTried = "true";
+    GM_xmlhttpRequest({
+      method: "GET",
+      url,
+      responseType: "blob",
+      headers: {
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+      },
+      timeout: 30000,
+      anonymous: false,
+      onload: (response) => {
+        if (!img.isConnected || response.status < 200 || response.status >= 300 || !response.response) return;
+        const objectUrl = URL.createObjectURL(response.response);
+        const previousObjectUrl = img.dataset.objectUrl || "";
+        img.dataset.objectUrl = objectUrl;
+        img.dataset.sourceUrl = url;
+        img.dataset.awaitingFallback = "";
+        img.src = objectUrl;
+        if (previousObjectUrl) setTimeout(() => URL.revokeObjectURL(previousObjectUrl), 30000);
+      },
+      onerror: () => {},
+      ontimeout: () => {}
+    });
+  }
+
   function shouldKeepReferrer(url) {
     try {
       const parsed = new URL(url, location.href);
-      return /(^|\.)xchina\.co$/i.test(parsed.hostname) || /(^|\.)xchina\.co$/i.test(location.hostname);
+      return /(^|\.)xchina\.co$/i.test(parsed.hostname)
+        || /(^|\.)xchina\.co$/i.test(location.hostname)
+        || /(^|\.)155picpic\.com$/i.test(parsed.hostname)
+        || /(^|\.)155zy\.com$/i.test(location.hostname);
     } catch {
       return false;
     }
@@ -1905,6 +1940,71 @@
         }
         urls.add(url);
       }
+    }
+
+    let added = 0;
+    for (const url of urls) {
+      if (addImage(url)) added += 1;
+    }
+    return added;
+  }
+
+  function articleContainers(doc) {
+    const selectors = [
+      "article",
+      "#read_tpc",
+      "#content",
+      "#article",
+      ".article",
+      ".content",
+      ".detail",
+      ".post",
+      ".entry",
+      ".main",
+      "[class*='article' i]",
+      "[class*='content' i]",
+      "[class*='detail' i]",
+      "[id*='article' i]",
+      "[id*='content' i]"
+    ].join(",");
+    const nodes = Array.from(doc.querySelectorAll(selectors));
+    return nodes.length ? nodes : [doc.body || doc.documentElement];
+  }
+
+  function collectArticleImageUrls(doc, base) {
+    const urls = new Set();
+
+    function remember(raw) {
+      const url = absoluteUrl(unescapeEmbeddedUrl(raw), base);
+      if (!url || (!MEDIA_EXT.test(url) && !isDiscuzAttachmentUrl(url))) return;
+      if (BAD_IMAGE_RE.test(url) || isX810114Avatar(url)) return;
+      const path = new URL(url).pathname;
+      const likelyArticleMedia = /\/(upload|uploads|media|photos?|files?|art|attachment)\//i.test(path)
+        || /(?:^|[/_-])\d{2,}(?:[/_-]\d{2,})*[/_-][A-Za-z0-9_-]{6,}\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url)
+        || isDiscuzAttachmentUrl(url);
+      if (!likelyArticleMedia) return;
+      if (STATIC_ASSET_RE.test(url) && !/\/(upload|uploads|media|photos?|files?|art|attachment)\//i.test(path)) return;
+      urls.add(url);
+    }
+
+    for (const container of articleContainers(doc)) {
+      container.querySelectorAll?.("img, source, a, meta, link").forEach((node) => {
+        ["src", "currentSrc", "href", "content", "poster", "file", "zoomfile", "data-file", "data-zoomfile", "data-src", "data-original", "data-lazy-src", "data-url", "data-full", "data-large"].forEach((attr) => {
+          const value = attr === "currentSrc" ? node.currentSrc : node.getAttribute?.(attr);
+          if (value) remember(value);
+        });
+        const srcset = node.getAttribute?.("srcset") || node.getAttribute?.("data-srcset");
+        if (srcset) {
+          srcset.split(",").map((item) => item.trim().split(/\s+/)[0]).filter(Boolean).forEach(remember);
+        }
+      });
+      container.querySelectorAll?.("[style]").forEach((node) => {
+        backgroundImageUrls(node.getAttribute("style"), base).forEach(remember);
+      });
+      const html = container.innerHTML || "";
+      const re = /(?:https?:\\?\/\\?\/|\/\/|\/)[^"'()<>\\\s]+\.(?:gif|jpe?g|png|webp|avif|mp4|webm|mov|m4v)(?:\?[^"'()<>\\\s]*)?/gi;
+      let match;
+      while ((match = re.exec(html))) remember(match[0]);
     }
 
     let added = 0;
@@ -3483,7 +3583,7 @@
   }
 
   function lightboxArrows() {
-    return `<button class="xiv-lightbox-fav" type="button" title="收藏并保存">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
+    return `<button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
   }
 
   function heartIcon() {
@@ -3502,7 +3602,7 @@
     button.dataset.sourceUrl = sourceUrl || saveUrl || "";
     button.dataset.favorited = state.favoriteKeys.has(key) ? "true" : "false";
     button.innerHTML = heartIcon();
-    button.title = button.dataset.favorited === "true" ? "已收藏" : "收藏并保存";
+    button.title = button.dataset.favorited === "true" ? "\u5df2\u4fdd\u5b58" : "\u6536\u85cf";
   }
 
   function lightboxCurrentImageUrl() {
@@ -3513,7 +3613,9 @@
 
   function lightboxLoadedImageUrl() {
     const img = state.lightbox?.querySelector("img");
-    return normalizeMediaUrl(img?.currentSrc || img?.src || "");
+    const loaded = img?.currentSrc || img?.src || "";
+    const source = img?.dataset?.sourceUrl || "";
+    return normalizeMediaUrl(loaded.startsWith("blob:") ? source : loaded);
   }
 
   function favoriteFilename(url, index = state.index) {
@@ -3692,14 +3794,14 @@
     }
     const button = state.lightbox?.querySelector(".xiv-lightbox-fav");
     if (!button) {
-      updateStatus("当前不是图片");
+      updateStatus("当前不是图片或视频");
       return;
     }
     const sourceUrl = button.dataset.sourceUrl || state.images[state.index] || "";
     const loadedUrl = lightboxLoadedImageUrl();
     const currentUrl = loadedUrl || lightboxCurrentImageUrl();
     if (!currentUrl) {
-      updateStatus("图片还没加载出来");
+      updateStatus("图片还没有加载出来");
       return;
     }
     const currentIsVideo = isVideoUrl(currentUrl)
@@ -3708,7 +3810,7 @@
 
     const favoriteKey = keyForUrl(sourceUrl || currentUrl);
     if (button.dataset.favorited === "true" && state.favoriteKeys.has(favoriteKey)) {
-      updateStatus("已收藏");
+      updateStatus("已保存");
       return;
     }
 
@@ -3753,61 +3855,48 @@
         updateStatus(currentIsVideo ? "没有可保存的视频地址" : "没有可保存的图片地址");
         return;
       }
-      debugLog("红心保存候选", candidates);
-      let savedUrl = "";
-      let lastError = "";
-      for (const saveUrl of candidates) {
-        updateStatus(`保存 ${saveUrl.split("/").pop() || (currentIsVideo ? "视频" : "图片")}`);
-        let result = null;
-        if (currentIsVideo || isSiteAlbumImageUrl(saveUrl)) {
-          result = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl), { direct: true });
-        } else {
-          try {
-            result = await downloadUrlViaPageBlob(saveUrl, favoriteFilename(saveUrl));
-          } catch (error) {
-            result = { ok: false, error: String(error?.message || error), via: "page-blob" };
-          }
+
+      const saveUrl = candidates[0];
+      updateStatus(`保存 ${saveUrl.split("/").pop() || (currentIsVideo ? "视频" : "图片")}`);
+      let result = null;
+      if (currentIsVideo || isSiteAlbumImageUrl(saveUrl)) {
+        result = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl), { direct: true });
+      } else {
+        try {
+          result = await downloadUrlViaPageBlob(saveUrl, favoriteFilename(saveUrl));
+        } catch (error) {
+          result = { ok: false, error: String(error?.message || error), via: "page-blob" };
         }
-        if (!result?.ok && !currentIsVideo && !isSiteAlbumImageUrl(saveUrl)) {
-          const fallback = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl));
-          result = fallback?.ok ? fallback : {
-            ok: false,
-            error: `${result?.error || "page failed"}; ${fallback?.error || "background failed"}`
-          };
-        }
-        if (!result?.ok && (currentIsVideo || isExtensionContextError(result?.error))) {
-          result = downloadUrlViaDirectAnchor(saveUrl, favoriteFilename(saveUrl));
-          if (result?.ok) {
-            updateStatus("已触发下载；扩展刚重载，刷新页面可恢复完整保存");
-          }
-        }
-        debugLog("红心保存结果", { url: saveUrl, result });
-        if (result?.ok) {
-          savedUrl = saveUrl;
-          break;
-        }
-        lastError = result?.error || lastError;
       }
-      if (!savedUrl) {
+      if (!result?.ok && !currentIsVideo && !isSiteAlbumImageUrl(saveUrl)) {
+        const fallback = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl));
+        result = fallback?.ok ? fallback : {
+          ok: false,
+          error: `${result?.error || "page failed"}; ${fallback?.error || "background failed"}`
+        };
+      }
+      if (!result?.ok && (currentIsVideo || isExtensionContextError(result?.error))) {
+        result = downloadUrlViaDirectAnchor(saveUrl, favoriteFilename(saveUrl));
+      }
+      debugLog("红心保存结果", { url: saveUrl, result });
+      if (!result?.ok) {
         button.title = "保存失败，可重试";
         button.dataset.favorited = "false";
-        updateStatus(isExtensionContextError(lastError)
+        updateStatus(isExtensionContextError(result?.error)
           ? "扩展已重载，请刷新页面后再保存"
-          : lastError ? `保存失败：${lastError}` : "保存失败");
-        debugLog("红心保存失败", { candidates, lastError });
+          : result?.error ? `保存失败：${result.error}` : "保存失败");
         return;
       }
-      state.favoriteKeys.add(keyForUrl(sourceUrl || savedUrl));
-      state.favoriteKeys.add(keyForUrl(savedUrl));
-      updateFavoriteButton(savedUrl, sourceUrl || savedUrl);
+
+      state.favoriteKeys.add(keyForUrl(sourceUrl || saveUrl));
+      state.favoriteKeys.add(keyForUrl(saveUrl));
+      updateFavoriteButton(saveUrl, sourceUrl || saveUrl);
       updateStatus("已保存");
     } catch (error) {
       button.title = "保存失败，可重试";
       button.dataset.favorited = "false";
       const message = error?.message || error;
-      updateStatus(isExtensionContextError(message)
-        ? "扩展已重载，请刷新页面后再保存"
-        : `保存失败：${message}`);
+      updateStatus(`保存失败：${message}`);
     } finally {
       state.savingFavorite = false;
     }

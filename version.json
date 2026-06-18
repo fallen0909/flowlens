@@ -1,12 +1,12 @@
 {
-  "version": "1.4.18",
+  "version": "1.4.19",
   "desktop": {
-    "version": "1.4.18",
+    "version": "1.4.19",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.18",
+    "version": "1.4.19",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,6 +14,9 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "single-current-media-favorite-download",
+    "image-blob-load-fallback",
+    "article-content-image-collector",
     "stable-slideshow-button-state",
     "pause-slideshow-on-actual-zoom",
     "wait-video-ended-before-slideshow-next",

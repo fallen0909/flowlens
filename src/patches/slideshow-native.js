@@ -2,7 +2,7 @@
   if (window.__flowLensSlideshowNativePatch) return;
   window.__flowLensSlideshowNativePatch = true;
 
-  const VERSION = "1.4.18";
+  const VERSION = "1.4.19";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
   const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
   let delay = Number(localStorage.getItem(SPEED_KEY) || 2800);
