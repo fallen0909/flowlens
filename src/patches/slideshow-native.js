@@ -2,77 +2,42 @@
   if (window.__flowLensSlideshowNativePatch) return;
   window.__flowLensSlideshowNativePatch = true;
 
-  const VERSION = "1.4.14";
-  const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
-  const FILTER_ORDER = ["all", "image", "video"];
+  const VERSION = "1.4.16";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
   const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
   let delay = Number(localStorage.getItem(SPEED_KEY) || 2800);
   if (!SPEED_OPTIONS.includes(delay)) delay = 2800;
   let timer = 0;
   let active = false;
-  let lastIndex = 0;
   let bootTimer = 0;
 
   function root() { return document.getElementById("xiv-root"); }
   function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
   function isOpen() { return lightbox()?.dataset.active === "true"; }
-  function filterValue() {
-    const value = root()?.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]')?.value || "all";
-    return FILTER_ORDER.includes(value) ? value : "all";
-  }
-  function isVideo(url) { return VIDEO_RE.test(String(url || "")); }
-  function tileType(tile) {
-    const url = tile?.dataset?.url || "";
-    return isVideo(url) || !!tile?.querySelector?.("video") ? "video" : "image";
-  }
-  function allTiles() {
-    return [...(root()?.querySelectorAll(".xiv-tile") || [])]
-      .sort((a, b) => Number(a.dataset.index || 0) - Number(b.dataset.index || 0));
-  }
-  function eligibleTiles() {
-    const mode = filterValue();
-    const tiles = allTiles();
-    const filtered = mode === "all" ? tiles : tiles.filter((tile) => tileType(tile) === mode);
-    return filtered.length > 1 ? filtered : tiles;
-  }
-  function rememberFromEvent(event) {
-    const tile = event.target?.closest?.(".xiv-tile");
-    if (!tile) return;
-    const index = Number(tile.dataset.index || 0);
-    if (Number.isFinite(index)) lastIndex = index;
-  }
-  function clickTile(tile) {
-    if (!tile) return false;
-    const rect = tile.getBoundingClientRect();
-    const x = Math.max(1, rect.left + Math.min(rect.width / 2 || 1, 12));
-    const y = Math.max(1, rect.top + Math.min(rect.height / 2 || 1, 12));
-    lastIndex = Number(tile.dataset.index || lastIndex || 0);
-    tile.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, pointerId: 2026, pointerType: "mouse" }));
-    tile.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, view: window }));
-    return true;
-  }
-  function next() {
+
+  function nativeNext() {
     if (!isOpen()) {
       stop(false);
       return;
     }
-    const tiles = eligibleTiles();
-    if (tiles.length < 2) return;
-    let pos = tiles.findIndex((tile) => Number(tile.dataset.index || 0) === lastIndex);
-    if (pos < 0) pos = 0;
-    clickTile(tiles[(pos + 1) % tiles.length]);
+    const box = lightbox();
+    const arrow = box?.querySelector('.xiv-lightbox-arrow[data-side="right"]');
+    if (arrow) {
+      arrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    }
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true }));
   }
+
   function restart() {
     clearInterval(timer);
-    timer = setInterval(next, delay);
+    timer = setInterval(nativeNext, delay);
     syncButton();
   }
   function start() {
     if (active) return;
     active = true;
     restart();
-    setTimeout(next, 180);
+    setTimeout(nativeNext, 180);
   }
   function stop(update = true) {
     active = false;
@@ -102,11 +67,11 @@
   }
   function rebindButton() {
     const old = button();
-    if (!old || old.dataset.flNativeBound === "true") return;
+    if (!old || old.dataset.flNativeBound === "1.4.16") return;
     const fresh = old.cloneNode(false);
     fresh.className = old.className;
     fresh.type = "button";
-    fresh.dataset.flNativeBound = "true";
+    fresh.dataset.flNativeBound = "1.4.16";
     fresh.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -129,14 +94,13 @@
     return "很慢 6秒";
   }
   function syncSettings() {
-    const app = root();
-    const panel = app?.querySelector('[data-panel="settings"]');
+    const panel = root()?.querySelector('[data-panel="settings"]');
     if (!panel) return;
     const version = panel.querySelector(".fl-version-row strong");
     if (version) version.textContent = `v${VERSION}`;
     const select = panel.querySelector(".fl-slideshow-speed");
-    if (select && select.dataset.flNativeBound !== "true") {
-      select.dataset.flNativeBound = "true";
+    if (select && select.dataset.flNativeBound !== "1.4.16") {
+      select.dataset.flNativeBound = "1.4.16";
       select.addEventListener("change", () => {
         const value = Number(select.value || 2800);
         delay = SPEED_OPTIONS.includes(value) ? value : 2800;
@@ -160,11 +124,7 @@
     clearTimeout(bootTimer);
     if (!root()) bootTimer = setTimeout(boot, 500);
   }
-  document.addEventListener("pointerdown", rememberFromEvent, true);
-  document.addEventListener("click", (event) => {
-    rememberFromEvent(event);
-    setTimeout(tick, 120);
-  }, true);
+  document.addEventListener("click", () => setTimeout(tick, 120), true);
   document.addEventListener("keydown", () => setTimeout(tick, 120), true);
   document.addEventListener("fullscreenchange", tick, true);
   setInterval(tick, 1200);
