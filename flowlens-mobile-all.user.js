@@ -11,6 +11,8 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @connect      *
+// @downloadURL  https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js
+// @updateURL    https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-global-settings.user.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens.user.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-optimizer.user.js
@@ -19,7 +21,7 @@
 
 /*
   FlowLens mobile all-in-one loader v1.3.5.
-  This file is intentionally small. Tampermonkey loads the mobile modules above via @require.
+  Tampermonkey loads the mobile modules above via @require.
   If Tampermonkey still shows an old version, delete the old script and install this URL again:
-  https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js
+  https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js?v=1.3.5
 */
