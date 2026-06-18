@@ -1,12 +1,12 @@
 {
-  "version": "1.4.8",
+  "version": "1.4.9",
   "desktop": {
-    "version": "1.4.8",
+    "version": "1.4.9",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.8",
+    "version": "1.4.9",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,6 +14,9 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "settings-version-display",
+    "top-filter-toggle-button",
+    "lightbox-slideshow-autoplay",
     "media-switch-buttons",
     "lightbox-video-autoplay",
     "clean-source-layout"
