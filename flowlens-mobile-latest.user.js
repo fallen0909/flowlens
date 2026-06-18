@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.3.7
-// @description  手机 Edge / Tampermonkey 稳定更新版：以后固定使用本链接更新。
+// @version      1.3.8
+// @description  手机 Edge / Tampermonkey 稳定更新版：恢复顶部信息、压缩空隙、加大图自动切换、增强图片视频加载。
 // @match        *://*/*
 // @run-at       document-idle
 // @noframes
@@ -23,6 +23,7 @@
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-extension/content-settings-compact-v2.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-extension/content-zhihu.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-mobile-center.user.js
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-mobile-polish.user.js
 // ==/UserScript==
 
 /*
