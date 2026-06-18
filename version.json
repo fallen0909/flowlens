@@ -2,7 +2,8 @@
   "version": "1.4.6",
   "desktop": {
     "version": "1.4.6",
-    "entry": "flowlens-extension/manifest.json"
+    "recommendedEntry": "flowlens-desktop.user.js",
+    "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
     "version": "1.4.6",
