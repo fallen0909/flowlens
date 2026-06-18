@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.4.4
-// @description  手机 Edge / Tampermonkey 稳定更新版：回顶部改筛选切换，修复大图自动切换、视频结束下一条和 1:1 闪烁。
+// @version      1.4.5
+// @description  手机 Edge / Tampermonkey 稳定更新版：修复右侧图标位置、防止与左上角信息重叠，视频模式恢复爱心按钮。
 // @match        *://*/*
 // @run-at       document-idle
 // @noframes
@@ -24,6 +24,7 @@
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-extension/content-zhihu.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-media-bridge-v4.user.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-mobile-clean-control-v4.user.js
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/mobile-userscript/flowlens-mobile-toolbar-v5.user.js
 // ==/UserScript==
 
 /*
