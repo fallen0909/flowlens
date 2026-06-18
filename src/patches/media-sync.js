@@ -2,18 +2,40 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.9";
+  const VERSION = "1.4.10";
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
   const FILTER_ORDER = ["all", "image", "video"];
   const FILTER_SHORT = { all: "全", image: "图", video: "视" };
   const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
-  let observer = null;
+  const SLIDESHOW_INTERVAL = 2800;
+  const CONTROL_REFRESH_MS = 900;
+
+  let rootObserver = null;
+  let rootObserverTarget = null;
+  let lightboxObserver = null;
+  let lightboxObserverTarget = null;
   let refreshTimer = 0;
+  let pollTimer = 0;
+  let countCacheAt = 0;
+  let countCache = { all: 0, image: 0, video: 0 };
   let slideshowTimer = 0;
   let slideshowActive = false;
+  let lastLightboxState = "";
 
   function isVideoUrl(url) {
     return VIDEO_RE.test(String(url || ""));
+  }
+
+  function root() {
+    return document.getElementById("xiv-root");
+  }
+
+  function lightbox() {
+    return root()?.querySelector("#xiv-lightbox");
+  }
+
+  function filterSelect() {
+    return root()?.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]');
   }
 
   function ensureStyle() {
@@ -21,145 +43,46 @@
     const style = document.createElement("style");
     style.id = "xiv-media-sync-style";
     style.textContent = `
-      #xiv-root[data-fl-media-buttons="true"] #xiv-topbar .xiv-select[data-xiv="filter"] {
-        display: none !important;
-      }
-      #xiv-root .xiv-media-switch {
-        pointer-events: auto;
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        min-height: 38px;
-        padding: 3px;
-        border-radius: 999px;
-        border: 1px solid rgba(255,255,255,.16);
-        background: rgba(18,18,20,.74);
-        backdrop-filter: blur(12px);
-      }
-      #xiv-root[data-theme="light"] .xiv-media-switch {
-        background: rgba(255,255,255,.78);
-        border-color: rgba(0,0,0,.12);
-      }
-      #xiv-root .xiv-media-switch button {
-        height: 30px;
-        min-width: 48px;
-        padding: 0 10px;
-        border: 0;
-        border-radius: 999px;
-        background: transparent;
-        color: rgba(255,255,255,.76);
-        font: 850 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        cursor: pointer;
-        white-space: nowrap;
-      }
-      #xiv-root[data-theme="light"] .xiv-media-switch button {
-        color: rgba(20,20,20,.72);
-      }
-      #xiv-root .xiv-media-switch button[data-active="true"] {
-        background: rgba(255,255,255,.94);
-        color: #111;
-        box-shadow: 0 6px 18px rgba(0,0,0,.22);
-      }
-      #xiv-root[data-theme="light"] .xiv-media-switch button[data-active="true"] {
-        background: #111;
-        color: #fff;
-      }
-      #xiv-root .fl-top-filter-btn {
-        font: 950 17px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-        letter-spacing: 0 !important;
-      }
-      #xiv-root .fl-version-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        min-height: 34px;
-        padding: 6px 0 12px;
-        margin: -2px 0 6px;
-        border-bottom: 1px solid rgba(0,0,0,.08);
-        color: rgba(0,0,0,.58);
-        font: 750 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      #xiv-root[data-theme="dark"] .fl-version-row,
-      #xiv-root:not([data-theme="light"]) .fl-version-row {
-        border-bottom-color: rgba(255,255,255,.12);
-        color: rgba(255,255,255,.66);
-      }
-      #xiv-root .fl-version-row strong {
-        color: inherit;
-        font-weight: 900;
-      }
-      #xiv-lightbox .xiv-lightbox-slideshow {
-        position: fixed;
-        right: 118px;
-        top: 18px;
-        z-index: 6;
-        width: 42px;
-        height: 42px;
-        border-radius: 999px;
-        border: 1px solid rgba(255,255,255,.26);
-        background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72));
-        color: #fff;
-        display: grid;
-        place-items: center;
-        pointer-events: auto;
-        cursor: pointer;
-        padding: 0;
-        box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18);
-        backdrop-filter: blur(12px);
-        font: 950 18px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] {
-        color: #111;
-        background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76));
-        border-color: rgba(255,255,255,.7);
-      }
-      #xiv-lightbox .xiv-lightbox-slideshow svg {
-        width: 20px;
-        height: 20px;
-        display: block;
-      }
+      #xiv-root[data-fl-media-buttons="true"] #xiv-topbar .xiv-select[data-xiv="filter"] { display: none !important; }
+      #xiv-root .xiv-media-switch { pointer-events: auto; display: inline-flex; align-items: center; gap: 5px; min-height: 38px; padding: 3px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16); background: rgba(18,18,20,.74); backdrop-filter: blur(12px); }
+      #xiv-root[data-theme="light"] .xiv-media-switch { background: rgba(255,255,255,.78); border-color: rgba(0,0,0,.12); }
+      #xiv-root .xiv-media-switch button { height: 30px; min-width: 48px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: rgba(255,255,255,.76); font: 850 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; white-space: nowrap; }
+      #xiv-root[data-theme="light"] .xiv-media-switch button { color: rgba(20,20,20,.72); }
+      #xiv-root .xiv-media-switch button[data-active="true"] { background: rgba(255,255,255,.94); color: #111; box-shadow: 0 6px 18px rgba(0,0,0,.22); }
+      #xiv-root[data-theme="light"] .xiv-media-switch button[data-active="true"] { background: #111; color: #fff; }
+      #xiv-root .fl-top-filter-btn { font: 950 17px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; letter-spacing: 0 !important; }
+      #xiv-root .fl-version-row { display: flex; align-items: center; justify-content: space-between; min-height: 34px; padding: 6px 0 12px; margin: -2px 0 6px; border-bottom: 1px solid rgba(0,0,0,.08); color: rgba(0,0,0,.58); font: 750 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      #xiv-root[data-theme="dark"] .fl-version-row, #xiv-root:not([data-theme="light"]) .fl-version-row { border-bottom-color: rgba(255,255,255,.12); color: rgba(255,255,255,.66); }
+      #xiv-root .fl-version-row strong { color: inherit; font-weight: 900; }
+      #xiv-lightbox .xiv-lightbox-slideshow { position: fixed; right: 118px; top: 18px; z-index: 6; width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72)); color: #fff; display: grid; place-items: center; pointer-events: auto; cursor: pointer; padding: 0; box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18); backdrop-filter: blur(12px); font: 950 18px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] { color: #111; background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76)); border-color: rgba(255,255,255,.7); }
+      #xiv-lightbox .xiv-lightbox-slideshow svg { width: 20px; height: 20px; display: block; }
       @media (max-width: 820px) {
-        #xiv-root .xiv-media-switch {
-          gap: 3px;
-          min-height: 34px;
-          padding: 2px;
-        }
-        #xiv-root .xiv-media-switch button {
-          height: 30px;
-          min-width: 40px;
-          padding: 0 8px;
-          font-size: 12px;
-        }
-        #xiv-lightbox .xiv-lightbox-slideshow {
-          right: 112px;
-          top: 14px;
-          width: 40px;
-          height: 40px;
-        }
+        #xiv-root .xiv-media-switch { gap: 3px; min-height: 34px; padding: 2px; }
+        #xiv-root .xiv-media-switch button { height: 30px; min-width: 40px; padding: 0 8px; font-size: 12px; }
+        #xiv-lightbox .xiv-lightbox-slideshow { right: 112px; top: 14px; width: 40px; height: 40px; }
       }
     `;
     document.documentElement.appendChild(style);
   }
 
-  function root() {
-    return document.getElementById("xiv-root");
-  }
-
-  function filterSelect() {
-    return root()?.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]');
-  }
-
-  function mediaCounts() {
-    const tiles = [...(root()?.querySelectorAll(".xiv-tile") || [])];
+  function mediaCounts(force = false) {
+    const now = Date.now();
+    if (!force && now - countCacheAt < 1000) return countCache;
+    const app = root();
+    if (!app) return countCache;
+    const tiles = app.querySelectorAll(".xiv-tile");
     let image = 0;
     let video = 0;
-    for (const tile of tiles) {
+    tiles.forEach((tile) => {
       const url = tile.dataset.url || "";
       const hasVideo = isVideoUrl(url) || !!tile.querySelector("video");
       if (hasVideo) video += 1;
       else image += 1;
-    }
-    return { all: image + video, image, video };
+    });
+    countCache = { all: image + video, image, video };
+    countCacheAt = now;
+    return countCache;
   }
 
   function buttonLabel(value, count) {
@@ -168,16 +91,16 @@
     return `全部 ${count}`;
   }
 
+  function currentFilter() {
+    return filterSelect()?.value || "all";
+  }
+
   function setFilter(value) {
     const select = filterSelect();
     if (!select) return;
     select.value = value;
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    refreshControls();
-  }
-
-  function currentFilter() {
-    return filterSelect()?.value || "all";
+    refreshControls(true);
   }
 
   function cycleFilter() {
@@ -186,22 +109,16 @@
     setFilter(next);
   }
 
-  function ensureControls() {
+  function ensureMediaSwitch() {
     const app = root();
     const select = filterSelect();
     if (!app || !select) return;
-    ensureStyle();
-    app.dataset.flMediaButtons = "true";
     if (!app.querySelector(".xiv-media-switch")) {
       const group = document.createElement("div");
       group.className = "xiv-media-switch";
       group.setAttribute("role", "group");
       group.setAttribute("aria-label", "媒体类型切换");
-      group.innerHTML = `
-        <button type="button" data-fl-filter="all">全部</button>
-        <button type="button" data-fl-filter="image">图片</button>
-        <button type="button" data-fl-filter="video">视频</button>
-      `;
+      group.innerHTML = `<button type="button" data-fl-filter="all">全部</button><button type="button" data-fl-filter="image">图片</button><button type="button" data-fl-filter="video">视频</button>`;
       group.addEventListener("click", (event) => {
         const button = event.target?.closest?.("button[data-fl-filter]");
         if (!button) return;
@@ -210,17 +127,14 @@
         setFilter(button.dataset.flFilter || "all");
       });
       select.parentElement?.insertBefore(group, select);
-      select.addEventListener("change", refreshControls);
+      select.addEventListener("change", () => refreshControls(true));
     }
-    ensureTopFilterButton();
-    ensureVersionRow();
-    refreshControls();
+    app.dataset.flMediaButtons = "true";
   }
 
   function ensureTopFilterButton() {
     const button = root()?.querySelector('[data-xiv="top"]');
     if (!button) return;
-    ensureStyle();
     button.classList.add("fl-top-filter-btn");
     if (button.dataset.flFilterBound !== "true") {
       button.dataset.flFilterBound = "true";
@@ -257,13 +171,13 @@
     row.innerHTML = `<span>当前版本</span><strong>v${VERSION}</strong>`;
   }
 
-  function refreshControls() {
+  function refreshControls(forceCount = false) {
     const app = root();
     const select = filterSelect();
     const group = app?.querySelector(".xiv-media-switch");
     if (!app || !select || !group) return;
     const value = select.value || "all";
-    const counts = mediaCounts();
+    const counts = mediaCounts(forceCount);
     group.querySelectorAll("button[data-fl-filter]").forEach((button) => {
       const mode = button.dataset.flFilter || "all";
       button.dataset.active = mode === value ? "true" : "false";
@@ -274,7 +188,8 @@
   }
 
   function playVideoElement(video) {
-    if (!video) return;
+    if (!video || video.dataset.flAutoplayTouched === "true") return;
+    video.dataset.flAutoplayTouched = "true";
     try {
       video.autoplay = true;
       video.controls = true;
@@ -290,45 +205,29 @@
               video.muted = true;
               video.setAttribute("muted", "");
               video.play?.().catch?.(() => {});
-            } catch {
-              // Ignore autoplay failures caused by browser policy.
-            }
+            } catch {}
           });
         }
       };
       if (video.readyState >= 2) run();
-      else {
-        video.addEventListener("loadedmetadata", run, { once: true });
-        video.addEventListener("canplay", run, { once: true });
-      }
-      setTimeout(run, 80);
-      setTimeout(run, 360);
-    } catch {
-      // Ignore restricted media elements.
-    }
+      else video.addEventListener("canplay", run, { once: true });
+      setTimeout(run, 120);
+    } catch {}
   }
 
   function playIframeVideo(iframe) {
-    if (!iframe) return;
+    if (!iframe || iframe.dataset.flAutoplayTouched === "true") return;
+    iframe.dataset.flAutoplayTouched = "true";
     try {
       iframe.allow = `${iframe.allow || ""}; autoplay; fullscreen; picture-in-picture`;
       const run = () => {
         try {
           iframe.contentDocument?.querySelectorAll("video").forEach(playVideoElement);
-        } catch {
-          // Some iframes are not script-accessible.
-        }
+        } catch {}
       };
       iframe.addEventListener("load", run, { once: true });
-      setTimeout(run, 120);
-      setTimeout(run, 520);
-    } catch {
-      // Ignore inaccessible iframe media.
-    }
-  }
-
-  function lightbox() {
-    return root()?.querySelector("#xiv-lightbox");
+      setTimeout(run, 180);
+    } catch {}
   }
 
   function isLightboxActive() {
@@ -347,7 +246,6 @@
       stopSlideshow(false);
       return;
     }
-    ensureStyle();
     let button = box.querySelector(".xiv-lightbox-slideshow");
     if (!button) {
       button = document.createElement("button");
@@ -372,20 +270,15 @@
       stopSlideshow(false);
       return;
     }
-    window.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "ArrowRight",
-      code: "ArrowRight",
-      bubbles: true,
-      cancelable: true
-    }));
-    setTimeout(ensureLightboxAutoplay, 160);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true }));
+    setTimeout(checkLightbox, 180);
   }
 
   function startSlideshow() {
     if (slideshowActive) return;
     slideshowActive = true;
     clearInterval(slideshowTimer);
-    slideshowTimer = window.setInterval(dispatchNextImage, 2800);
+    slideshowTimer = window.setInterval(dispatchNextImage, SLIDESHOW_INTERVAL);
     ensureSlideshowButton();
   }
 
@@ -401,40 +294,68 @@
     else startSlideshow();
   }
 
-  function ensureLightboxAutoplay() {
+  function checkLightbox() {
     const box = lightbox();
+    const stateKey = `${box?.dataset.active || ""}|${box?.innerHTML?.length || 0}`;
     if (!box || box.dataset.active !== "true") {
-      stopSlideshow(false);
+      if (lastLightboxState) stopSlideshow(false);
+      lastLightboxState = "";
       return;
     }
+    if (stateKey === lastLightboxState) {
+      ensureSlideshowButton();
+      return;
+    }
+    lastLightboxState = stateKey;
     box.querySelectorAll("video").forEach(playVideoElement);
     box.querySelectorAll("iframe").forEach(playIframeVideo);
     ensureSlideshowButton();
   }
 
-  function scheduleRefresh() {
+  function ensureLightboxObserver() {
+    const box = lightbox();
+    if (!box || box === lightboxObserverTarget) return;
+    lightboxObserver?.disconnect?.();
+    lightboxObserverTarget = box;
+    lightboxObserver = new MutationObserver(() => scheduleRefresh(false));
+    lightboxObserver.observe(box, { childList: true, subtree: false, attributes: true, attributeFilter: ["data-active"] });
+  }
+
+  function ensureRootObserver() {
+    const app = root();
+    if (!app || app === rootObserverTarget) return;
+    rootObserver?.disconnect?.();
+    rootObserverTarget = app;
+    rootObserver = new MutationObserver(() => scheduleRefresh(false));
+    rootObserver.observe(app, { childList: true, subtree: false });
+  }
+
+  function refreshAll(forceCount = false) {
+    ensureStyle();
+    ensureMediaSwitch();
+    ensureTopFilterButton();
+    ensureVersionRow();
+    refreshControls(forceCount);
+    ensureRootObserver();
+    ensureLightboxObserver();
+    checkLightbox();
+  }
+
+  function scheduleRefresh(forceCount = false) {
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => {
-      ensureControls();
-      refreshControls();
-      ensureLightboxAutoplay();
-    }, 80);
+    refreshTimer = setTimeout(() => refreshAll(forceCount), 160);
   }
 
-  function startObserver() {
-    if (observer) return;
-    observer = new MutationObserver(scheduleRefresh);
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-active", "hidden", "src", "data-url", "data-theme"]
-    });
+  function start() {
+    refreshAll(true);
+    if (!pollTimer) {
+      pollTimer = window.setInterval(() => refreshAll(false), CONTROL_REFRESH_MS);
+    }
   }
 
-  document.addEventListener("click", () => setTimeout(ensureLightboxAutoplay, 120), true);
-  document.addEventListener("keydown", () => setTimeout(ensureLightboxAutoplay, 120), true);
-  document.addEventListener("fullscreenchange", scheduleRefresh, true);
-  startObserver();
-  scheduleRefresh();
+  document.addEventListener("click", () => setTimeout(checkLightbox, 140), true);
+  document.addEventListener("keydown", () => setTimeout(checkLightbox, 140), true);
+  document.addEventListener("fullscreenchange", () => scheduleRefresh(false), true);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
 })();
