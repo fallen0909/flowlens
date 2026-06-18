@@ -2,16 +2,19 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.11";
+  const VERSION = "1.4.12";
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
   const FILTER_ORDER = ["all", "image", "video"];
   const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
   const FILTER_KEY = "flowlens-media-filter-v2";
-  const SLIDESHOW_INTERVAL = 2800;
+  const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
   const CONTROL_REFRESH_MS = 900;
+  const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
 
   let currentMode = localStorage.getItem(FILTER_KEY) || "all";
   if (!FILTER_ORDER.includes(currentMode)) currentMode = "all";
+  let slideshowDelay = Number(localStorage.getItem(SPEED_KEY) || 2800);
+  if (!SPEED_OPTIONS.includes(slideshowDelay)) slideshowDelay = 2800;
   let rootObserver = null;
   let rootObserverTarget = null;
   let lightboxObserver = null;
@@ -42,10 +45,12 @@
       #xiv-root .fl-version-row { display: flex; align-items: center; justify-content: space-between; min-height: 34px; padding: 6px 0 12px; margin: -2px 0 6px; border-bottom: 1px solid rgba(0,0,0,.08); color: rgba(0,0,0,.58); font: 750 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       #xiv-root[data-theme="dark"] .fl-version-row, #xiv-root:not([data-theme="light"]) .fl-version-row { border-bottom-color: rgba(255,255,255,.12); color: rgba(255,255,255,.66); }
       #xiv-root .fl-version-row strong { color: inherit; font-weight: 900; }
-      #xiv-lightbox .xiv-lightbox-slideshow { position: fixed; right: 118px; top: 18px; z-index: 6; width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72)); color: #fff; display: grid; place-items: center; pointer-events: auto; cursor: pointer; padding: 0; box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18); backdrop-filter: blur(12px); }
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] { color: #111; background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76)); border-color: rgba(255,255,255,.7); }
-      #xiv-lightbox .xiv-lightbox-slideshow svg { width: 20px; height: 20px; display: block; }
-      @media (max-width: 820px) { #xiv-lightbox .xiv-lightbox-slideshow { right: 112px; top: 14px; width: 40px; height: 40px; } }
+      #xiv-root .fl-slideshow-speed { min-width: 132px; }
+      #xiv-root .xiv-lightbox-slideshow { position: fixed; right: 118px; top: 18px; z-index: 2147483647; width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72)); color: #fff; display: none; place-items: center; pointer-events: auto; cursor: pointer; padding: 0; box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18); backdrop-filter: blur(12px); }
+      #xiv-root[data-fl-lightbox="true"] .xiv-lightbox-slideshow { display: grid; }
+      #xiv-root .xiv-lightbox-slideshow[data-active="true"] { color: #111; background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76)); border-color: rgba(255,255,255,.7); }
+      #xiv-root .xiv-lightbox-slideshow svg { width: 20px; height: 20px; display: block; }
+      @media (max-width: 820px) { #xiv-root .xiv-lightbox-slideshow { right: 112px; top: 14px; width: 40px; height: 40px; } }
     `;
     document.documentElement.appendChild(style);
   }
@@ -103,12 +108,8 @@
   }
 
   function filterIcon(mode) {
-    if (mode === "image") {
-      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="m4 15 4.2-4.2a2 2 0 0 1 2.8 0L16 16"/><path d="m14 14 1.2-1.2a2 2 0 0 1 2.8 0L20 15"/><circle cx="15.5" cy="9.5" r="1.2"/></svg>';
-    }
-    if (mode === "video") {
-      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="12" height="12" rx="2"/><path d="m16 10 4-2.5v9L16 14"/></svg>';
-    }
+    if (mode === "image") return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="m4 15 4.2-4.2a2 2 0 0 1 2.8 0L16 16"/><path d="m14 14 1.2-1.2a2 2 0 0 1 2.8 0L20 15"/><circle cx="15.5" cy="9.5" r="1.2"/></svg>';
+    if (mode === "video") return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="12" height="12" rx="2"/><path d="m16 10 4-2.5v9L16 14"/></svg>';
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.4"/><rect x="14" y="4" width="6" height="6" rx="1.4"/><rect x="4" y="14" width="6" height="6" rx="1.4"/><rect x="14" y="14" width="6" height="6" rx="1.4"/></svg>';
   }
 
@@ -137,18 +138,56 @@
     button.innerHTML = filterIcon(currentMode);
   }
 
-  function ensureVersionRow() {
+  function speedLabel(ms) {
+    if (ms <= 1200) return "很快 1.2秒";
+    if (ms <= 1800) return "较快 1.8秒";
+    if (ms <= 2800) return "正常 2.8秒";
+    if (ms <= 4000) return "较慢 4秒";
+    return "很慢 6秒";
+  }
+
+  function setSlideshowDelay(ms) {
+    const next = SPEED_OPTIONS.includes(Number(ms)) ? Number(ms) : 2800;
+    slideshowDelay = next;
+    try { localStorage.setItem(SPEED_KEY, String(next)); } catch {}
+    const select = root()?.querySelector(".fl-slideshow-speed");
+    if (select) select.value = String(next);
+    if (slideshowActive) restartSlideshowTimer();
+  }
+
+  function ensureVersionAndSpeedRows() {
     const panel = root()?.querySelector('[data-panel="settings"]');
     if (!panel) return;
-    let row = panel.querySelector(".fl-version-row");
-    if (!row) {
-      row = document.createElement("div");
-      row.className = "fl-version-row";
+    let versionRow = panel.querySelector(".fl-version-row");
+    if (!versionRow) {
+      versionRow = document.createElement("div");
+      versionRow.className = "fl-version-row";
       const h3 = panel.querySelector("h3");
-      if (h3?.nextSibling) panel.insertBefore(row, h3.nextSibling);
-      else panel.prepend(row);
+      if (h3?.nextSibling) panel.insertBefore(versionRow, h3.nextSibling);
+      else panel.prepend(versionRow);
     }
-    row.innerHTML = `<span>当前版本</span><strong>v${VERSION}</strong>`;
+    versionRow.innerHTML = `<span>当前版本</span><strong>v${VERSION}</strong>`;
+
+    let speedRow = panel.querySelector(".fl-slideshow-speed-row");
+    if (!speedRow) {
+      speedRow = document.createElement("label");
+      speedRow.className = "xiv-setting-row fl-slideshow-speed-row";
+      speedRow.innerHTML = `<span>大图切换速度</span><select class="xiv-select fl-slideshow-speed"></select>`;
+      const themeRow = panel.querySelector('[data-setting="theme"]')?.closest?.(".xiv-setting-row");
+      if (themeRow?.nextSibling) panel.insertBefore(speedRow, themeRow.nextSibling);
+      else panel.appendChild(speedRow);
+      speedRow.querySelector("select")?.addEventListener("change", (event) => setSlideshowDelay(event.target.value));
+    }
+    const select = speedRow.querySelector("select");
+    if (select && !select.options.length) {
+      SPEED_OPTIONS.forEach((ms) => {
+        const option = document.createElement("option");
+        option.value = String(ms);
+        option.textContent = speedLabel(ms);
+        select.appendChild(option);
+      });
+    }
+    if (select) select.value = String(slideshowDelay);
   }
 
   function refreshControls(forceCount = false) {
@@ -171,11 +210,7 @@
       video.setAttribute("webkit-playsinline", "");
       const run = () => {
         const p = video.play?.();
-        if (p?.catch) {
-          p.catch(() => {
-            try { video.muted = true; video.setAttribute("muted", ""); video.play?.().catch?.(() => {}); } catch {}
-          });
-        }
+        if (p?.catch) p.catch(() => { try { video.muted = true; video.setAttribute("muted", ""); video.play?.().catch?.(() => {}); } catch {} });
       };
       if (video.readyState >= 2) run();
       else video.addEventListener("canplay", run, { once: true });
@@ -194,10 +229,6 @@
     } catch {}
   }
 
-  function isLightboxActive() {
-    return lightbox()?.dataset.active === "true";
-  }
-
   function slideshowIcon() {
     return slideshowActive
       ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.8" height="14" rx="1.2"/><rect x="13.2" y="5" width="3.8" height="14" rx="1.2"/></svg>'
@@ -205,28 +236,42 @@
   }
 
   function ensureSlideshowButton() {
+    const app = root();
     const box = lightbox();
-    if (!box || box.dataset.active !== "true") {
-      stopSlideshow(false);
-      return;
-    }
-    let button = box.querySelector(".xiv-lightbox-slideshow");
+    if (!app) return;
+    let button = app.querySelector(".xiv-lightbox-slideshow");
     if (!button) {
       button = document.createElement("button");
       button.type = "button";
       button.className = "xiv-lightbox-slideshow";
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+      }, true);
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation?.();
         toggleSlideshow();
-      });
-      box.appendChild(button);
+      }, true);
+      app.appendChild(button);
+    }
+    const active = box?.dataset.active === "true";
+    app.dataset.flLightbox = active ? "true" : "false";
+    if (!active) {
+      stopSlideshow(false);
+      return;
     }
     button.dataset.active = slideshowActive ? "true" : "false";
-    button.title = slideshowActive ? "暂停幻灯片自动切换" : "开始幻灯片自动切换";
+    button.title = slideshowActive ? "暂停幻灯片自动切换" : `开始幻灯片自动切换（${speedLabel(slideshowDelay)}）`;
     button.setAttribute("aria-label", button.title);
     button.innerHTML = slideshowIcon();
+  }
+
+  function findRightArrow() {
+    const box = lightbox();
+    return box?.querySelector('.xiv-lightbox-arrow[data-side="right"]') || null;
   }
 
   function clickNextInLightbox() {
@@ -235,24 +280,27 @@
       stopSlideshow(false);
       return;
     }
-    const rightArrow = box.querySelector('.xiv-lightbox-arrow[data-side="right"], .xiv-lightbox-next, [aria-label*="下一"], [title*="下一"]');
-    if (rightArrow) {
-      rightArrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    const arrow = findRightArrow();
+    if (arrow) {
+      arrow.click();
       setTimeout(checkLightbox, 180);
       return;
     }
-    const evt = new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true });
-    document.dispatchEvent(evt);
-    window.dispatchEvent(evt);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true }));
     setTimeout(checkLightbox, 180);
+  }
+
+  function restartSlideshowTimer() {
+    clearInterval(slideshowTimer);
+    slideshowTimer = window.setInterval(clickNextInLightbox, slideshowDelay);
+    ensureSlideshowButton();
   }
 
   function startSlideshow() {
     if (slideshowActive) return;
     slideshowActive = true;
-    clearInterval(slideshowTimer);
-    slideshowTimer = window.setInterval(clickNextInLightbox, SLIDESHOW_INTERVAL);
-    ensureSlideshowButton();
+    restartSlideshowTimer();
+    setTimeout(clickNextInLightbox, 120);
   }
 
   function stopSlideshow(update = true) {
@@ -268,11 +316,15 @@
   }
 
   function checkLightbox() {
+    const app = root();
     const box = lightbox();
+    const active = box?.dataset.active === "true";
+    if (app) app.dataset.flLightbox = active ? "true" : "false";
     const stateKey = `${box?.dataset.active || ""}|${box?.innerHTML?.length || 0}`;
-    if (!box || box.dataset.active !== "true") {
+    if (!box || !active) {
       if (lastLightboxState) stopSlideshow(false);
       lastLightboxState = "";
+      ensureSlideshowButton();
       return;
     }
     if (stateKey !== lastLightboxState) {
@@ -308,7 +360,7 @@
     if (app) app.dataset.flFilter = currentMode;
     markTiles();
     ensureTopFilterButton();
-    ensureVersionRow();
+    ensureVersionAndSpeedRows();
     refreshControls(forceCount);
     ensureRootObserver();
     ensureLightboxObserver();
