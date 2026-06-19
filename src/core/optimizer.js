@@ -83,8 +83,49 @@
   function closePanelsOnOutside(event) { const settingsPanel = document.querySelector('#xiv-root [data-panel="settings"]'); const diagnosticsPanel = document.querySelector('#xiv-root [data-panel="diagnostics"]'); if ((!settingsPanel || settingsPanel.dataset.open !== "true") && (!diagnosticsPanel || diagnosticsPanel.dataset.open !== "true")) return; if (event.target && event.target.closest && event.target.closest('[data-panel="settings"], [data-panel="diagnostics"], [data-xiv="settings"], [data-xiv="diag"]')) return; if (settingsPanel) settingsPanel.dataset.open = "false"; if (diagnosticsPanel) diagnosticsPanel.dataset.open = "false"; }
   function bindShortcuts() { document.addEventListener("pointerdown", closePanelsOnOutside, true); document.addEventListener("keydown", (event) => { if (isTypingTarget(event.target)) return; if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "f") { event.preventDefault(); event.stopPropagation(); toggleViewerByPatch(); } const lightbox = document.getElementById("xiv-lightbox"); if (lightbox && lightbox.dataset.active === "true") { if (event.key === "ArrowRight") lastSwitchDirection = "next-x"; else if (event.key === "ArrowLeft") lastSwitchDirection = "prev-x"; } }, true); document.addEventListener("wheel", (event) => { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.active !== "true" || !lightbox.contains(event.target)) return; const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX; if (Math.abs(delta) > 4) lastSwitchDirection = delta > 0 ? "next-y" : "prev-y"; }, true); document.addEventListener("pointerdown", (event) => { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.active !== "true" || !lightbox.contains(event.target)) return; if (event.target && event.target.closest && event.target.closest(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow")) return; swipeStart = { x: event.clientX, y: event.clientY }; }, true); document.addEventListener("pointerup", (event) => { if (!swipeStart) return; const dx = event.clientX - swipeStart.x; const dy = event.clientY - swipeStart.y; swipeStart = null; if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return; lastSwitchDirection = Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "next-x" : "prev-x") : (dy < 0 ? "next-y" : "prev-y"); }, true); }
   function animateLightboxMedia() { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.active !== "true") return; const media = lightbox.querySelector(".xiv-video-frame, img, video, iframe"); if (!media) return; lightbox.dataset.flDir = lastSwitchDirection || "fade"; media.classList.remove("xiv-fl-media-anim"); void media.offsetWidth; media.classList.add("xiv-fl-media-anim"); setTimeout(() => media.classList.remove("xiv-fl-media-anim"), 340); lastSwitchDirection = "fade"; }
-  function observeLightbox() { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.flObserved === "true") return; lightbox.dataset.flObserved = "true"; if (lightboxObserver && lightboxObserver.disconnect) lightboxObserver.disconnect(); lightboxObserver = new MutationObserver(() => requestAnimationFrame(animateLightboxMedia)); lightboxObserver.observe(lightbox, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "data-active"] }); }
-  function syncLightboxState() { const root = document.getElementById("xiv-root"); const lightbox = document.getElementById("xiv-lightbox"); if (root && lightbox) root.dataset.lightboxActive = lightbox.dataset.active === "true" ? "true" : "false"; }
+  function setImportantStyle(el, key, value) { if (el) el.style.setProperty(key, value, "important"); }
+  function clearStyle(el, keys) { if (!el) return; keys.forEach((key) => el.style.removeProperty(key)); }
+  function applyLightboxToolbarLayout(active) {
+    const topbar = document.getElementById("xiv-topbar");
+    const pill = document.querySelector("#xiv-topbar .xiv-pill");
+    const actions = document.querySelector("#xiv-topbar .xiv-actions");
+    const buttons = document.querySelectorAll("#xiv-topbar .xiv-btn");
+    const hidden = document.querySelectorAll('#xiv-topbar [data-xiv="prev-set"], #xiv-topbar [data-xiv="next-set"], #xiv-topbar [data-xiv="top"]');
+    if (active) {
+      setImportantStyle(topbar, "justify-content", "flex-end");
+      setImportantStyle(topbar, "gap", "0");
+      setImportantStyle(topbar, "padding", "8px 10px");
+      setImportantStyle(topbar, "pointer-events", "none");
+      setImportantStyle(pill, "display", "none");
+      setImportantStyle(actions, "max-width", "calc(100vw - 20px)");
+      setImportantStyle(actions, "gap", "7px");
+      setImportantStyle(actions, "flex-wrap", "nowrap");
+      setImportantStyle(actions, "justify-content", "flex-end");
+      setImportantStyle(actions, "overflow", "visible");
+      setImportantStyle(actions, "pointer-events", "auto");
+      buttons.forEach((button) => {
+        setImportantStyle(button, "min-width", "38px");
+        setImportantStyle(button, "width", "38px");
+        setImportantStyle(button, "height", "38px");
+        setImportantStyle(button, "padding", "0");
+        setImportantStyle(button, "flex", "0 0 38px");
+      });
+      hidden.forEach((button) => setImportantStyle(button, "display", "none"));
+      return;
+    }
+    clearStyle(topbar, ["justify-content", "gap", "padding", "pointer-events"]);
+    clearStyle(pill, ["display"]);
+    clearStyle(actions, ["max-width", "gap", "flex-wrap", "justify-content", "overflow", "pointer-events"]);
+    buttons.forEach((button) => clearStyle(button, ["min-width", "width", "height", "padding", "flex", "display"]));
+  }
+  function syncLightboxState() {
+    const root = document.getElementById("xiv-root");
+    const lightbox = document.getElementById("xiv-lightbox");
+    const active = lightbox?.dataset.active === "true";
+    if (root && lightbox) root.dataset.lightboxActive = active ? "true" : "false";
+    applyLightboxToolbarLayout(active);
+  }
+  function observeLightbox() { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.flObserved === "true") return; lightbox.dataset.flObserved = "true"; if (lightboxObserver && lightboxObserver.disconnect) lightboxObserver.disconnect(); lightboxObserver = new MutationObserver(() => requestAnimationFrame(() => { syncLightboxState(); animateLightboxMedia(); })); lightboxObserver.observe(lightbox, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "data-active"] }); }
   function applyAll() { injectStyle(); applyLaunchVisibility(); ensureToolbarCompact(); ensureSettingsAddons(); syncAddonControls(); observeLightbox(); syncLightboxState(); applyFilterDom(getStoredFilter()); }
   function scheduleApplyAll() { clearTimeout(mutationTimer); mutationTimer = setTimeout(applyAll, 80); }
 
