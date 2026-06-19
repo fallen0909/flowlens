@@ -866,6 +866,41 @@
     }
   }
 
+  function isCloudDriveVideoPath(path) {
+    return /\.(?:mp4|m4v|mov|webm|mkv|avi|wmv|flv|ts)(?:[?#]|$)/i.test(String(path || ""));
+  }
+
+  function cloudDriveCloudNameFromPath(path) {
+    const root = String(path || "").replace(/^\/+/, "").split("/")[0] || "";
+    if (/^115$/i.test(root)) return "115open";
+    return root;
+  }
+
+  function cloudDriveVideoUrlFromPath(path, base = location.href) {
+    if (!isCloudDriveVideoPath(path)) return "";
+    try {
+      const parsed = new URL(base, location.href);
+      const cleanPath = String(path).replace(/^\/+/, "");
+      const url = new URL(`/static/http/${parsed.host}/false/${encodeURIComponent(cleanPath)}`, parsed.origin);
+      const cloudName = cloudDriveCloudNameFromPath(cleanPath);
+      if (cloudName) url.searchParams.set("cloudname", cloudName);
+      if (cloudName === "115open") url.searchParams.set("membership", "年费VIP");
+      return url.href;
+    } catch {
+      return "";
+    }
+  }
+
+  function isCloudDriveVideoFolder(base = location.href) {
+    try {
+      const parsed = new URL(base, location.href);
+      const path = parsed.searchParams.get("path") || "";
+      return /(?:^|\/)(?:视频|video)(?:\/|$)/i.test(path);
+    } catch {
+      return false;
+    }
+  }
+
   function isGoodImage(url, node) {
     if (!url || BAD_IMAGE_RE.test(url) || isAdMedia(url, node)) return false;
     if (isBlockedZttaotuImage(url, node)) return false;
@@ -1057,17 +1092,49 @@
     }
   }
 
-  function collectCloudDriveImageUrls(doc, base) {
-    const urls = new Set();
+  function collectCloudDriveMediaUrls(doc, base) {
+    const imageUrls = new Set();
+    const videoUrls = new Set();
     doc.querySelectorAll('img.wf-img[src], img[src*="thumb.115.com/thumb/"]').forEach((img) => {
       const url = absoluteUrl(img.currentSrc || img.getAttribute("src"), base);
       if (!isCloudDriveThumbUrl(url)) return;
-      urls.add(url);
+      imageUrls.add(url);
       rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
     });
+    doc.querySelectorAll("video[src], video source[src]").forEach((node) => {
+      const ownerVideo = node.closest?.("video") || node;
+      const raw = node.currentSrc || node.getAttribute("src") || ownerVideo.currentSrc || ownerVideo.getAttribute?.("src");
+      const url = normalizeMediaUrl(absoluteUrl(raw, base));
+      if (isVideoUrl(url)) videoUrls.add(url);
+    });
+    doc.querySelectorAll(".wf-item[data-path], [data-path]").forEach((item) => {
+      const path = item.getAttribute("data-path") || "";
+      if (!isCloudDriveVideoPath(path)) return;
+      const existingVideo = item.querySelector?.("video[src], video source[src]");
+      const existingUrl = existingVideo
+        ? normalizeMediaUrl(absoluteUrl(existingVideo.currentSrc || existingVideo.getAttribute("src"), base))
+        : "";
+      const url = isVideoUrl(existingUrl) ? existingUrl : cloudDriveVideoUrlFromPath(path, base);
+      if (!url) return;
+      videoUrls.add(url);
+      const rect = item.getBoundingClientRect?.();
+      rememberMediaRatio(url, Math.round(rect?.width || 0), Math.round(rect?.height || 0));
+    });
     let added = 0;
-    for (const url of urls) {
+    for (const url of imageUrls) {
       if (addImage(url)) added += 1;
+    }
+    let addedVideos = 0;
+    for (const url of videoUrls) {
+      if (addImage(url)) {
+        added += 1;
+        addedVideos += 1;
+      }
+    }
+    if (addedVideos && isCloudDriveVideoFolder(base)) {
+      setMediaFilter("video");
+    } else if (addedVideos && state.mediaFilter === "image" && !imageUrls.size) {
+      setMediaFilter("video");
     }
     return added;
   }
@@ -1078,7 +1145,7 @@
     doc.documentElement.dataset.xivBase = base;
     rememberExpectedImageCount(doc);
     if (isCloudDriveFilesPage(base)) {
-      added += collectCloudDriveImageUrls(doc, base);
+      added += collectCloudDriveMediaUrls(doc, base);
     }
     if (isPhotoGalleryPage()) discoverPageLinksFromDocument(doc, base);
 
@@ -1140,6 +1207,7 @@
     }
 
     renderImages();
+    applyMediaFilter();
     updateStatus(added ? `新增 ${added} 张` : "就绪");
   }
 
@@ -4196,7 +4264,7 @@
     const width = media.naturalWidth || media.videoWidth || 0;
     const height = media.naturalHeight || media.videoHeight || 0;
     if (!width || !height) return null;
-    const dpr = isMobilePointerEvent() ? Math.max(1, Number(window.devicePixelRatio || 1)) : 1;
+    const dpr = Math.max(1, Number(window.devicePixelRatio || 1));
     return {
       width: Math.max(1, Math.round(width / dpr)),
       height: Math.max(1, Math.round(height / dpr))
@@ -4207,10 +4275,12 @@
     const size = actualZoomCssSize(media);
     const lb = state.lightbox;
     if (!size || !lb) return false;
-    const rect = media.getBoundingClientRect?.();
-    const currentWidth = Math.max(1, rect?.width || media.clientWidth || 1);
-    const currentHeight = Math.max(1, rect?.height || media.clientHeight || 1);
-    if (size.width <= currentWidth + 1 && size.height <= currentHeight + 1) return false;
+    const srcKey = media.currentSrc || media.src || media.dataset?.mediaUrl || "";
+    const cachedKey = `${srcKey}|${media.naturalWidth || media.videoWidth || 0}x${media.naturalHeight || media.videoHeight || 0}|${window.devicePixelRatio || 1}`;
+    media.dataset.xivActualKey = cachedKey;
+    const currentFitWidth = Number(media.dataset.xivFitWidth || 0) || Math.max(1, media.getBoundingClientRect?.().width || media.clientWidth || 1);
+    const currentFitHeight = Number(media.dataset.xivFitHeight || 0) || Math.max(1, media.getBoundingClientRect?.().height || media.clientHeight || 1);
+    if (size.width <= currentFitWidth + 1 && size.height <= currentFitHeight + 1) return false;
     media.style.setProperty("--xiv-actual-width", `${size.width}px`);
     media.style.setProperty("--xiv-actual-height", `${size.height}px`);
     return true;

@@ -2,9 +2,9 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.21";
+  const VERSION = "1.4.22";
   const FILTER_ORDER = ["all", "image", "video"];
-  const FILTER_TEXT = { all: "All", image: "Images", video: "Videos" };
+  const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
   const FILTER_KEY = "flowlens-media-filter-v1";
   const LEGACY_FILTER_KEY = "flowlens-media-filter-v2";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
@@ -153,17 +153,17 @@
     const button = root()?.querySelector('[data-xiv="top"]');
     if (!button) return;
     currentMode = liveFilter();
-    button.title = `Filter: ${FILTER_TEXT[currentMode]}`;
+    button.title = `切换图/视频：当前${FILTER_TEXT[currentMode]}`;
     button.setAttribute("aria-label", button.title);
     button.innerHTML = filterIcon(currentMode);
   }
 
   function speedLabel(ms) {
-    if (ms <= 800) return "Fast 0.8s";
-    if (ms <= 1200) return "Default 1.2s";
-    if (ms <= 1800) return "Quick 1.8s";
-    if (ms <= 2400) return "Normal 2.4s";
-    return "Slow 3.2s";
+    if (ms <= 800) return "极速 0.8秒";
+    if (ms <= 1200) return "默认 1.2秒";
+    if (ms <= 1800) return "较快 1.8秒";
+    if (ms <= 2400) return "普通 2.4秒";
+    return "慢速 3.2秒";
   }
 
   function setSlideshowDelay(ms) {
@@ -186,14 +186,14 @@
       if (h3?.nextSibling) panel.insertBefore(versionRow, h3.nextSibling);
       else panel.prepend(versionRow);
     }
-    versionRow.innerHTML = `<span>FlowLens version</span><strong>v${VERSION}</strong>`;
+    versionRow.innerHTML = `<span>瀑光版本</span><strong>v${VERSION}</strong>`;
 
     let speedRow = panel.querySelector(".fl-slideshow-speed-row");
     if (!speedRow) {
       speedRow = document.createElement("label");
       speedRow.className = "xiv-setting-row fl-slideshow-speed-row";
-      speedRow.innerHTML = `<span>Lightbox speed</span><select class="xiv-select fl-slideshow-speed"></select>`;
-      const autoScrollRow = [...panel.querySelectorAll(".xiv-setting-row")].find((row) => /鑷姩婊氬姩閫熷害/.test(row.textContent || ""));
+      speedRow.innerHTML = `<span>大图切换速度</span><select class="xiv-select fl-slideshow-speed"></select>`;
+      const autoScrollRow = [...panel.querySelectorAll(".xiv-setting-row")].find((row) => /自动滚动速度/.test(row.textContent || ""));
       if (autoScrollRow?.nextSibling) panel.insertBefore(speedRow, autoScrollRow.nextSibling);
       else panel.appendChild(speedRow);
       speedRow.querySelector("select")?.addEventListener("change", (event) => setSlideshowDelay(event.target.value));
@@ -248,7 +248,7 @@
       return;
     }
     button.dataset.active = slideshowActive ? "true" : "false";
-    button.title = slideshowActive ? "Pause slideshow" : `Start slideshow (${speedLabel(slideshowDelay)})`;
+    button.title = slideshowActive ? "暂停大图自动切换" : `开始大图自动切换（${speedLabel(slideshowDelay)}）`;
     button.setAttribute("aria-label", button.title);
     button.innerHTML = slideshowIcon();
   }

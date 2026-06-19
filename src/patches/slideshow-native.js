@@ -2,7 +2,7 @@
   if (window.__flowLensSlideshowNativePatch) return;
   window.__flowLensSlideshowNativePatch = true;
 
-  const VERSION = "1.4.21";
+  const VERSION = "1.4.22";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
   const SETTINGS_KEY = "flowlens-settings-v2";
   const SPEED_OPTIONS = [800, 1200, 1800, 2400, 3200];
@@ -123,11 +123,11 @@
     }
     const title = active
       ? zoomPaused()
-        ? "1:1 view: slideshow paused"
+        ? "1:1 查看中，自动切换已暂停"
         : videoStillPlaying()
-          ? "Waiting for current video"
-          : "Pause slideshow"
-      : "Start slideshow";
+          ? "等待当前视频播放完"
+          : "暂停大图自动切换"
+      : "开始大图自动切换";
     const nextIcon = icon();
     btn.dataset.active = active ? "true" : "false";
     if (btn.dataset.flIconState !== String(active)) {
@@ -159,11 +159,11 @@
     syncButton();
   }
   function speedText(ms) {
-    if (ms <= 800) return "Fast 0.8s";
-    if (ms <= 1200) return "Default 1.2s";
-    if (ms <= 1800) return "Quick 1.8s";
-    if (ms <= 2400) return "Normal 2.4s";
-    return "Slow 3.2s";
+    if (ms <= 800) return "极速 0.8秒";
+    if (ms <= 1200) return "默认 1.2秒";
+    if (ms <= 1800) return "较快 1.8秒";
+    if (ms <= 2400) return "普通 2.4秒";
+    return "慢速 3.2秒";
   }
   function syncSettings() {
     const panel = root()?.querySelector('[data-panel="settings"]');

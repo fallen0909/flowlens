@@ -1,12 +1,12 @@
 {
-  "version": "1.4.21",
+  "version": "1.4.22",
   "desktop": {
-    "version": "1.4.21",
+    "version": "1.4.22",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.21",
+    "version": "1.4.22",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,6 +14,10 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "localized-chinese-settings-panel",
+    "dpr-stable-actual-zoom",
+    "clouddrive2-data-path-video-capture",
+    "clouddrive2-video-folder-auto-filter",
     "global-lightbox-slideshow-speed",
     "actual-zoom-manual-navigation",
     "mobile-dpr-aware-actual-zoom",

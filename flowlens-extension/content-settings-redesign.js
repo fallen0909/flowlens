@@ -183,11 +183,11 @@
   }
 
   function speedLabel(ms) {
-    if (ms <= 800) return "Fast";
-    if (ms <= 1200) return "Default";
-    if (ms <= 1800) return "Quick";
-    if (ms <= 2400) return "Normal";
-    return "Slow";
+    if (ms <= 800) return "极速";
+    if (ms <= 1200) return "默认";
+    if (ms <= 1800) return "较快";
+    if (ms <= 2400) return "普通";
+    return "慢速";
   }
 
   function updateSpeedValue() {
