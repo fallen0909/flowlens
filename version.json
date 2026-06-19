@@ -1,12 +1,12 @@
 ﻿{
-  "version": "1.4.23",
+  "version": "1.4.24",
   "desktop": {
-    "version": "1.4.23",
+    "version": "1.4.24",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.23",
+    "version": "1.4.24",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,9 +14,13 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "no-stalled-image-timeout-filter",
+    "unload-video-on-lightbox-switch",
+    "clouddrive2-native-video-playback",
+    "zoom-cursor-only-when-zoomable",
+    "lightbox-open-token-guard",
     "mobile-video-actual-zoom",
     "clouddrive2-lightweight-video-tiles",
-    "stalled-image-card-repair",
     "x810114-launch-drag-event-capture",
     "pornpics-main-gallery-only",
     "localized-chinese-settings-panel",

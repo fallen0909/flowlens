@@ -446,8 +446,16 @@
       display: none !important; visibility: hidden !important; pointer-events: none !important;
     }
     #xiv-lightbox img, #xiv-lightbox video {
-      display: block; width: auto; height: auto; max-width: 100vw; max-height: 100vh; object-fit: contain; cursor: zoom-in;
+      display: block; width: auto; height: auto; max-width: 100vw; max-height: 100vh; object-fit: contain; cursor: default;
       user-select: none; -webkit-user-drag: none;
+    }
+    #xiv-lightbox img[data-xiv-can-zoom="true"],
+    #xiv-lightbox video[data-xiv-can-zoom="true"] {
+      cursor: zoom-in;
+    }
+    #xiv-lightbox img[data-xiv-can-zoom="false"],
+    #xiv-lightbox video[data-xiv-can-zoom="false"] {
+      cursor: default;
     }
     #xiv-lightbox[data-zoom="actual"] {
       display: block;
@@ -1648,20 +1656,12 @@
     img.decoding = "async";
     applyInitialAspectRatio(img, url);
     setImageSourceWithFallback(img, url);
-    const loadTimer = window.setTimeout(() => {
-      if (!img.isConnected) return;
-      if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) return;
-      if (img.dataset.awaitingFallback === "true") return;
-      repairBrokenImage(url, img);
-    }, 10000);
     img.addEventListener("load", () => {
-      clearTimeout(loadTimer);
       if (!isLoadedPhotoLike(img)) rejectImage(url);
       rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
       if (img.naturalWidth > 0 && img.naturalHeight > 0) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
     }, { once: true });
     img.addEventListener("error", () => {
-      clearTimeout(loadTimer);
       setTimeout(() => {
         if (!img.isConnected || img.naturalWidth || img.naturalHeight) return;
         if (img.dataset.awaitingFallback === "true") return;
@@ -3829,6 +3829,8 @@
     }
     pauseAutoScrollForLightbox();
     state.index = index;
+    const openToken = `${Date.now()}:${index}:${Math.random()}`;
+    state.lightbox.dataset.openToken = openToken;
     state.lightbox.dataset.zoom = "fit";
     state.lightbox.dataset.flVideoEnded = "false";
     state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
@@ -3839,12 +3841,15 @@
       return;
     } else {
       state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
-      setImageSourceWithFallback(state.lightbox.querySelector("img"), thumbUrl);
+      const img = state.lightbox.querySelector("img");
+      img.dataset.xivCanZoom = "false";
+      img.addEventListener("load", () => updateLightboxZoomHint(img));
+      setImageSourceWithFallback(img, thumbUrl);
       updateFavoriteButton(thumbUrl);
     }
     state.lightbox.dataset.active = "true";
     const highResUrl = await resolveHighResUrl(thumbUrl);
-    if (state.lightbox.dataset.active === "true" && state.index === index) {
+    if (state.lightbox.dataset.active === "true" && state.index === index && state.lightbox.dataset.openToken === openToken) {
       if (isVideoUrl(highResUrl)) {
         setLightboxVideo(highResUrl);
       } else {
@@ -3853,6 +3858,8 @@
           state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
           img = state.lightbox.querySelector("img");
         }
+        img.dataset.xivCanZoom = "false";
+        img.addEventListener("load", () => updateLightboxZoomHint(img));
         setImageSourceWithFallback(img, highResUrl);
         updateFavoriteButton(highResUrl, thumbUrl);
       }
@@ -4296,28 +4303,52 @@
       controls: true,
       preload: "auto",
       keepFirstFrame: false,
+      allowFallback: !isCloudDriveMediaUrl(url),
       muted: false,
       loop: false,
       startTime
     });
     video.dataset.mediaUrl = url;
     video.controls = true;
+    video.disablePictureInPicture = false;
+    video.dataset.xivCanZoom = "false";
+    video.addEventListener("loadedmetadata", () => updateLightboxZoomHint(video));
+    video.addEventListener("loadeddata", () => updateLightboxZoomHint(video));
     state.lightbox.appendChild(video);
     video.play().catch(() => {});
   }
 
+  function unloadVideoElement(video) {
+    if (!video) return;
+    try {
+      rememberVideoTime(video);
+      video.pause();
+    } catch {
+      // Ignore media pause failures.
+    }
+    try {
+      clearTimeout(Number(video.dataset.loadTimer || 0));
+      video.removeAttribute("src");
+      video.querySelectorAll("source").forEach((source) => source.removeAttribute("src"));
+      video.load();
+    } catch {
+      // Some browser media elements can throw while being torn down.
+    }
+  }
+
   function pauseLightboxMedia() {
     state.lightbox?.querySelectorAll("video").forEach((video) => {
-      try {
-        rememberVideoTime(video);
-        video.pause();
-      } catch {
-        // Ignore media pause failures.
-      }
+      unloadVideoElement(video);
     });
     state.lightbox?.querySelectorAll("iframe[data-media-url]").forEach((iframe) => {
       const url = normalizeMediaUrl(iframe.dataset.mediaUrl || "");
       iframe.contentWindow?.postMessage({ type: "XIV_VIDEO_CONTROL", action: "pause", url }, "*");
+      try {
+        iframe.removeAttribute("src");
+        iframe.srcdoc = "";
+      } catch {
+        // Ignore iframe teardown failures.
+      }
     });
   }
 
@@ -4356,6 +4387,22 @@
     };
   }
 
+  function canActualZoomMedia(media) {
+    const size = actualZoomCssSize(media);
+    if (!size) return false;
+    const rect = media.getBoundingClientRect?.();
+    const currentWidth = Math.max(1, rect?.width || media.clientWidth || 1);
+    const currentHeight = Math.max(1, rect?.height || media.clientHeight || 1);
+    return size.width > currentWidth + 1 || size.height > currentHeight + 1;
+  }
+
+  function updateLightboxZoomHint(media = state.lightbox?.querySelector("img, video")) {
+    if (!media) return;
+    const zoomable = canActualZoomMedia(media);
+    media.dataset.xivCanZoom = zoomable ? "true" : "false";
+    media.title = zoomable ? "1:1 放大" : "";
+  }
+
   function waitForVideoActualZoom(video) {
     if (!video || video.tagName !== "VIDEO" || video.dataset.xivPendingActual === "true") return;
     video.dataset.xivPendingActual = "true";
@@ -4381,9 +4428,15 @@
     media.dataset.xivActualKey = cachedKey;
     const currentFitWidth = Number(media.dataset.xivFitWidth || 0) || Math.max(1, media.getBoundingClientRect?.().width || media.clientWidth || 1);
     const currentFitHeight = Number(media.dataset.xivFitHeight || 0) || Math.max(1, media.getBoundingClientRect?.().height || media.clientHeight || 1);
-    if (size.width <= currentFitWidth + 1 && size.height <= currentFitHeight + 1) return false;
+    if (size.width <= currentFitWidth + 1 && size.height <= currentFitHeight + 1) {
+      media.dataset.xivCanZoom = "false";
+      media.title = "";
+      return false;
+    }
     media.style.setProperty("--xiv-actual-width", `${size.width}px`);
     media.style.setProperty("--xiv-actual-height", `${size.height}px`);
+    media.dataset.xivCanZoom = "true";
+    media.title = "1:1 放大";
     return true;
   }
 
