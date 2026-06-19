@@ -1,12 +1,12 @@
 {
-  "version": "1.4.35",
+  "version": "1.4.36",
   "desktop": {
-    "version": "1.4.35",
+    "version": "1.4.36",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.35",
+    "version": "1.4.36",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,6 +14,7 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "mobile-lightbox-hide-topbar-actions",
     "lightbox-toolbar-rules-without-width-media-query",
     "lightbox-active-state-sync-patch",
     "mobile-lightbox-single-row-actions",

@@ -85,6 +85,7 @@
   function animateLightboxMedia() { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.active !== "true") return; const media = lightbox.querySelector(".xiv-video-frame, img, video, iframe"); if (!media) return; lightbox.dataset.flDir = lastSwitchDirection || "fade"; media.classList.remove("xiv-fl-media-anim"); void media.offsetWidth; media.classList.add("xiv-fl-media-anim"); setTimeout(() => media.classList.remove("xiv-fl-media-anim"), 340); lastSwitchDirection = "fade"; }
   function setImportantStyle(el, key, value) { if (el) el.style.setProperty(key, value, "important"); }
   function clearStyle(el, keys) { if (!el) return; keys.forEach((key) => el.style.removeProperty(key)); }
+  function isTouchLikeDevice() { return matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent); }
   function applyLightboxToolbarLayout(active) {
     const topbar = document.getElementById("xiv-topbar");
     const pill = document.querySelector("#xiv-topbar .xiv-pill");
@@ -97,6 +98,10 @@
       setImportantStyle(topbar, "padding", "8px 10px");
       setImportantStyle(topbar, "pointer-events", "none");
       setImportantStyle(pill, "display", "none");
+      if (isTouchLikeDevice()) {
+        setImportantStyle(actions, "display", "none");
+        return;
+      }
       setImportantStyle(actions, "max-width", "calc(100vw - 20px)");
       setImportantStyle(actions, "gap", "7px");
       setImportantStyle(actions, "flex-wrap", "nowrap");
@@ -115,7 +120,7 @@
     }
     clearStyle(topbar, ["justify-content", "gap", "padding", "pointer-events"]);
     clearStyle(pill, ["display"]);
-    clearStyle(actions, ["max-width", "gap", "flex-wrap", "justify-content", "overflow", "pointer-events"]);
+    clearStyle(actions, ["display", "max-width", "gap", "flex-wrap", "justify-content", "overflow", "pointer-events"]);
     buttons.forEach((button) => clearStyle(button, ["min-width", "width", "height", "padding", "flex", "display"]));
   }
   function syncLightboxState() {
