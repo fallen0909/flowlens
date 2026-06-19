@@ -1,12 +1,12 @@
 {
-  "version": "1.4.25",
+  "version": "1.4.26",
   "desktop": {
-    "version": "1.4.25",
+    "version": "1.4.26",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.25",
+    "version": "1.4.26",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,6 +14,7 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "pornpics-stable-main-gallery-count",
     "lightbox-nearby-media-preload",
     "pornpics-click-open-lightbox-fix",
     "buondua-article-page-image-collector",

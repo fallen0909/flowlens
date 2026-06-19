@@ -1246,6 +1246,7 @@
       const url = imageCandidateFromImg(img, base);
       if (url && isMediaUrl(url) && !BAD_IMAGE_RE.test(url)) urls.add(url);
     });
+    if (urls.size > state.expectedImages) state.expectedImages = urls.size;
     let added = 0;
     for (const url of urls) {
       if (addImage(url)) added += 1;
@@ -2239,7 +2240,9 @@
   }
 
   function rememberExpectedImageCount(doc) {
-    if (isKnownGalleryUrl(doc.documentElement?.dataset?.xivBase || location.href)) {
+    const base = doc.documentElement?.dataset?.xivBase || location.href;
+    if (isPornpicsGalleryPage(base)) return;
+    if (isKnownGalleryUrl(base)) {
       const pagerMax = maxPagerNumberFromDocument(doc);
       if (pagerMax > state.expectedImages) state.expectedImages = pagerMax;
       return;
