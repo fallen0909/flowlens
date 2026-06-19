@@ -472,17 +472,40 @@
     preloadTimer = window.setTimeout(() => {
       if (!lightboxActive()) return;
       const lb = lightbox();
-      const current = lb?.querySelector("img")?.currentSrc || lb?.querySelector("img")?.src || "";
+      const current = lb?.querySelector("img, video")?.currentSrc
+        || lb?.querySelector("img, video")?.src
+        || lb?.querySelector(".xiv-video-frame")?.dataset.mediaUrl
+        || "";
       const list = tiles();
       let index = list.findIndex((tile) => mediaUrl(tile) === current || current.includes(mediaUrl(tile)) || mediaUrl(tile).includes(current));
       if (index < 0) index = Number(list.find((tile) => tile.getBoundingClientRect().top >= 0)?.dataset.index || 0);
       const urls = [];
-      for (const offset of [1, 2, -1]) {
+      for (const offset of [1, 2, 3, -1]) {
         const tile = list[index + offset];
         const url = mediaUrl(tile);
-        if (url && isImage(url)) urls.push(url);
+        if (url) urls.push(url);
       }
-      for (const url of urls.slice(0, 3)) {
+      let videoCount = 0;
+      for (const url of urls.slice(0, 4)) {
+        if (isVideo(url)) {
+          if (videoCount >= 1) continue;
+          videoCount += 1;
+          const video = document.createElement("video");
+          video.preload = "metadata";
+          video.muted = true;
+          video.playsInline = true;
+          video.referrerPolicy = "no-referrer";
+          video.src = url;
+          try { video.load(); } catch { /* ignore */ }
+          window.setTimeout(() => {
+            try {
+              video.removeAttribute("src");
+              video.load();
+            } catch { /* ignore */ }
+          }, 30000);
+          continue;
+        }
+        if (!isImage(url)) continue;
         const img = new Image();
         img.decoding = "async";
         img.referrerPolicy = "no-referrer";

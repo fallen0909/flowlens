@@ -76,7 +76,7 @@
   const AD_HOST_RE = /(^|\.)((jads|juicyads|exoclick|trafficjunky|adnium|popads|popcash|adskeeper|mgid|doubleclick|googlesyndication|adservice|adnxs|taboola|outbrain)\.|.*(adserver|adservice|adsystem|adnetwork|ad-delivery|adsterra|popunder).*)/i;
   const AD_PATH_RE = /(?:^|[/?#&_.-])(ad|ads|adv|advert|advertise|advertisement|banner|bnr|sponsor|sponsored|promo|promotion|campaign|popunder|tracking|affiliate|click)(?:[/?#&_.=-]|$)/i;
   const JAVBUS_AD_TEXT_RE = /(廣告|广告|adblock|block ads|ad[s]?|banner|sponsor|jads|poweredby|投放)/i;
-  const BLOCKED_PROMO_TEXT_RE = /(仅供访问推特被屏蔽图片|不推荐其他一切用法|不要相信账号内容中的一切广告|推广|广告|直播间|播放视频|扫码|二维码|下载官方套图app|模糊处理|仅限手机|VLM翻译插件|AI帮忙看色图|eh镜像|ex\.810114|x\.810114\.xyz\[推图\]|7she\.tv|换妻|出租妻子|AI脱衣|黑迹)/i;
+  const BLOCKED_PROMO_TEXT_RE = /(仅供访问推特被屏蔽图片|不推荐其他一切用法|不要相信账号内容中的一切广告|推广|广告|直播间|播放视频|扫码|二维码|下载官方套图app|模糊处理|仅限手机|VLM翻译插件|AI帮忙看色图|eh镜像|ex\.810114|x\.810114\.xyz\[推图\]|7she\.tv|7she|妻社|换妻|绿帽献妻|出租妻子|出租妻|专注换妻|真实换妻平台|立即访问|AI脱衣|黑迹)/i;
   const PROMO_LINK_RE = /(?:7she\.tv|7shemale|妻社|换妻|出租妻|casino|bet|promo|ads?|advert|download.*app|appdownload|live|cam|chat|ai.*undress|tuiguang|推广|广告|播放视频|直播间|立即访问|真实换妻平台)/i;
   const GALLERY_TEXT_RE = /\bNo\.\s*\d+\b/i;
   const GALLERY_PAGE_WINDOW = 16;
@@ -138,6 +138,8 @@
     lightboxSwipe: null,
     viewerSwipe: null,
     lastLightboxWheelAt: 0,
+    mediaPreloadTimer: 0,
+    mediaPreloadCache: new Map(),
     lightboxDrag: null,
     lightboxSuppressClickUntil: 0,
     lastStageScrollAt: 0,
@@ -928,6 +930,48 @@
     }
   }
 
+  function isBuonduaPage(url = location.href) {
+    try {
+      const parsed = new URL(url, location.href);
+      return /(^|\.)buondua\.com$/i.test(parsed.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  function isBuonduaImageUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return /(^|\.)i\d*\.buondua\.us$/i.test(parsed.hostname)
+        && /\/20\d{2}\/\d+\/.+\.(?:avif|jpe?g|png|webp)(?:$|[?#])/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  function isBuonduaArticleImageNode(node) {
+    if (!node) return true;
+    if (node.closest?.("script, iframe, ins, [class*='ads' i], [id*='ads' i], [class*='sponsor' i], [id*='sponsor' i]")) return false;
+    return !!node.closest?.(".article-fulltext, .article.content, article, [class*='article' i]");
+  }
+
+  function isKnownXchinaPromoImage(url, node = null, base = "") {
+    const contextBase = base || node?.ownerDocument?.documentElement?.dataset?.xivBase || state.collectionBase || location.href;
+    if (!/xchina\.co\/photo\/id-/i.test(contextBase || location.href)) return false;
+    const text = node ? closestText(node) : "";
+    if (text && BLOCKED_PROMO_TEXT_RE.test(text)) return true;
+    try {
+      const parsed = new URL(url, location.href);
+      if (!/(^|\.)img\.xchina\.io$/i.test(parsed.hostname)) return false;
+      const imageNo = siteAlbumPageNumberFromUrl(parsed.href);
+      if (/id-6a33a26d508f4/i.test(contextBase) && imageNo === 5) return true;
+      const path = `${parsed.pathname} ${parsed.search}`;
+      return /(?:7she|qishe|wife|promo|advert|ad-?banner)/i.test(path);
+    } catch {
+      return false;
+    }
+  }
+
   function isPornpicsGalleryPage(url = location.href) {
     try {
       const parsed = new URL(url, location.href);
@@ -946,8 +990,11 @@
   }
 
   function isGoodImage(url, node) {
-    if (!url || BAD_IMAGE_RE.test(url) || isAdMedia(url, node)) return false;
+    if (!url || BAD_IMAGE_RE.test(url)) return false;
     if (isBlockedZttaotuImage(url, node)) return false;
+    if (isKnownXchinaPromoImage(url, node)) return false;
+    if (isBuonduaPage(node?.ownerDocument?.documentElement?.dataset?.xivBase || location.href) && isBuonduaImageUrl(url) && isBuonduaArticleImageNode(node)) return true;
+    if (isAdMedia(url, node)) return false;
     if (isCloudDriveFilesPage() && isCloudDriveThumbUrl(url)) return true;
     if (isPornpicsGalleryPage() && node && !isPornpicsMainGalleryNode(node)) return false;
     if (!isMediaUrl(url)) return false;
@@ -1097,7 +1144,7 @@
 
   function addImage(url, detailUrl = "", posterUrl = "") {
     url = normalizeMediaUrl(url);
-    if (!url || isBlockedZttaotuImage(url, null, state.collectionBase)) {
+    if (!url || isBlockedZttaotuImage(url, null, state.collectionBase) || isKnownXchinaPromoImage(url, null, state.collectionBase)) {
       state.rejectedCount += 1;
       return false;
     }
@@ -1206,6 +1253,24 @@
     return added;
   }
 
+  function collectBuonduaArticleUrls(doc, base) {
+    const urls = new Set();
+    doc.querySelectorAll(".article-fulltext img, .article.content img, article img").forEach((img) => {
+      const url = imageCandidateFromImg(img, base);
+      if (url && isBuonduaImageUrl(url) && isBuonduaArticleImageNode(img)) urls.add(url);
+    });
+    doc.querySelectorAll(".article-fulltext source[src], .article-fulltext a[href], .article.content source[src], .article.content a[href]").forEach((node) => {
+      const raw = node.getAttribute("src") || node.getAttribute("href") || "";
+      const url = absoluteUrl(raw, base);
+      if (url && isBuonduaImageUrl(url) && isBuonduaArticleImageNode(node)) urls.add(url);
+    });
+    let added = 0;
+    for (const url of urls) {
+      if (addImage(url)) added += 1;
+    }
+    return added;
+  }
+
   function collectFromDocument(doc, base) {
     let added = 0;
     state.collectionBase = base;
@@ -1213,6 +1278,9 @@
     rememberExpectedImageCount(doc);
     if (isCloudDriveFilesPage(base)) {
       added += collectCloudDriveMediaUrls(doc, base);
+    }
+    if (isBuonduaPage(base)) {
+      added += collectBuonduaArticleUrls(doc, base);
     }
     if (isPornpicsGalleryPage(base)) {
       added += collectPornpicsGalleryUrls(doc, base);
@@ -2177,7 +2245,10 @@
       return;
     }
     const text = doc.body?.textContent || "";
-    const match = text.match(/(?:^|\s)(\d{2,5})\s*P(?:\s|$)/i) || text.match(/下载\s*(\d{2,5})/);
+    const match = text.match(/(?:^|\s)(\d{2,5})\s*P(?:\s|$)/i)
+      || text.match(/\((\d{2,5})\s*photos?\)/i)
+      || text.match(/\b(\d{2,5})\s*photos?\b/i)
+      || text.match(/下载\s*(\d{2,5})/);
     const count = Number(match?.[1] || 0);
     if (count > state.expectedImages && count < 20000) state.expectedImages = count;
   }
@@ -2856,10 +2927,10 @@
         claimEvent(event);
         if (event.button !== 0) return;
         if (Date.now() < state.suppressLightboxUntil) return;
-        if (!state.autoScroll && Date.now() - state.lastStageScrollAt < 220) return;
         const dx = Math.abs(event.clientX - Number(tile.dataset.downX || event.clientX));
         const dy = Math.abs(event.clientY - Number(tile.dataset.downY || event.clientY));
         if (dx > 8 || dy > 8) return;
+        if (!state.autoScroll && Date.now() - state.lastStageScrollAt < 120 && (dx > 2 || dy > 2)) return;
         state.lightboxGestureToken = Date.now();
         openLightbox(Number(tile.dataset.index || i));
       });
@@ -3060,10 +3131,10 @@
     claimEvent(event);
     if (event.button !== 0) return;
     if (Date.now() < state.suppressLightboxUntil) return;
-    if (!state.autoScroll && Date.now() - state.lastStageScrollAt < 220) return;
     const dx = Math.abs(event.clientX - Number(tile.dataset.downX || event.clientX));
     const dy = Math.abs(event.clientY - Number(tile.dataset.downY || event.clientY));
     if (dx > 8 || dy > 8) return;
+    if (!state.autoScroll && Date.now() - state.lastStageScrollAt < 120 && (dx > 2 || dy > 2)) return;
     state.lightboxGestureToken = Date.now();
     openLightbox(Number(tile.dataset.index || 0));
   }
@@ -3822,6 +3893,82 @@
     }
   }
 
+  function clearOldMediaPreloads() {
+    const now = Date.now();
+    for (const [key, item] of state.mediaPreloadCache) {
+      if (!item || now - item.time < 45000) continue;
+      const media = item.media;
+      try {
+        if (media?.tagName === "VIDEO") {
+          media.pause();
+          media.removeAttribute("src");
+          media.load();
+        }
+      } catch {
+        // Ignore preload teardown failures.
+      }
+      state.mediaPreloadCache.delete(key);
+    }
+  }
+
+  function preloadMediaUrl(url, videoBudget) {
+    if (!url) return videoBudget;
+    const key = keyForUrl(url);
+    if (state.mediaPreloadCache.has(key)) return videoBudget;
+    clearOldMediaPreloads();
+    if (isVideoUrl(url)) {
+      if (videoBudget <= 0) return videoBudget;
+      const video = document.createElement("video");
+      video.preload = isCloudDriveMediaUrl(url) ? "metadata" : "auto";
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      video.controls = false;
+      video.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
+      video.style.cssText = "position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none;";
+      video.dataset.xivPreload = "true";
+      video.src = url;
+      document.documentElement.appendChild(video);
+      try { video.load(); } catch {}
+      state.mediaPreloadCache.set(key, { media: video, time: Date.now() });
+      return videoBudget - 1;
+    }
+    const img = new Image();
+    img.decoding = "async";
+    img.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
+    img.src = url;
+    state.mediaPreloadCache.set(key, { media: img, time: Date.now() });
+    return videoBudget;
+  }
+
+  function scheduleLightboxMediaPreload(centerIndex = state.index) {
+    clearTimeout(state.mediaPreloadTimer);
+    state.mediaPreloadTimer = setTimeout(() => {
+      if (state.lightbox?.dataset.active !== "true" || !state.images.length) return;
+      const offsets = [1, 2, 3, -1];
+      const urls = [];
+      const seen = new Set();
+      for (const offset of offsets) {
+        let index = centerIndex;
+        for (let step = 0; step < state.images.length; step += 1) {
+          index = (index + offset + state.images.length) % state.images.length;
+          const url = state.images[index];
+          if (!mediaMatchesFilter(url)) continue;
+          const key = keyForUrl(url);
+          if (!seen.has(key)) {
+            seen.add(key);
+            urls.push(url);
+          }
+          break;
+        }
+      }
+      let videoBudget = isCloudDriveFilesPage() ? 1 : 2;
+      for (const url of urls) {
+        videoBudget = preloadMediaUrl(url, videoBudget);
+      }
+    }, 90);
+  }
+
   async function openLightbox(index) {
     if (isGenericX810114Page() && Date.now() - state.lightboxGestureToken > 500) {
       closeHostPhotoViewer();
@@ -3838,6 +3985,7 @@
     if (isVideoUrl(thumbUrl)) {
       setLightboxVideo(thumbUrl);
       state.lightbox.dataset.active = "true";
+      scheduleLightboxMediaPreload(index);
       return;
     } else {
       state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
@@ -3848,6 +3996,7 @@
       updateFavoriteButton(thumbUrl);
     }
     state.lightbox.dataset.active = "true";
+    scheduleLightboxMediaPreload(index);
     const highResUrl = await resolveHighResUrl(thumbUrl);
     if (state.lightbox.dataset.active === "true" && state.index === index && state.lightbox.dataset.openToken === openToken) {
       if (isVideoUrl(highResUrl)) {
@@ -3863,6 +4012,7 @@
         setImageSourceWithFallback(img, highResUrl);
         updateFavoriteButton(highResUrl, thumbUrl);
       }
+      scheduleLightboxMediaPreload(index);
     }
   }
 
@@ -3873,6 +4023,7 @@
     endStageSwipe();
     state.lightbox.dataset.active = "false";
     state.lightbox.dataset.zoom = "fit";
+    clearTimeout(state.mediaPreloadTimer);
     if (resumeAutoScroll) resumeAutoScrollAfterLightbox();
   }
 

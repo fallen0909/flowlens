@@ -67,6 +67,49 @@
       border: 0 !important;
       box-shadow: none !important;
     }
+    @media (max-width: 820px) {
+      #xiv-root[data-active="true"] #xiv-topbar {
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
+        gap: 6px !important;
+        min-height: calc(54px + env(safe-area-inset-top, 0px)) !important;
+        z-index: 2147483647 !important;
+      }
+      #xiv-root[data-active="true"] #xiv-topbar .xiv-pill {
+        display: inline-flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        flex: 1 1 auto !important;
+        min-width: 88px !important;
+        max-width: calc(100vw - 178px) !important;
+        min-height: 34px !important;
+        padding: 0 9px !important;
+        overflow: hidden !important;
+        white-space: nowrap !important;
+        background: rgba(18,18,20,.72) !important;
+        color: #fff !important;
+        border: 1px solid rgba(255,255,255,.16) !important;
+        backdrop-filter: blur(12px) !important;
+      }
+      #xiv-root[data-active="true"][data-theme="light"] #xiv-topbar .xiv-pill {
+        background: rgba(255,255,255,.82) !important;
+        color: #151515 !important;
+        border-color: rgba(0,0,0,.12) !important;
+      }
+      #xiv-root[data-active="true"] #xiv-counter,
+      #xiv-root[data-active="true"] #xiv-status {
+        display: inline !important;
+        visibility: visible !important;
+      }
+      #xiv-root[data-active="true"] #xiv-status {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }
+      #xiv-root[data-active="true"] #xiv-topbar .xiv-actions {
+        flex: 0 0 auto !important;
+      }
+    }
   `;
 
   function inject() {
