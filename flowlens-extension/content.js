@@ -1246,11 +1246,11 @@
       const url = imageCandidateFromImg(img, base);
       if (url && isMediaUrl(url) && !BAD_IMAGE_RE.test(url)) urls.add(url);
     });
-    if (urls.size > state.expectedImages) state.expectedImages = urls.size;
     let added = 0;
     for (const url of urls) {
       if (addImage(url)) added += 1;
     }
+    state.expectedImages = state.images.length;
     return added;
   }
 
