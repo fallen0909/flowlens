@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "鐎戝厜 FlowLens",
-  "version": "1.4.27",
+  "version": "1.4.28",
   "description": "Collect page images and videos into a fullscreen waterfall viewer with original-size viewing, slideshow controls, and ZIP download.",
   "permissions": ["activeTab", "scripting", "downloads", "downloads.ui", "alarms", "storage"],
   "host_permissions": ["<all_urls>"],

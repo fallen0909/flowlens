@@ -2,7 +2,7 @@
   if (window.__flowLensDiagnosticsPatch) return;
   window.__flowLensDiagnosticsPatch = true;
 
-  const VERSION = "1.4.27";
+  const VERSION = "1.4.28";
   const MAX_EVENTS = 80;
   const failedMedia = [];
   const runtimeEvents = [];

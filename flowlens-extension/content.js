@@ -152,7 +152,9 @@
     collectedCount: 0,
     lastDownloadScope: "all",
     collectionBase: "",
-    x810114ApiMode: false
+    x810114ApiMode: false,
+    galleryQueue: [],
+    galleryQueueIndex: -1
   };
 
   function systemTheme() {
@@ -391,6 +393,15 @@
       background: rgba(255,255,255,.78); color: #151515; border-color: rgba(0,0,0,.12);
     }
     .xiv-btn:hover, #xiv-launch:hover { background: rgba(42,42,46,.9); }
+    .xiv-btn:disabled {
+      opacity: .38; cursor: default; filter: grayscale(.35);
+    }
+    .xiv-btn:disabled:hover {
+      background: rgba(18,18,20,.76);
+    }
+    #xiv-root[data-theme="light"] .xiv-btn:disabled:hover {
+      background: rgba(255,255,255,.78);
+    }
     .xiv-select {
       height: 38px; min-width: 84px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18);
       background: rgba(18,18,20,.76); color: #fff; padding: 0 30px 0 12px;
@@ -538,6 +549,8 @@
     fullscreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"/></svg>',
     download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>',
     play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+    prevSet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6 9 12l6 6"/><path d="M20 6 14 12l6 6"/><path d="M4 5v14"/></svg>',
+    nextSet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/><path d="M4 6l6 6-6 6"/><path d="M20 5v14"/></svg>',
     slow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M8 8l-4 4 4 4"/></svg>',
     fast: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M16 8l4 4-4 4"/></svg>',
     top: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M6 15l6-6 6 6M12 9v10"/></svg>',
@@ -555,6 +568,168 @@
     } catch {
       return "";
     }
+  }
+
+  function normalizedPageUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      parsed.hash = "";
+      return parsed.href.replace(/\/$/, "/");
+    } catch {
+      return "";
+    }
+  }
+
+  function samePageUrl(a, b) {
+    return normalizedPageUrl(a) === normalizedPageUrl(b);
+  }
+
+  function galleryQueueStorageKey(url = location.href) {
+    try {
+      const parsed = new URL(url, location.href);
+      return `flowlens-gallery-queue:${parsed.origin}`;
+    } catch {
+      return "flowlens-gallery-queue";
+    }
+  }
+
+  function galleryQueueAutoOpenKey() {
+    return "flowlens-gallery-queue-auto-open";
+  }
+
+  function isQueueCandidateUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      const host = parsed.hostname;
+      const path = parsed.pathname;
+      if (/^www\.pornpics\.com$/i.test(host) || /(^|\.)pornpics\.com$/i.test(host)) {
+        return /\/(?:[a-z]{2}\/)?galleries\/[^/]+-\d+\/?$/i.test(path);
+      }
+      if (/(^|\.)xchina\.co$/i.test(host)) {
+        return /\/(?:photo\/id-[A-Za-z0-9_-]+\.html|photos\/series-[A-Za-z0-9_-]+\/\d+\.html)$/i.test(path);
+      }
+      if (/(^|\.)buondua\.com$/i.test(host)) {
+        return /^\/[^?#]+-\d+(?:\/)?$/i.test(path) && !/\/(?:tag|category|page|collection)\//i.test(path);
+      }
+      if (/^x\.810114\.xyz$/i.test(host)) {
+        const parts = path.split("/").filter(Boolean);
+        return parts.length === 1 && /^[A-Za-z0-9_]{2,64}$/.test(parts[0]);
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  }
+
+  function collectGalleryQueueFromDocument(doc = document, base = location.href) {
+    const queue = [];
+    const seen = new Set();
+
+    function remember(raw) {
+      const url = normalizedPageUrl(absoluteUrl(raw, base));
+      if (!url || !isQueueCandidateUrl(url)) return;
+      const key = url.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      queue.push(url);
+    }
+
+    doc.querySelectorAll("a[href]").forEach((link) => remember(link.getAttribute("href")));
+    return queue;
+  }
+
+  function readStoredGalleryQueue() {
+    try {
+      const raw = sessionStorage.getItem(galleryQueueStorageKey());
+      const data = JSON.parse(raw || "[]");
+      return Array.isArray(data) ? data.map(normalizedPageUrl).filter(isQueueCandidateUrl) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeStoredGalleryQueue(queue) {
+    try {
+      sessionStorage.setItem(galleryQueueStorageKey(), JSON.stringify(queue.slice(0, 300)));
+    } catch {
+      // Queue persistence is best-effort.
+    }
+  }
+
+  function refreshGalleryQueue(doc = document, base = location.href) {
+    const stored = readStoredGalleryQueue();
+    const discovered = collectGalleryQueueFromDocument(doc, base);
+    const current = normalizedPageUrl(location.href);
+    const merged = [];
+    const seen = new Set();
+
+    function remember(url) {
+      const clean = normalizedPageUrl(url);
+      if (!clean || !isQueueCandidateUrl(clean)) return;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(clean);
+    }
+
+    stored.forEach(remember);
+    discovered.forEach(remember);
+    if (isQueueCandidateUrl(current)) remember(current);
+    state.galleryQueue = merged;
+    state.galleryQueueIndex = merged.findIndex((url) => samePageUrl(url, current));
+    if (merged.length > 1) writeStoredGalleryQueue(merged);
+    syncGalleryQueueButtons();
+  }
+
+  function galleryQueueTarget(delta) {
+    if (!state.galleryQueue.length) refreshGalleryQueue();
+    const queue = state.galleryQueue;
+    if (queue.length < 2) return "";
+    let index = state.galleryQueueIndex;
+    if (index < 0) index = queue.findIndex((url) => samePageUrl(url, location.href));
+    if (index < 0) index = 0;
+    const next = (index + delta + queue.length) % queue.length;
+    const url = queue[next];
+    return samePageUrl(url, location.href) ? "" : url;
+  }
+
+  function syncGalleryQueueButtons() {
+    const hasQueue = state.galleryQueue.length > 1;
+    state.root?.querySelectorAll('[data-xiv="prev-set"], [data-xiv="next-set"]').forEach((button) => {
+      button.disabled = !hasQueue;
+      button.dataset.enabled = hasQueue ? "true" : "false";
+    });
+  }
+
+  function navigateGalleryQueue(delta) {
+    refreshGalleryQueue();
+    const target = galleryQueueTarget(delta);
+    if (!target) {
+      updateStatus("没有可切换的套图");
+      return;
+    }
+    try {
+      sessionStorage.setItem(galleryQueueAutoOpenKey(), target);
+    } catch {
+      // Auto-open is best-effort.
+    }
+    updateStatus(delta > 0 ? "打开下一组" : "打开上一组");
+    location.href = target;
+  }
+
+  function maybeAutoOpenFromGalleryQueue() {
+    let target = "";
+    try {
+      target = sessionStorage.getItem(galleryQueueAutoOpenKey()) || "";
+      if (target && samePageUrl(target, location.href)) sessionStorage.removeItem(galleryQueueAutoOpenKey());
+    } catch {
+      return;
+    }
+    if (!target || !samePageUrl(target, location.href)) return;
+    window.setTimeout(() => {
+      refreshGalleryQueue();
+      openViewer();
+    }, 650);
   }
 
   function unescapeEmbeddedUrl(value) {
@@ -1276,6 +1451,7 @@
     let added = 0;
     state.collectionBase = base;
     doc.documentElement.dataset.xivBase = base;
+    refreshGalleryQueue(doc, base);
     rememberExpectedImageCount(doc);
     if (isCloudDriveFilesPage(base)) {
       added += collectCloudDriveMediaUrls(doc, base);
@@ -2803,6 +2979,8 @@
           <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>
           <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>
           <button class="xiv-btn" type="button" data-xiv="auto" title="自动滚动">${icons.play}<span>自动</span></button>
+          <button class="xiv-btn" type="button" data-xiv="prev-set" title="上一组">${icons.prevSet}<span>上一组</span></button>
+          <button class="xiv-btn" type="button" data-xiv="next-set" title="下一组">${icons.nextSet}<span>下一组</span></button>
           <button class="xiv-btn" type="button" data-xiv="slower" title="减慢自动滚动">${icons.slow}<span>减速</span></button>
           <button class="xiv-btn" type="button" data-xiv="faster" title="加快自动滚动">${icons.fast}<span>加速</span></button>
           <button class="xiv-btn" type="button" data-xiv="top" title="回到顶部">${icons.top}<span>顶部</span></button>
@@ -2848,6 +3026,8 @@
     state.root.querySelector('[data-xiv="favzip"]').addEventListener("click", () => downloadZip("favorites"));
     state.root.querySelector('[data-xiv="links"]').addEventListener("click", exportLinks);
     state.root.querySelector('[data-xiv="auto"]').addEventListener("click", toggleAutoScroll);
+    state.root.querySelector('[data-xiv="prev-set"]').addEventListener("click", () => navigateGalleryQueue(-1));
+    state.root.querySelector('[data-xiv="next-set"]').addEventListener("click", () => navigateGalleryQueue(1));
     state.root.querySelector('[data-xiv="slower"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed - 1));
     state.root.querySelector('[data-xiv="faster"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed + 1));
     state.root.querySelector('[data-xiv="top"]').addEventListener("click", () => state.stage.scrollTo({ top: 0, behavior: "smooth" }));
@@ -2877,6 +3057,7 @@
     watchSystemTheme();
     syncSettingsPanel();
     setColumns(state.columns, false);
+    refreshGalleryQueue();
   }
 
   function watchSystemTheme() {
@@ -3249,7 +3430,8 @@
     if (!state.counter) return;
     const visibleCount = filteredImages().length;
     const suffix = state.mediaFilter === "all" ? "" : ` / 显示 ${visibleCount}`;
-    state.counter.textContent = state.expectedImages
+    const expected = isPornpicsGalleryPage() ? 0 : state.expectedImages;
+    state.counter.textContent = expected
       ? `${state.images.length}/${state.expectedImages} 张${suffix}`
       : `${state.images.length} 张${suffix}`;
   }
@@ -4912,4 +5094,5 @@
 
   installControlApi();
   ensureUi();
+  maybeAutoOpenFromGalleryQueue();
 })();
