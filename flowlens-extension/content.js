@@ -392,14 +392,6 @@
     .xiv-btn svg, #xiv-launch svg { display: block; flex: 0 0 auto; }
     .xiv-btn svg { width: 18px; height: 18px; }
     .xiv-btn span { display: none; }
-    .xiv-btn[data-xiv="prev-set"],
-    .xiv-btn[data-xiv="next-set"] {
-      width: auto; min-width: 72px; padding: 0 10px;
-    }
-    .xiv-btn[data-xiv="prev-set"] span,
-    .xiv-btn[data-xiv="next-set"] span {
-      display: inline;
-    }
     .xiv-btn-icon { min-width: 38px; width: 38px; padding: 0; }
     #xiv-root[data-theme="light"] .xiv-pill,
     #xiv-root[data-theme="light"] .xiv-btn {
@@ -552,10 +544,6 @@
       .xiv-pill { max-width: calc(100vw - 176px); overflow: hidden; text-overflow: ellipsis; }
       .xiv-actions { max-width: calc(100vw - 104px); }
       .xiv-btn { min-width: 36px; width: 36px; height: 36px; }
-      .xiv-btn[data-xiv="prev-set"],
-      .xiv-btn[data-xiv="next-set"] {
-        min-width: 66px; width: auto; padding: 0 8px;
-      }
     }
   `;
 
@@ -653,7 +641,29 @@
     }
 
     doc.querySelectorAll("a[href]").forEach((link) => remember(link.getAttribute("href")));
+    if (/^https?:\/\/x\.810114\.xyz(?:\/|$)/i.test(base)) {
+      collectX810114ProfileQueueFromText(doc).forEach(remember);
+    }
     return queue;
+  }
+
+  function collectX810114ProfileQueueFromText(doc = document) {
+    const found = [];
+    const seen = new Set();
+    const walker = doc.createTreeWalker(doc.body || doc.documentElement, NodeFilter.SHOW_TEXT);
+    let node = null;
+    while ((node = walker.nextNode())) {
+      const text = String(node.nodeValue || "");
+      const matches = text.matchAll(/@([A-Za-z0-9_]{2,64})/g);
+      for (const match of matches) {
+        const name = match[1];
+        const key = name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        found.push(`https://x.810114.xyz/${name}`);
+      }
+    }
+    return found;
   }
 
   function readStoredGalleryQueue() {
@@ -719,11 +729,12 @@
       const label = button.dataset.xiv === "prev-set" ? "上一组" : "下一组";
       button.disabled = !hasQueue;
       button.dataset.enabled = hasQueue ? "true" : "false";
-      button.title = hasQueue && index ? `${label}（${index}/${total}）` : `${label}（未识别到队列）`;
+      const shortcut = button.dataset.xiv === "prev-set" ? "Shift+←" : "Shift+→";
+      button.title = hasQueue && index ? `${label}（${index}/${total}，${shortcut}）` : `${label}（未识别到队列，${shortcut}）`;
     });
   }
 
-  function navigateGalleryQueue(delta) {
+  async function navigateGalleryQueue(delta) {
     refreshGalleryQueue();
     const target = galleryQueueTarget(delta);
     if (!target) {
@@ -734,6 +745,13 @@
       sessionStorage.setItem(galleryQueueAutoOpenKey(), target);
     } catch {
       // Auto-open is best-effort.
+    }
+    if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
+      try {
+        await state.root?.requestFullscreen?.();
+      } catch {
+        // Fullscreen must be requested from the user gesture; if blocked, auto-open still works.
+      }
     }
     updateStatus(delta > 0 ? "打开下一组" : "打开上一组");
     location.href = target;
@@ -5021,6 +5039,12 @@
       return;
     }
     if (!state.active) return;
+    if (!isTyping && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      claimEvent(event);
+      if (event.repeat) return;
+      navigateGalleryQueue(event.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
     if (state.lightbox?.dataset.active === "true" && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       claimEvent(event);
       if (event.repeat) return;

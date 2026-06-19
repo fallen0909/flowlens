@@ -1,12 +1,12 @@
 {
-  "version": "1.4.29",
+  "version": "1.4.30",
   "desktop": {
-    "version": "1.4.29",
+    "version": "1.4.30",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.29",
+    "version": "1.4.30",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,6 +14,10 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "icon-only-gallery-queue-buttons",
+    "gallery-queue-keyboard-shortcuts",
+    "x810114-profile-text-queue",
+    "gallery-queue-prefullscreen-navigation",
     "visible-gallery-queue-text-buttons",
     "scrollable-flowlens-toolbar-actions",
     "gallery-set-queue-navigation",

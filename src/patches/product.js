@@ -235,6 +235,7 @@
             <tr><td><kbd>X</kbd></td><td>清空选择</td></tr>
             <tr><td><kbd>A</kbd></td><td>瀑布流自动滚动</td></tr>
             <tr><td><kbd>P</kbd></td><td>大图自动播放下一张</td></tr>
+            <tr><td><kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd></td><td>切换上一组 / 下一组</td></tr>
             <tr><td><kbd>+</kbd> <kbd>-</kbd></td><td>调整列数</td></tr>
             <tr><td><kbd>F</kbd></td><td>全屏</td></tr>
             <tr><td><kbd>T</kbd></td><td>切换主题</td></tr>

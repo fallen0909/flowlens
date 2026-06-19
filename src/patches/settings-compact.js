@@ -248,6 +248,7 @@
       <span><kbd>V</kbd>循环筛选</span>
       <span><kbd>A</kbd>自动滚动</span>
       <span><kbd>P</kbd>大图自动切换</span>
+      <span><kbd>Shift+←/→</kbd>上一组/下一组</span>
       <span><kbd>S</kbd>选择模式</span>
       <span><kbd>Shift+D</kbd>下载已选</span>`;
     return node;
