@@ -136,6 +136,7 @@
     suppressLightboxUntil: 0,
     lightboxGestureToken: 0,
     lightboxSwipe: null,
+    viewerSwipe: null,
     lastLightboxWheelAt: 0,
     lightboxDrag: null,
     lightboxSuppressClickUntil: 0,
@@ -646,6 +647,15 @@
     }
   }
 
+  function isMobilePointerEvent(event = null) {
+    if (event?.pointerType && event.pointerType !== "mouse") return true;
+    try {
+      return window.matchMedia?.("(pointer: coarse)")?.matches || Math.min(window.innerWidth, window.innerHeight) <= 820;
+    } catch {
+      return Math.min(window.innerWidth, window.innerHeight) <= 820;
+    }
+  }
+
   function isFavoriteMediaUrl(url) {
     return isVideoUrl(url) || isFavoriteImageUrl(url);
   }
@@ -974,6 +984,10 @@
 
   function addImage(url, detailUrl = "", posterUrl = "") {
     url = normalizeMediaUrl(url);
+    if (!url || isBlockedZttaotuImage(url)) {
+      state.rejectedCount += 1;
+      return false;
+    }
     const key = keyForUrl(url);
     if (state.imageKeys.has(key)) {
       state.rejectedCount += 1;
@@ -1599,13 +1613,61 @@
       onload: (response) => {
         if (!video.isConnected || response.status < 200 || response.status >= 300 || !response.response) return;
         const objectUrl = URL.createObjectURL(response.response);
+        let done = false;
+        const cleanup = () => {
+          video.removeEventListener("loadedmetadata", onReady);
+          video.removeEventListener("loadeddata", onReady);
+          video.removeEventListener("seeked", onSeeked);
+          video.removeEventListener("error", onError);
+        };
+        const capture = () => {
+          if (done || !video.isConnected) return;
+          done = true;
+          cleanup();
+          video.dataset.previewLoaded = "true";
+          video.dataset.previewLoading = "false";
+          captureVideoPreviewFrame(video);
+          pumpVideoPreviewQueue();
+        };
+        const onSeeked = () => capture();
+        const onError = () => {
+          if (done) return;
+          done = true;
+          cleanup();
+          video.dataset.previewLoaded = "true";
+          video.dataset.previewLoading = "false";
+          pumpVideoPreviewQueue();
+        };
+        const onReady = () => {
+          if (done || !video.isConnected) return;
+          const duration = Number(video.duration || 0);
+          const target = Number.isFinite(duration) && duration > 2.2 ? Math.min(duration - 0.2, 1.8) : 0;
+          if (Math.abs((video.currentTime || 0) - target) > 0.15) {
+            try {
+              video.currentTime = target;
+              return;
+            } catch {
+              // Some short blobs are not seekable before decode; capture current frame.
+            }
+          }
+          capture();
+        };
+        video.addEventListener("loadedmetadata", onReady);
+        video.addEventListener("loadeddata", onReady);
+        video.addEventListener("seeked", onSeeked);
+        video.addEventListener("error", onError);
         video.dataset.previewObjectUrl = objectUrl;
         video.dataset.previewMode = "canvas";
-        video.dataset.previewLoaded = "true";
-        video.dataset.previewLoading = "false";
+        video.dataset.previewLoaded = "false";
+        video.dataset.previewLoading = "true";
         video.dataset.sourceUrl = url;
+        video.preload = "auto";
         video.src = objectUrl;
         video.load();
+        window.setTimeout(() => {
+          if (!done && video.readyState >= 2) capture();
+          else if (!done) onError();
+        }, 9000);
       },
       onerror: () => {},
       ontimeout: () => {}
@@ -2502,6 +2564,10 @@
     });
     state.stage.addEventListener("scroll", onScroll, { passive: true });
     state.stage.addEventListener("click", onStageCaptureClick, true);
+    state.stage.addEventListener("pointerdown", onStagePointerDown);
+    state.stage.addEventListener("pointermove", onStagePointerMove);
+    state.stage.addEventListener("pointerup", endStageSwipe);
+    state.stage.addEventListener("pointercancel", endStageSwipe);
     state.lightbox.addEventListener("click", onLightboxClick);
     state.lightbox.addEventListener("wheel", onLightboxWheel, { passive: false });
     state.lightbox.addEventListener("pointerdown", onLightboxPointerDown);
@@ -3153,7 +3219,7 @@
     }
 
     return [...new Set(urls)].filter((url) => {
-      if (!isMediaUrl(url) || BAD_IMAGE_RE.test(url) || isAdMedia(url) || isX810114Avatar(url)) return false;
+      if (!isMediaUrl(url) || BAD_IMAGE_RE.test(url) || isAdMedia(url) || isX810114Avatar(url) || isBlockedZttaotuImage(url)) return false;
       const path = new URL(url).pathname;
       if (STATIC_ASSET_RE.test(url) && !/(upload|uploads|media|photos?|files?)/i.test(path)) return false;
       return true;
@@ -3577,6 +3643,7 @@
     if (!state.lightbox) return;
     pauseLightboxMedia();
     endLightboxDrag();
+    endStageSwipe();
     state.lightbox.dataset.active = "false";
     state.lightbox.dataset.zoom = "fit";
     if (resumeAutoScroll) resumeAutoScrollAfterLightbox();
@@ -4048,7 +4115,6 @@
 
   function showAdjacentImage(delta) {
     if (!state.images.length) return;
-    if (state.lightbox?.dataset.zoom === "actual") return;
     let next = state.index;
     for (let step = 0; step < state.images.length; step += 1) {
       next = (next + delta + state.images.length) % state.images.length;
@@ -4181,9 +4247,51 @@
     claimEvent(event);
     state.lightboxSuppressClickUntil = Date.now() + 260;
     if (absX >= absY) {
-      showAdjacentImage(dx < 0 ? 1 : -1);
+      if (isMobilePointerEvent(event)) closeLightbox();
+      else showAdjacentImage(dx < 0 ? 1 : -1);
     } else {
       showAdjacentImage(dy < 0 ? 1 : -1);
+    }
+  }
+
+  function onStagePointerDown(event) {
+    if (!state.active || state.lightbox?.dataset.active === "true" || !isMobilePointerEvent(event)) return;
+    if (event.button !== 0) return;
+    if (event.target?.closest?.("button, select, input, textarea, a, .xiv-tile, [role='button']")) return;
+    state.viewerSwipe = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      moved: false
+    };
+    event.target?.setPointerCapture?.(event.pointerId);
+  }
+
+  function onStagePointerMove(event) {
+    const swipe = state.viewerSwipe;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    const dx = event.clientX - swipe.x;
+    const dy = event.clientY - swipe.y;
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.35) {
+      swipe.moved = true;
+      claimEvent(event);
+    }
+  }
+
+  function endStageSwipe(event = null) {
+    const swipe = state.viewerSwipe;
+    if (!swipe) return;
+    if (event && swipe.pointerId !== event.pointerId) return;
+    state.viewerSwipe = null;
+    if (!event || !swipe.moved || !state.active || state.lightbox?.dataset.active === "true") return;
+    const dx = event.clientX - swipe.x;
+    const dy = event.clientY - swipe.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const threshold = Math.max(52, Math.min(window.innerWidth, window.innerHeight) * 0.12);
+    if (absX >= threshold && absX > absY * 1.35) {
+      claimEvent(event);
+      closeViewer();
     }
   }
 

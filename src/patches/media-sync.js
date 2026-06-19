@@ -2,7 +2,7 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.19";
+  const VERSION = "1.4.20";
   const FILTER_ORDER = ["all", "image", "video"];
   const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
   const FILTER_KEY = "flowlens-media-filter-v1";
@@ -12,7 +12,31 @@
 
   let currentMode = localStorage.getItem(FILTER_KEY) || localStorage.getItem(LEGACY_FILTER_KEY) || "all";
   if (!FILTER_ORDER.includes(currentMode)) currentMode = "all";
-  let slideshowDelay = Number(localStorage.getItem(SPEED_KEY) || 2800);
+  function speedKey() {
+    try {
+      const url = new URL(location.href);
+      return `${SPEED_KEY}:${url.origin}${url.pathname}`;
+    } catch {
+      return `${SPEED_KEY}:page`;
+    }
+  }
+
+  function readSlideshowDelay() {
+    try {
+      return Number(localStorage.getItem(speedKey()) || 2800);
+    } catch {
+      return 2800;
+    }
+  }
+
+  function writeSlideshowDelay(value) {
+    try {
+      localStorage.setItem(speedKey(), String(value));
+      localStorage.removeItem(SPEED_KEY);
+    } catch {}
+  }
+
+  let slideshowDelay = readSlideshowDelay();
   if (!SPEED_OPTIONS.includes(slideshowDelay)) slideshowDelay = 2800;
   let slideshowTimer = 0;
   let slideshowActive = false;
@@ -43,8 +67,8 @@
     style.id = "xiv-media-sync-style";
     style.textContent = `
       #xiv-root .xiv-media-switch { display: none !important; }
-      #xiv-root .fl-top-filter-btn { font-size: 0 !important; letter-spacing: 0 !important; }
-      #xiv-root .fl-top-filter-btn svg { width: 23px; height: 23px; display: block; pointer-events: none; }
+      #xiv-root .fl-top-filter-btn { display: inline-grid !important; place-items: center !important; align-items: center !important; justify-content: center !important; padding: 0 !important; font-size: 0 !important; letter-spacing: 0 !important; }
+      #xiv-root .fl-top-filter-btn svg { width: 23px; height: 23px; display: block; pointer-events: none; margin: 0 auto; }
       #xiv-root .fl-version-row { display: flex; align-items: center; justify-content: space-between; min-height: 30px; padding: 0 0 10px; margin: -4px 0 4px; border-bottom: 1px solid rgba(0,0,0,.08); color: rgba(0,0,0,.58); font: 750 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       #xiv-root[data-theme="dark"] .fl-version-row, #xiv-root:not([data-theme="light"]) .fl-version-row { border-bottom-color: rgba(255,255,255,.12); color: rgba(255,255,255,.66); }
       #xiv-root .fl-version-row strong { color: inherit; font-weight: 900; }
@@ -54,14 +78,14 @@
       #xiv-root .xiv-lightbox-slideshow[data-active="true"] { color: #111; background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76)); border-color: rgba(255,255,255,.7); }
       #xiv-root .xiv-lightbox-slideshow svg { width: 20px; height: 20px; display: block; }
       @media (max-width: 820px) {
-        #xiv-root .xiv-panel[data-panel="settings"] { width: min(86vw, 620px) !important; max-height: calc(100dvh - 116px) !important; padding: 18px 20px !important; border-radius: 20px !important; overflow-y: auto !important; overscroll-behavior: contain !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] h3 { font-size: 24px !important; margin: 0 0 8px !important; line-height: 1.2 !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row { min-height: 54px !important; padding: 10px 0 !important; gap: 14px !important; font-size: 17px !important; line-height: 1.25 !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row > span { font-size: 17px !important; font-weight: 800 !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] input[type="checkbox"] { width: 30px !important; height: 30px !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] .xiv-select { min-height: 46px !important; padding: 0 38px 0 18px !important; border-radius: 22px !important; font-size: 16px !important; font-weight: 850 !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] button { width: 52px !important; height: 52px !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] small { display: block !important; margin-top: 8px !important; font-size: 12px !important; line-height: 1.45 !important; opacity: .66 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] { position: fixed !important; top: max(58px, calc(env(safe-area-inset-top, 0px) + 50px)) !important; right: max(8px, env(safe-area-inset-right, 0px)) !important; left: max(8px, env(safe-area-inset-left, 0px)) !important; bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important; width: auto !important; max-width: none !important; height: auto !important; max-height: none !important; padding: 12px !important; border-radius: 14px !important; overflow-y: auto !important; overscroll-behavior: contain !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] h3 { font-size: 18px !important; margin: 0 0 6px !important; line-height: 1.2 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row { min-height: 42px !important; padding: 7px 0 !important; gap: 10px !important; font-size: 14px !important; line-height: 1.25 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row > span { font-size: 14px !important; font-weight: 800 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] input[type="checkbox"] { width: 24px !important; height: 24px !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] .xiv-select { min-height: 38px !important; padding: 0 32px 0 12px !important; border-radius: 19px !important; font-size: 14px !important; font-weight: 850 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] button { width: 40px !important; height: 40px !important; min-width: 40px !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] small { display: block !important; margin-top: 6px !important; font-size: 11px !important; line-height: 1.35 !important; opacity: .66 !important; }
         #xiv-root .fl-version-row { min-height: 26px !important; padding-bottom: 8px !important; margin-bottom: 4px !important; font-size: 12px !important; }
         #xiv-root .xiv-lightbox-slideshow { right: 112px; top: 14px; width: 40px; height: 40px; }
       }
@@ -139,7 +163,7 @@
   function setSlideshowDelay(ms) {
     const next = SPEED_OPTIONS.includes(Number(ms)) ? Number(ms) : 2800;
     slideshowDelay = next;
-    try { localStorage.setItem(SPEED_KEY, String(next)); } catch {}
+    writeSlideshowDelay(next);
     const select = root()?.querySelector(".fl-slideshow-speed");
     if (select) select.value = String(next);
     if (slideshowActive) restartSlideshowTimer();

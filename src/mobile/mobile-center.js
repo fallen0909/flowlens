@@ -22,6 +22,8 @@
       overscroll-behavior: contain !important;
     }
     #xiv-lightbox[data-zoom="actual"] > img {
+      width: var(--xiv-mobile-actual-width, auto) !important;
+      height: var(--xiv-mobile-actual-height, auto) !important;
       max-width: none !important;
       max-height: none !important;
       flex: 0 0 auto !important;
@@ -68,6 +70,12 @@
     const token = [imageKey(img), lb.clientWidth, lb.clientHeight, img.naturalWidth, img.naturalHeight].join("|");
     if (!force && lb.dataset.flActualCentered === token) return;
     lb.dataset.flActualCentered = token;
+
+    const dpr = Math.max(1, Number(window.devicePixelRatio || 1));
+    const cssWidth = Math.max(1, Math.round(img.naturalWidth / dpr));
+    const cssHeight = Math.max(1, Math.round(img.naturalHeight / dpr));
+    img.style.setProperty("--xiv-mobile-actual-width", `${cssWidth}px`);
+    img.style.setProperty("--xiv-mobile-actual-height", `${cssHeight}px`);
 
     const run = () => {
       if (!isActualMode() || lightbox()?.dataset.dragging === "true") return;

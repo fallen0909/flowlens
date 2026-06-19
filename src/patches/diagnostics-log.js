@@ -2,7 +2,7 @@
   if (window.__flowLensDiagnosticsPatch) return;
   window.__flowLensDiagnosticsPatch = true;
 
-  const VERSION = "1.4.19";
+  const VERSION = "1.4.20";
   const MAX_EVENTS = 80;
   const failedMedia = [];
   const runtimeEvents = [];
@@ -70,7 +70,12 @@
   }
   function storageSnapshot() {
     const result = {};
-    for (const key of ["flowlens-settings-v2", "flowlens-media-filter-v2", "flowlens-lightbox-slideshow-delay-v1"]) {
+    let pageSpeedKey = "flowlens-lightbox-slideshow-delay-v1:page";
+    try {
+      const url = new URL(location.href);
+      pageSpeedKey = `flowlens-lightbox-slideshow-delay-v1:${url.origin}${url.pathname}`;
+    } catch {}
+    for (const key of ["flowlens-settings-v2", "flowlens-media-filter-v2", "flowlens-lightbox-slideshow-delay-v1", pageSpeedKey]) {
       try { result[key] = localStorage.getItem(key); } catch { result[key] = "<blocked>"; }
     }
     return result;

@@ -3,7 +3,8 @@
   window.__flowLensSettingsCompactV2 = true;
 
   const SETTINGS_KEY = "flowlens-settings-v2";
-  const SPEEDS = [1200, 1800, 2600, 3600, 5000, 7000];
+  const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
+  const SPEEDS = [1200, 1800, 2800, 4000, 6000];
   let timer = 0;
 
   const css = `
@@ -111,10 +112,16 @@
       #xiv-root .xiv-settings,
       #xiv-root .xiv-settings-panel,
       #xiv-root .xiv-panel:has(.xiv-setting-row) {
-        width: calc(100vw - 18px) !important;
-        max-width: calc(100vw - 18px) !important;
-        max-height: 78vh !important;
-        padding: 14px !important;
+        position: fixed !important;
+        top: max(58px, calc(env(safe-area-inset-top, 0px) + 50px)) !important;
+        right: max(8px, env(safe-area-inset-right, 0px)) !important;
+        left: max(8px, env(safe-area-inset-left, 0px)) !important;
+        bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
+        width: auto !important;
+        max-width: none !important;
+        height: auto !important;
+        max-height: none !important;
+        padding: 12px !important;
       }
       .xiv-fl-shortcuts-mini { grid-template-columns: 1fr !important; }
     }
@@ -139,8 +146,32 @@
     return next;
   }
 
+  function speedKey() {
+    try {
+      const url = new URL(location.href);
+      return `${SPEED_KEY}:${url.origin}${url.pathname}`;
+    } catch {
+      return `${SPEED_KEY}:page`;
+    }
+  }
+
+  function readPageSpeed() {
+    try {
+      return Number(localStorage.getItem(speedKey()) || 2800);
+    } catch {
+      return 2800;
+    }
+  }
+
+  function writePageSpeed(value) {
+    try {
+      localStorage.setItem(speedKey(), String(value));
+      localStorage.removeItem(SPEED_KEY);
+    } catch {}
+  }
+
   function nearestSpeed(value) {
-    const raw = Number(value || 2600);
+    const raw = Number(value || 2800);
     return SPEEDS.reduce((best, item) => Math.abs(item - raw) < Math.abs(best - raw) ? item : best, SPEEDS[0]);
   }
 
@@ -154,7 +185,7 @@
   }
 
   function currentSpeed() {
-    return nearestSpeed(readSettings().lightboxAutoDelay || 2600);
+    return nearestSpeed(readPageSpeed());
   }
 
   function updateSpeedLabel() {
@@ -168,7 +199,7 @@
     const ms = currentSpeed();
     const index = Math.max(0, SPEEDS.indexOf(ms));
     const next = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, index + delta))];
-    writeSettings({ lightboxAutoDelay: next });
+    writePageSpeed(next);
     updateSpeedLabel();
     const status = document.getElementById("xiv-status");
     if (status) status.textContent = `大图切换速度：${speedLabel(next)} ${Math.round(next / 100) / 10}秒`;

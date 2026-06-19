@@ -2,10 +2,31 @@
   if (window.__flowLensSlideshowNativePatch) return;
   window.__flowLensSlideshowNativePatch = true;
 
-  const VERSION = "1.4.19";
+  const VERSION = "1.4.20";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
   const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
-  let delay = Number(localStorage.getItem(SPEED_KEY) || 2800);
+  function speedKey() {
+    try {
+      const url = new URL(location.href);
+      return `${SPEED_KEY}:${url.origin}${url.pathname}`;
+    } catch {
+      return `${SPEED_KEY}:page`;
+    }
+  }
+  function readDelay() {
+    try {
+      return Number(localStorage.getItem(speedKey()) || 2800);
+    } catch {
+      return 2800;
+    }
+  }
+  function writeDelay(value) {
+    try {
+      localStorage.setItem(speedKey(), String(value));
+      localStorage.removeItem(SPEED_KEY);
+    } catch {}
+  }
+  let delay = readDelay();
   if (!SPEED_OPTIONS.includes(delay)) delay = 2800;
   let timer = 0;
   let active = false;
@@ -150,7 +171,7 @@
       select.addEventListener("change", () => {
         const value = Number(select.value || 2800);
         delay = SPEED_OPTIONS.includes(value) ? value : 2800;
-        localStorage.setItem(SPEED_KEY, String(delay));
+        writeDelay(delay);
         if (active) restart();
       });
     }

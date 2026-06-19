@@ -20,6 +20,15 @@
       outline: 0 !important;
       box-shadow: none !important;
     }
+    #xiv-root[data-active="true"][data-theme="dark"] {
+      background: #050505 !important;
+    }
+    #xiv-root[data-active="true"][data-theme="dark"] #xiv-stage {
+      background: #050505 !important;
+    }
+    #xiv-root[data-active="true"][data-theme="dark"] .xiv-stage-safe-cover {
+      background: #050505 !important;
+    }
     #xiv-root[data-active="true"] #xiv-stage {
       padding-top: max(13px, calc(env(safe-area-inset-top, 0px) + 13px)) !important;
       padding-left: calc(max(6px, env(safe-area-inset-left, 0px)) + ${OVERBLEED}px) !important;
