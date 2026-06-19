@@ -546,23 +546,22 @@
       .xiv-pill { max-width: calc(100vw - 176px); overflow: hidden; text-overflow: ellipsis; }
       .xiv-actions { max-width: calc(100vw - 104px); }
       .xiv-btn { min-width: 36px; width: 36px; height: 36px; }
-      #xiv-lightbox[data-active="true"] ~ #xiv-topbar,
-      #xiv-root:has(#xiv-lightbox[data-active="true"]) #xiv-topbar {
-        align-items: flex-start; gap: 4px; padding: 6px 8px;
+      #xiv-root[data-lightbox-active="true"] #xiv-topbar {
+        justify-content: flex-end; align-items: flex-start; gap: 0; padding: 6px 8px;
       }
-      #xiv-root:has(#xiv-lightbox[data-active="true"]) .xiv-pill {
-        min-height: 28px; max-width: calc(100vw - 252px); padding: 0;
-        background: transparent !important; border: 0 !important; box-shadow: none !important;
-        backdrop-filter: none !important; font-size: 12px; text-shadow: 0 1px 4px rgba(255,255,255,.7);
+      #xiv-root[data-lightbox-active="true"] .xiv-pill {
+        display: none !important;
       }
-      #xiv-root:not([data-theme="light"]):has(#xiv-lightbox[data-active="true"]) .xiv-pill {
-        text-shadow: 0 1px 5px rgba(0,0,0,.9);
+      #xiv-root[data-lightbox-active="true"] .xiv-actions {
+        max-width: calc(100vw - 16px); gap: 6px; justify-content: flex-end;
+        flex-wrap: nowrap; overflow: visible; padding-bottom: 0;
       }
-      #xiv-root:has(#xiv-lightbox[data-active="true"]) .xiv-actions {
-        max-width: 244px; gap: 5px; justify-content: flex-end;
+      #xiv-root[data-lightbox-active="true"] .xiv-btn {
+        min-width: 34px; width: 34px; height: 34px; flex: 0 0 34px;
       }
-      #xiv-root:has(#xiv-lightbox[data-active="true"]) .xiv-btn {
-        min-width: 34px; width: 34px; height: 34px;
+      #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="prev-set"],
+      #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="next-set"] {
+        display: none;
       }
     }
   `;
@@ -671,7 +670,7 @@
     const found = [];
     const seen = new Set();
     function scan(text) {
-      const matches = text.matchAll(/@([A-Za-z0-9_]{2,64})/g);
+      const matches = text.matchAll(/@\s*([A-Za-z0-9_]{2,64})/g);
       for (const match of matches) {
         const name = match[1];
         const key = name.toLowerCase();
@@ -694,6 +693,15 @@
         el.getAttribute("data-name")
       ].filter(Boolean).join(" "));
     });
+    const html = doc.documentElement?.innerHTML || "";
+    for (const match of html.matchAll(/https?:\/\/x\.810114\.xyz\/([A-Za-z0-9_]{2,64})(?:[/?#"'<>\\\s]|$)|["']\/([A-Za-z0-9_]{2,64})(?:[/?#"'<>\\\s]|$)/g)) {
+      const name = match[1] || match[2] || "";
+      if (!name || /^(static|manifest|favicon|photo|api|tag|search)$/i.test(name)) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push(`https://x.810114.xyz/${name}`);
+    }
     return found;
   }
 
@@ -777,11 +785,12 @@
 
   function syncGalleryQueueButtons() {
     const hasQueue = state.galleryQueue.length > 1;
+    const allowRefreshClick = !hasQueue && isGenericX810114Page();
     const total = state.galleryQueue.length || 0;
     const index = state.galleryQueueIndex >= 0 ? state.galleryQueueIndex + 1 : 0;
     state.root?.querySelectorAll('[data-xiv="prev-set"], [data-xiv="next-set"]').forEach((button) => {
       const label = button.dataset.xiv === "prev-set" ? "上一组" : "下一组";
-      button.disabled = !hasQueue;
+      button.disabled = !hasQueue && !allowRefreshClick;
       button.dataset.enabled = hasQueue ? "true" : "false";
       const shortcut = button.dataset.xiv === "prev-set" ? "," : ".";
       button.title = hasQueue && index ? `${label}（${index}/${total}，${shortcut}）` : `${label}（未识别到队列，${shortcut}）`;
@@ -1292,7 +1301,8 @@
     if (text && BLOCKED_PROMO_TEXT_RE.test(text)) return true;
     try {
       const parsed = new URL(url, location.href);
-      if (!/(^|\.)img\.xchina\.io$/i.test(parsed.hostname)) return false;
+      if (!/(^|\.)(?:img|upload)\.xchina\.io$/i.test(parsed.hostname)) return false;
+      if (/^6914a1e352a47\.webp$/i.test(parsed.pathname.split("/").pop() || "")) return true;
       const imageNo = siteAlbumPageNumberFromUrl(parsed.href);
       if (/id-6a33a26d508f4/i.test(contextBase) && imageNo === 5) return true;
       const path = `${parsed.pathname} ${parsed.search}`;
@@ -4320,12 +4330,14 @@
     const openToken = `${Date.now()}:${index}:${Math.random()}`;
     state.lightbox.dataset.openToken = openToken;
     state.lightbox.dataset.zoom = "fit";
+    state.root.dataset.lightboxActive = "true";
     state.lightbox.dataset.flVideoEnded = "false";
     state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     const thumbUrl = state.images[index];
     if (isVideoUrl(thumbUrl)) {
       setLightboxVideo(thumbUrl);
       state.lightbox.dataset.active = "true";
+      state.root.dataset.lightboxActive = "true";
       scheduleLightboxMediaPreload(index);
       return;
     } else {
@@ -4337,6 +4349,7 @@
       updateFavoriteButton(thumbUrl);
     }
     state.lightbox.dataset.active = "true";
+    state.root.dataset.lightboxActive = "true";
     scheduleLightboxMediaPreload(index);
     const highResUrl = await resolveHighResUrl(thumbUrl);
     if (state.lightbox.dataset.active === "true" && state.index === index && state.lightbox.dataset.openToken === openToken) {
@@ -4363,6 +4376,7 @@
     endLightboxDrag();
     endStageSwipe();
     state.lightbox.dataset.active = "false";
+    state.root.dataset.lightboxActive = "false";
     state.lightbox.dataset.zoom = "fit";
     clearTimeout(state.mediaPreloadTimer);
     if (resumeAutoScroll) resumeAutoScrollAfterLightbox();
