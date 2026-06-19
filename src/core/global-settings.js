@@ -66,6 +66,9 @@
     applyLaunchVisibility(local);
   }
 
+  window.__flowLensApplyGlobalSettings = applyGlobalToThisSite;
+  window.__flowLensSyncGlobalSettings = syncThisSiteToGlobal;
+
   applyGlobalToThisSite();
 
   window.addEventListener("storage", (event) => {

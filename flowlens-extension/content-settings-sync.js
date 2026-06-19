@@ -1,133 +1,83 @@
+// ==UserScript==
+// @name         瀑光 FlowLens 全局设置同步
+// @namespace    local.flowlens.settings
+// @version      1.3.5
+// @description  让隐藏入口图标、主题、列数、自动滚动速度、大图切换速度等设置在所有网站共用一份。
+// @match        *://*/*
+// @run-at       document-start
+// @noframes
+// @grant        GM_getValue
+// @grant        GM_setValue
+// ==/UserScript==
+
 (() => {
-  if (window.__flowLensSettingsSync) return;
-  window.__flowLensSettingsSync = true;
+  if (window.__flowLensGlobalSettings) return;
+  window.__flowLensGlobalSettings = true;
 
   const SETTINGS_KEY = "flowlens-settings-v2";
-  const SYNC_KEYS = [
-    "launchHidden",
-    "launchCompact",
-    "autoFullscreen",
-    "videoPreview",
-    "theme",
-    "columns",
-    "autoScrollSpeed"
-  ];
-  let applying = false;
+  const GLOBAL_KEY = "flowlens-global-settings-v2";
+  const SYNC_KEYS = ["launchHidden", "launchCompact", "autoFullscreen", "videoPreview", "theme", "columns", "autoScrollSpeed", "lightboxAutoDelay"];
   let saveTimer = 0;
 
-  function storageLocal() {
-    try {
-      return typeof chrome !== "undefined" ? chrome.storage?.local : null;
-    } catch {
-      return null;
-    }
+  function safeJsonParse(text) {
+    try { return JSON.parse(text || "{}") || {}; } catch { return {}; }
   }
 
   function readLocalSettings() {
-    try {
-      return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {};
-    } catch {
-      return {};
-    }
+    return safeJsonParse(localStorage.getItem(SETTINGS_KEY) || "{}");
   }
 
   function writeLocalSettings(settings) {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings || {}));
-    } catch {
-      // Storage can be blocked on some pages.
-    }
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings || {})); } catch { /* ignore */ }
   }
 
-  function pickSyncSettings(settings) {
-    const picked = {};
-    for (const key of SYNC_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(settings || {}, key)) picked[key] = settings[key];
-    }
-    return picked;
+  function pick(settings) {
+    const result = {};
+    SYNC_KEYS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(settings || {}, key)) result[key] = settings[key];
+    });
+    return result;
   }
 
-  function mergeSettings(base, patch) {
-    return { ...(base || {}), ...pickSyncSettings(patch || {}) };
+  function readGlobalSettings() {
+    try { return safeJsonParse(GM_getValue(GLOBAL_KEY, "{}")); } catch { return {}; }
+  }
+
+  function writeGlobalSettings(settings) {
+    try { GM_setValue(GLOBAL_KEY, JSON.stringify(pick(settings || {}))); } catch { /* ignore */ }
   }
 
   function applyLaunchVisibility(settings) {
-    document.documentElement.classList.toggle("xiv-fl-launch-hidden", settings?.launchHidden === true);
+    document.documentElement.classList.toggle("xiv-fl-launch-hidden", settings && settings.launchHidden === true);
   }
 
-  function syncControls(settings) {
-    document.querySelectorAll("#xiv-root [data-setting], #xiv-root [data-fl-setting]").forEach((control) => {
-      const key = control.dataset.setting || control.dataset.flSetting;
-      if (!key || !Object.prototype.hasOwnProperty.call(settings, key)) return;
-      if (control.type === "checkbox") control.checked = !!settings[key];
-      else control.value = String(settings[key]);
-    });
-  }
-
-  function applySettings(settings) {
-    applying = true;
+  function applyGlobalToThisSite() {
+    const global = readGlobalSettings();
     const local = readLocalSettings();
-    const merged = mergeSettings(local, settings);
+    const merged = { ...local, ...pick(global) };
     writeLocalSettings(merged);
     applyLaunchVisibility(merged);
-    syncControls(merged);
-    setTimeout(() => { applying = false; }, 0);
+    return merged;
   }
 
-  function saveToGlobalSoon() {
-    if (applying) return;
+  function syncThisSiteToGlobal() {
+    const local = readLocalSettings();
+    writeGlobalSettings(local);
+    applyLaunchVisibility(local);
+  }
+
+  window.__flowLensApplyGlobalSettings = applyGlobalToThisSite;
+  window.__flowLensSyncGlobalSettings = syncThisSiteToGlobal;
+
+  applyGlobalToThisSite();
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== SETTINGS_KEY) return;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      const storage = storageLocal();
-      if (!storage?.set) return;
-      const local = readLocalSettings();
-      storage.set({ [SETTINGS_KEY]: pickSyncSettings(local) });
-    }, 120);
-  }
+    saveTimer = setTimeout(syncThisSiteToGlobal, 120);
+  });
 
-  function loadGlobalSettings() {
-    const storage = storageLocal();
-    if (!storage?.get) return;
-    storage.get(SETTINGS_KEY, (result) => {
-      if (chrome.runtime?.lastError) return;
-      const global = result?.[SETTINGS_KEY];
-      const local = readLocalSettings();
-      if (global && typeof global === "object" && Object.keys(global).length) {
-        applySettings(global);
-        return;
-      }
-      if (Object.keys(local).length) {
-        storage.set({ [SETTINGS_KEY]: pickSyncSettings(local) });
-      }
-    });
-  }
-
-  function bindGlobalChanges() {
-    try {
-      chrome.storage?.onChanged?.addListener((changes, areaName) => {
-        if (areaName !== "local") return;
-        const next = changes?.[SETTINGS_KEY]?.newValue;
-        if (!next || typeof next !== "object") return;
-        applySettings(next);
-      });
-    } catch {
-      // Ignore unsupported extension storage events.
-    }
-  }
-
-  function bindUiChanges() {
-    document.addEventListener("change", (event) => {
-      if (!event.target?.closest?.("#xiv-root [data-setting], #xiv-root [data-fl-setting]")) return;
-      setTimeout(saveToGlobalSoon, 80);
-    }, true);
-    document.addEventListener("click", (event) => {
-      if (!event.target?.closest?.("#xiv-root [data-fl-stepper], #xiv-root [data-xiv]")) return;
-      setTimeout(saveToGlobalSoon, 160);
-    }, true);
-  }
-
-  loadGlobalSettings();
-  bindGlobalChanges();
-  bindUiChanges();
-  setInterval(() => applyLaunchVisibility(readLocalSettings()), 1200);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") syncThisSiteToGlobal();
+  });
 })();

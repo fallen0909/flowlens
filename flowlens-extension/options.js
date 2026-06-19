@@ -1,6 +1,6 @@
 (() => {
   const KEY = "flowlens-settings-v2";
-  const SPEEDS = [1200, 1800, 2600, 3600, 5000, 7000];
+  const SPEEDS = [800, 1200, 1800, 2400, 3200];
   const DEFAULTS = {
     launchCompact: false,
     launchHidden: false,
@@ -12,7 +12,7 @@
     autoFullscreen: true,
     videoPreview: true,
     downloadFolder: "",
-    lightboxAutoDelay: 2600
+    lightboxAutoDelay: 1200
   };
 
   function clamp(value, min, max, fallback) {
@@ -26,12 +26,11 @@
   }
 
   function speedLabel(ms) {
-    if (ms <= 1400) return "很快";
-    if (ms <= 2000) return "较快";
-    if (ms <= 3000) return "适中";
-    if (ms <= 4200) return "较慢";
-    if (ms <= 5500) return "慢速";
-    return "很慢";
+    if (ms <= 800) return "Fast";
+    if (ms <= 1200) return "Default";
+    if (ms <= 1800) return "Quick";
+    if (ms <= 2400) return "Normal";
+    return "Slow";
   }
 
   function read(callback) {

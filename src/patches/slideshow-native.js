@@ -2,32 +2,37 @@
   if (window.__flowLensSlideshowNativePatch) return;
   window.__flowLensSlideshowNativePatch = true;
 
-  const VERSION = "1.4.20";
+  const VERSION = "1.4.21";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
-  const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
-  function speedKey() {
-    try {
-      const url = new URL(location.href);
-      return `${SPEED_KEY}:${url.origin}${url.pathname}`;
-    } catch {
-      return `${SPEED_KEY}:page`;
-    }
+  const SETTINGS_KEY = "flowlens-settings-v2";
+  const SPEED_OPTIONS = [800, 1200, 1800, 2400, 3200];
+  const DEFAULT_DELAY = 1200;
+  function readSettings() {
+    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; }
+  }
+  function writeSettings(patch) {
+    const next = { ...readSettings(), ...patch };
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch {}
+    try { chrome?.storage?.local?.set?.({ [SETTINGS_KEY]: next }); } catch {}
+    try { window.__flowLensSyncGlobalSettings?.(); } catch {}
+    return next;
   }
   function readDelay() {
+    const settings = readSettings();
+    const stored = Number(settings.lightboxAutoDelay || 0);
+    if (SPEED_OPTIONS.includes(stored)) return stored;
     try {
-      return Number(localStorage.getItem(speedKey()) || 2800);
-    } catch {
-      return 2800;
-    }
+      const legacy = Number(localStorage.getItem(SPEED_KEY) || 0);
+      if (SPEED_OPTIONS.includes(legacy)) return legacy;
+    } catch {}
+    return DEFAULT_DELAY;
   }
   function writeDelay(value) {
-    try {
-      localStorage.setItem(speedKey(), String(value));
-      localStorage.removeItem(SPEED_KEY);
-    } catch {}
+    writeSettings({ lightboxAutoDelay: value });
+    try { localStorage.setItem(SPEED_KEY, String(value)); } catch {}
   }
   let delay = readDelay();
-  if (!SPEED_OPTIONS.includes(delay)) delay = 2800;
+  if (!SPEED_OPTIONS.includes(delay)) delay = DEFAULT_DELAY;
   let timer = 0;
   let active = false;
   let bootTimer = 0;
@@ -118,11 +123,11 @@
     }
     const title = active
       ? zoomPaused()
-        ? "1:1 查看中，自动切换已暂停"
+        ? "1:1 view: slideshow paused"
         : videoStillPlaying()
-          ? "等待当前视频播放完"
-          : "暂停幻灯片自动切换"
-      : "开始幻灯片自动切换";
+          ? "Waiting for current video"
+          : "Pause slideshow"
+      : "Start slideshow";
     const nextIcon = icon();
     btn.dataset.active = active ? "true" : "false";
     if (btn.dataset.flIconState !== String(active)) {
@@ -154,11 +159,11 @@
     syncButton();
   }
   function speedText(ms) {
-    if (ms <= 1200) return "很快 1.2秒";
-    if (ms <= 1800) return "较快 1.8秒";
-    if (ms <= 2800) return "正常 2.8秒";
-    if (ms <= 4000) return "较慢 4秒";
-    return "很慢 6秒";
+    if (ms <= 800) return "Fast 0.8s";
+    if (ms <= 1200) return "Default 1.2s";
+    if (ms <= 1800) return "Quick 1.8s";
+    if (ms <= 2400) return "Normal 2.4s";
+    return "Slow 3.2s";
   }
   function syncSettings() {
     const panel = root()?.querySelector('[data-panel="settings"]');
@@ -169,8 +174,8 @@
     if (select && select.dataset.flNativeBound !== VERSION) {
       select.dataset.flNativeBound = VERSION;
       select.addEventListener("change", () => {
-        const value = Number(select.value || 2800);
-        delay = SPEED_OPTIONS.includes(value) ? value : 2800;
+        const value = Number(select.value || DEFAULT_DELAY);
+        delay = SPEED_OPTIONS.includes(value) ? value : DEFAULT_DELAY;
         writeDelay(delay);
         if (active) restart();
       });

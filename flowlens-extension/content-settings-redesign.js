@@ -3,7 +3,7 @@
   window.__flowLensSettingsRedesign = true;
 
   const SETTINGS_KEY = "flowlens-settings-v2";
-  const SPEEDS = [1200, 1800, 2600, 3600, 5000, 7000];
+  const SPEEDS = [800, 1200, 1800, 2400, 3200];
   let timer = 0;
 
   const css = `
@@ -178,17 +178,16 @@
 
   function currentDelay() {
     const settings = readSettings();
-    const raw = Number(settings.lightboxAutoDelay || 2600);
+    const raw = Number(settings.lightboxAutoDelay || 1200);
     return SPEEDS.reduce((best, item) => Math.abs(item - raw) < Math.abs(best - raw) ? item : best, SPEEDS[0]);
   }
 
   function speedLabel(ms) {
-    if (ms <= 1400) return "很快";
-    if (ms <= 2000) return "较快";
-    if (ms <= 3000) return "适中";
-    if (ms <= 4200) return "较慢";
-    if (ms <= 5500) return "慢速";
-    return "很慢";
+    if (ms <= 800) return "Fast";
+    if (ms <= 1200) return "Default";
+    if (ms <= 1800) return "Quick";
+    if (ms <= 2400) return "Normal";
+    return "Slow";
   }
 
   function updateSpeedValue() {

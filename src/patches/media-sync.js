@@ -2,42 +2,48 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.20";
+  const VERSION = "1.4.21";
   const FILTER_ORDER = ["all", "image", "video"];
-  const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
+  const FILTER_TEXT = { all: "All", image: "Images", video: "Videos" };
   const FILTER_KEY = "flowlens-media-filter-v1";
   const LEGACY_FILTER_KEY = "flowlens-media-filter-v2";
   const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
-  const SPEED_OPTIONS = [1200, 1800, 2800, 4000, 6000];
+  const SETTINGS_KEY = "flowlens-settings-v2";
+  const SPEED_OPTIONS = [800, 1200, 1800, 2400, 3200];
+  const DEFAULT_DELAY = 1200;
 
   let currentMode = localStorage.getItem(FILTER_KEY) || localStorage.getItem(LEGACY_FILTER_KEY) || "all";
   if (!FILTER_ORDER.includes(currentMode)) currentMode = "all";
-  function speedKey() {
-    try {
-      const url = new URL(location.href);
-      return `${SPEED_KEY}:${url.origin}${url.pathname}`;
-    } catch {
-      return `${SPEED_KEY}:page`;
-    }
+  function readSettings() {
+    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; }
+  }
+
+  function writeSettings(patch) {
+    const next = { ...readSettings(), ...patch };
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch {}
+    try { chrome?.storage?.local?.set?.({ [SETTINGS_KEY]: next }); } catch {}
+    try { window.__flowLensSyncGlobalSettings?.(); } catch {}
+    return next;
   }
 
   function readSlideshowDelay() {
+    const settings = readSettings();
+    const stored = Number(settings.lightboxAutoDelay || 0);
+    if (SPEED_OPTIONS.includes(stored)) return stored;
     try {
-      return Number(localStorage.getItem(speedKey()) || 2800);
-    } catch {
-      return 2800;
-    }
+      const legacy = Number(localStorage.getItem(SPEED_KEY) || 0);
+      if (SPEED_OPTIONS.includes(legacy)) return legacy;
+    } catch {}
+    return DEFAULT_DELAY;
   }
 
   function writeSlideshowDelay(value) {
-    try {
-      localStorage.setItem(speedKey(), String(value));
-      localStorage.removeItem(SPEED_KEY);
-    } catch {}
+    writeSettings({ lightboxAutoDelay: value });
+    try { localStorage.setItem(SPEED_KEY, String(value)); } catch {}
   }
 
   let slideshowDelay = readSlideshowDelay();
-  if (!SPEED_OPTIONS.includes(slideshowDelay)) slideshowDelay = 2800;
+  if (!SPEED_OPTIONS.includes(slideshowDelay)) slideshowDelay = DEFAULT_DELAY;
   let slideshowTimer = 0;
   let slideshowActive = false;
   let lightboxObserver = null;
@@ -78,7 +84,7 @@
       #xiv-root .xiv-lightbox-slideshow[data-active="true"] { color: #111; background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76)); border-color: rgba(255,255,255,.7); }
       #xiv-root .xiv-lightbox-slideshow svg { width: 20px; height: 20px; display: block; }
       @media (max-width: 820px) {
-        #xiv-root .xiv-panel[data-panel="settings"] { position: fixed !important; top: max(58px, calc(env(safe-area-inset-top, 0px) + 50px)) !important; right: max(8px, env(safe-area-inset-right, 0px)) !important; left: max(8px, env(safe-area-inset-left, 0px)) !important; bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important; width: auto !important; max-width: none !important; height: auto !important; max-height: none !important; padding: 12px !important; border-radius: 14px !important; overflow-y: auto !important; overscroll-behavior: contain !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] { position: fixed !important; top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px)) !important; right: max(8px, env(safe-area-inset-right, 0px)) !important; left: auto !important; bottom: auto !important; width: min(356px, calc(100vw - 16px)) !important; max-width: calc(100vw - 16px) !important; height: auto !important; max-height: min(68vh, calc(100vh - 74px - env(safe-area-inset-bottom, 0px))) !important; padding: 10px !important; border-radius: 12px !important; overflow-y: auto !important; overscroll-behavior: contain !important; }
         #xiv-root .xiv-panel[data-panel="settings"] h3 { font-size: 18px !important; margin: 0 0 6px !important; line-height: 1.2 !important; }
         #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row { min-height: 42px !important; padding: 7px 0 !important; gap: 10px !important; font-size: 14px !important; line-height: 1.25 !important; }
         #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row > span { font-size: 14px !important; font-weight: 800 !important; }
@@ -87,7 +93,7 @@
         #xiv-root .xiv-panel[data-panel="settings"] button { width: 40px !important; height: 40px !important; min-width: 40px !important; }
         #xiv-root .xiv-panel[data-panel="settings"] small { display: block !important; margin-top: 6px !important; font-size: 11px !important; line-height: 1.35 !important; opacity: .66 !important; }
         #xiv-root .fl-version-row { min-height: 26px !important; padding-bottom: 8px !important; margin-bottom: 4px !important; font-size: 12px !important; }
-        #xiv-root .xiv-lightbox-slideshow { right: 112px; top: 14px; width: 40px; height: 40px; }
+        #xiv-root .xiv-lightbox-slideshow { right: 118px; top: 18px; width: 42px; height: 42px; }
       }
     `;
     document.documentElement.appendChild(style);
@@ -147,21 +153,21 @@
     const button = root()?.querySelector('[data-xiv="top"]');
     if (!button) return;
     currentMode = liveFilter();
-    button.title = `切换图/视频：当前${FILTER_TEXT[currentMode]}`;
+    button.title = `Filter: ${FILTER_TEXT[currentMode]}`;
     button.setAttribute("aria-label", button.title);
     button.innerHTML = filterIcon(currentMode);
   }
 
   function speedLabel(ms) {
-    if (ms <= 1200) return "很快 1.2秒";
-    if (ms <= 1800) return "较快 1.8秒";
-    if (ms <= 2800) return "正常 2.8秒";
-    if (ms <= 4000) return "较慢 4秒";
-    return "很慢 6秒";
+    if (ms <= 800) return "Fast 0.8s";
+    if (ms <= 1200) return "Default 1.2s";
+    if (ms <= 1800) return "Quick 1.8s";
+    if (ms <= 2400) return "Normal 2.4s";
+    return "Slow 3.2s";
   }
 
   function setSlideshowDelay(ms) {
-    const next = SPEED_OPTIONS.includes(Number(ms)) ? Number(ms) : 2800;
+    const next = SPEED_OPTIONS.includes(Number(ms)) ? Number(ms) : DEFAULT_DELAY;
     slideshowDelay = next;
     writeSlideshowDelay(next);
     const select = root()?.querySelector(".fl-slideshow-speed");
@@ -180,14 +186,14 @@
       if (h3?.nextSibling) panel.insertBefore(versionRow, h3.nextSibling);
       else panel.prepend(versionRow);
     }
-    versionRow.innerHTML = `<span>当前版本</span><strong>v${VERSION}</strong>`;
+    versionRow.innerHTML = `<span>FlowLens version</span><strong>v${VERSION}</strong>`;
 
     let speedRow = panel.querySelector(".fl-slideshow-speed-row");
     if (!speedRow) {
       speedRow = document.createElement("label");
       speedRow.className = "xiv-setting-row fl-slideshow-speed-row";
-      speedRow.innerHTML = `<span>大图切换速度</span><select class="xiv-select fl-slideshow-speed"></select>`;
-      const autoScrollRow = [...panel.querySelectorAll(".xiv-setting-row")].find((row) => /自动滚动速度/.test(row.textContent || ""));
+      speedRow.innerHTML = `<span>Lightbox speed</span><select class="xiv-select fl-slideshow-speed"></select>`;
+      const autoScrollRow = [...panel.querySelectorAll(".xiv-setting-row")].find((row) => /鑷姩婊氬姩閫熷害/.test(row.textContent || ""));
       if (autoScrollRow?.nextSibling) panel.insertBefore(speedRow, autoScrollRow.nextSibling);
       else panel.appendChild(speedRow);
       speedRow.querySelector("select")?.addEventListener("change", (event) => setSlideshowDelay(event.target.value));
@@ -242,7 +248,7 @@
       return;
     }
     button.dataset.active = slideshowActive ? "true" : "false";
-    button.title = slideshowActive ? "暂停幻灯片自动切换" : `开始幻灯片自动切换（${speedLabel(slideshowDelay)}）`;
+    button.title = slideshowActive ? "Pause slideshow" : `Start slideshow (${speedLabel(slideshowDelay)})`;
     button.setAttribute("aria-label", button.title);
     button.innerHTML = slideshowIcon();
   }

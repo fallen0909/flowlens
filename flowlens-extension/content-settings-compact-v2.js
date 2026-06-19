@@ -3,7 +3,9 @@
   window.__flowLensSettingsCompactV2 = true;
 
   const SETTINGS_KEY = "flowlens-settings-v2";
-  const SPEEDS = [1200, 1800, 2600, 3600, 5000, 7000];
+  const SPEED_KEY = "flowlens-lightbox-slideshow-delay-v1";
+  const SPEEDS = [800, 1200, 1800, 2400, 3200];
+  const DEFAULT_DELAY = 1200;
   let timer = 0;
 
   const css = `
@@ -111,10 +113,16 @@
       #xiv-root .xiv-settings,
       #xiv-root .xiv-settings-panel,
       #xiv-root .xiv-panel:has(.xiv-setting-row) {
-        width: calc(100vw - 18px) !important;
-        max-width: calc(100vw - 18px) !important;
-        max-height: 78vh !important;
-        padding: 14px !important;
+        position: fixed !important;
+        top: max(58px, calc(env(safe-area-inset-top, 0px) + 50px)) !important;
+        right: max(8px, env(safe-area-inset-right, 0px)) !important;
+        left: auto !important;
+        bottom: auto !important;
+        width: min(356px, calc(100vw - 16px)) !important;
+        max-width: calc(100vw - 16px) !important;
+        height: auto !important;
+        max-height: min(68vh, calc(100vh - 74px - env(safe-area-inset-bottom, 0px))) !important;
+        padding: 10px !important;
       }
       .xiv-fl-shortcuts-mini { grid-template-columns: 1fr !important; }
     }
@@ -135,26 +143,42 @@
   function writeSettings(patch) {
     const next = { ...readSettings(), ...patch };
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    try { chrome?.storage?.local?.set?.({ [SETTINGS_KEY]: next }); } catch { /* ignore */ }
+    try { chrome?.storage?.local?.set?.({ [SETTINGS_KEY]: next }); } catch {}
+    try { window.__flowLensSyncGlobalSettings?.(); } catch {}
     return next;
   }
 
+  function readGlobalSpeed() {
+    const settings = readSettings();
+    const stored = Number(settings.lightboxAutoDelay || 0);
+    if (SPEEDS.includes(stored)) return stored;
+    try {
+      const legacy = Number(localStorage.getItem(SPEED_KEY) || 0);
+      if (SPEEDS.includes(legacy)) return legacy;
+    } catch {}
+    return DEFAULT_DELAY;
+  }
+
+  function writeGlobalSpeed(value) {
+    writeSettings({ lightboxAutoDelay: value });
+    try { localStorage.setItem(SPEED_KEY, String(value)); } catch {}
+  }
+
   function nearestSpeed(value) {
-    const raw = Number(value || 2600);
+    const raw = Number(value || DEFAULT_DELAY);
     return SPEEDS.reduce((best, item) => Math.abs(item - raw) < Math.abs(best - raw) ? item : best, SPEEDS[0]);
   }
 
   function speedLabel(ms) {
-    if (ms <= 1400) return "很快";
-    if (ms <= 2000) return "较快";
-    if (ms <= 3000) return "适中";
-    if (ms <= 4200) return "较慢";
-    if (ms <= 5500) return "慢速";
-    return "很慢";
+    if (ms <= 800) return "Fast";
+    if (ms <= 1200) return "Default";
+    if (ms <= 1800) return "Quick";
+    if (ms <= 2400) return "Normal";
+    return "Slow";
   }
 
   function currentSpeed() {
-    return nearestSpeed(readSettings().lightboxAutoDelay || 2600);
+    return nearestSpeed(readGlobalSpeed());
   }
 
   function updateSpeedLabel() {
@@ -168,7 +192,7 @@
     const ms = currentSpeed();
     const index = Math.max(0, SPEEDS.indexOf(ms));
     const next = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, index + delta))];
-    writeSettings({ lightboxAutoDelay: next });
+    writeGlobalSpeed(next);
     updateSpeedLabel();
     const status = document.getElementById("xiv-status");
     if (status) status.textContent = `大图切换速度：${speedLabel(next)} ${Math.round(next / 100) / 10}秒`;

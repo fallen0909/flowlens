@@ -1,6 +1,66 @@
+// ==UserScript==
+// @name         瀑光 FlowLens
+// @namespace    local.flowlens
+// @version      1.2.1
+// @description  手机 Edge / Tampermonkey 版：把多图网页整理成沉浸式全屏瀑布流。
+// @match        *://*/*
+// @run-at       document-idle
+// @noframes
+// @grant        GM_xmlhttpRequest
+// @grant        GM_download
+// @connect      *
+// ==/UserScript==
+
 (() => {
   if (window.__flowLensViewer) return;
   window.__flowLensViewer = true;
+
+  const xivUserscriptMode = typeof GM_xmlhttpRequest === "function" || typeof GM_download === "function";
+
+  function userscriptRequest(url, options = {}) {
+    return new Promise((resolve) => {
+      if (typeof GM_xmlhttpRequest !== "function") {
+        resolve({ ok: false, error: "GM_xmlhttpRequest unavailable" });
+        return;
+      }
+
+      GM_xmlhttpRequest({
+        method: options.method || "GET",
+        url,
+        responseType: options.responseType || "text",
+        headers: options.headers || {},
+        timeout: options.timeout || 45000,
+        anonymous: false,
+        onload: (response) => {
+          const status = Number(response.status || 0);
+          if (status >= 200 && status < 300) {
+            resolve({
+              ok: true,
+              status,
+              contentType: response.responseHeaders?.match(/^content-type:\s*([^\r\n]+)/im)?.[1] || "",
+              response: response.response,
+              text: response.responseText || ""
+            });
+            return;
+          }
+          resolve({ ok: false, error: `HTTP ${status || "unknown"}` });
+        },
+        onerror: (error) => resolve({ ok: false, error: String(error?.error || error?.message || "request failed") }),
+        onabort: () => resolve({ ok: false, error: "request aborted" }),
+        ontimeout: () => resolve({ ok: false, error: "request timeout" })
+      });
+    });
+  }
+
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
 
   const IMAGE_EXT = /(?:\.(avif|gif|jpe?g|png|webp)(?:\?|#|$)|[?&]format=(?:avif|gif|jpe?g|png|webp)\b)/i;
   const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(?:\?|#|$)/i;
@@ -76,6 +136,7 @@
     suppressLightboxUntil: 0,
     lightboxGestureToken: 0,
     lightboxSwipe: null,
+    viewerSwipe: null,
     lastLightboxWheelAt: 0,
     lightboxDrag: null,
     lightboxSuppressClickUntil: 0,
@@ -88,6 +149,7 @@
     rejectedCount: 0,
     collectedCount: 0,
     lastDownloadScope: "all",
+    collectionBase: "",
     x810114ApiMode: false
   };
 
@@ -235,6 +297,12 @@
     }
     #xiv-root[data-theme="light"] { background: #f4f4f1; color: #141414; }
     #xiv-root[data-active="true"] { display: block; }
+    #xiv-root[data-active="true"]:not([data-theme="light"])::before {
+      content: ""; position: fixed; left: 0; right: 0;
+      top: calc(-1 * env(safe-area-inset-top, 0px));
+      height: calc(env(safe-area-inset-top, 0px) + 2px);
+      background: #050505; z-index: 2; pointer-events: none;
+    }
     #xiv-stage {
       position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
       overflow-anchor: none;
@@ -284,6 +352,10 @@
       padding: 9px 12px; box-sizing: border-box;
       background: linear-gradient(to bottom, rgba(0,0,0,.82), rgba(0,0,0,.22), rgba(0,0,0,0));
       pointer-events: none;
+    }
+    #xiv-root:not([data-theme="light"]) #xiv-topbar {
+      background: linear-gradient(to bottom, #050505 0%, rgba(5,5,5,.96) 44px, rgba(5,5,5,.72) 68px, rgba(5,5,5,0) 100%);
+      box-shadow: 0 -1px 0 #050505 inset;
     }
     .xiv-pill {
       pointer-events: auto; display: inline-flex; align-items: center; gap: 8px;
@@ -370,10 +442,11 @@
     }
     #xiv-lightbox[data-zoom="actual"] {
       display: block;
+      scroll-behavior: auto;
     }
     #xiv-lightbox[data-zoom="actual"] img,
     #xiv-lightbox[data-zoom="actual"] video {
-      width: auto; height: auto; max-width: none; max-height: none; margin: 28px auto; cursor: grab;
+      width: var(--xiv-actual-width, auto) !important; height: var(--xiv-actual-height, auto) !important; max-width: none !important; max-height: none !important; margin: 28px auto; cursor: grab;
       touch-action: none;
     }
     #xiv-lightbox[data-zoom="actual"][data-dragging="true"] img,
@@ -585,6 +658,19 @@
     }
   }
 
+  function isMobilePointerEvent(event = null) {
+    if (event?.pointerType && event.pointerType !== "mouse") return true;
+    try {
+      return window.matchMedia?.("(pointer: coarse)")?.matches || Math.min(window.innerWidth, window.innerHeight) <= 820;
+    } catch {
+      return Math.min(window.innerWidth, window.innerHeight) <= 820;
+    }
+  }
+
+  function isFavoriteMediaUrl(url) {
+    return isVideoUrl(url) || isFavoriteImageUrl(url);
+  }
+
   function isSiteAlbumImageUrl(url) {
     try {
       const parsed = new URL(url, location.href);
@@ -761,9 +847,29 @@
     }
   }
 
+  function isCloudDriveFilesPage(url = location.href) {
+    try {
+      const parsed = new URL(url, location.href);
+      const localHost = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(parsed.hostname);
+      return localHost && parsed.searchParams.get("page") === "files";
+    } catch {
+      return false;
+    }
+  }
+
+  function isCloudDriveThumbUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return /^thumb\.115\.com$/i.test(parsed.hostname) && /\/thumb\/.+_\d+$/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  }
+
   function isGoodImage(url, node) {
     if (!url || BAD_IMAGE_RE.test(url) || isAdMedia(url, node)) return false;
     if (isBlockedZttaotuImage(url, node)) return false;
+    if (isCloudDriveFilesPage() && isCloudDriveThumbUrl(url)) return true;
     if (!isMediaUrl(url)) return false;
     if (isVideoUrl(url)) return true;
     if (isX810114Avatar(url, node)) return false;
@@ -789,15 +895,17 @@
     return galleryContext || photoishPath || photoishName || (displayOk === true && bigNatural);
   }
 
-  function isBlockedZttaotuImage(url, node) {
-    if (!url || !isZttaotuUrl(location.href)) return false;
+  function isBlockedZttaotuImage(url, node, base = "") {
+    const contextBase = base || node?.ownerDocument?.documentElement?.dataset?.xivBase || state.collectionBase || location.href;
+    if (!url || !isZttaotuUrl(contextBase)) return false;
     const text = node ? closestText(node) : "";
     if (BLOCKED_PROMO_TEXT_RE.test(text)) return true;
     try {
       const parsed = new URL(url, location.href);
-      const base = node?.ownerDocument?.documentElement?.dataset?.xivBase || node?.ownerDocument?.baseURI || location.href;
-      const page = pageNumberFromUrl(base) || pageNumberFromUrl(location.href);
-      return /\/photo\/zwebp\//i.test(parsed.pathname) && page > 1;
+      const page = pageNumberFromUrl(contextBase) || pageNumberFromUrl(location.href);
+      const placeholderPath = /\/photo\/zwebp\//i.test(parsed.pathname)
+        || /(?:qrcode|qr|warning|notice|blocked|placeholder|sensitive)/i.test(parsed.pathname);
+      return page > 1 && placeholderPath;
     } catch {
       return false;
     }
@@ -909,6 +1017,10 @@
 
   function addImage(url, detailUrl = "", posterUrl = "") {
     url = normalizeMediaUrl(url);
+    if (!url || isBlockedZttaotuImage(url, null, state.collectionBase)) {
+      state.rejectedCount += 1;
+      return false;
+    }
     const key = keyForUrl(url);
     if (state.imageKeys.has(key)) {
       state.rejectedCount += 1;
@@ -945,10 +1057,29 @@
     }
   }
 
+  function collectCloudDriveImageUrls(doc, base) {
+    const urls = new Set();
+    doc.querySelectorAll('img.wf-img[src], img[src*="thumb.115.com/thumb/"]').forEach((img) => {
+      const url = absoluteUrl(img.currentSrc || img.getAttribute("src"), base);
+      if (!isCloudDriveThumbUrl(url)) return;
+      urls.add(url);
+      rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
+    });
+    let added = 0;
+    for (const url of urls) {
+      if (addImage(url)) added += 1;
+    }
+    return added;
+  }
+
   function collectFromDocument(doc, base) {
     let added = 0;
+    state.collectionBase = base;
     doc.documentElement.dataset.xivBase = base;
     rememberExpectedImageCount(doc);
+    if (isCloudDriveFilesPage(base)) {
+      added += collectCloudDriveImageUrls(doc, base);
+    }
     if (isPhotoGalleryPage()) discoverPageLinksFromDocument(doc, base);
 
     doc.querySelectorAll("img").forEach((img) => {
@@ -993,6 +1124,8 @@
         if (isGoodImage(url, el) && addImage(url)) added += 1;
       }
     });
+
+    added += collectArticleImageUrls(doc, base);
 
     if (isKnownGalleryUrl(base)) {
       added += collectFallbackImageUrls(doc, base);
@@ -1264,6 +1397,7 @@
   }
 
   function setImageSourceWithFallback(img, url) {
+    img.dataset.sourceUrl = url || "";
     img.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
     const previousSrc = img.currentSrc || img.src || "";
     img.dataset.fallbackTried = "";
@@ -1278,6 +1412,7 @@
       }
       const fallback = alternateImageUrl(img.currentSrc || img.src || url) || (previousSrc && previousSrc !== url ? previousSrc : "");
       if (!fallback) {
+        loadImageViaBlob(img, img.currentSrc || img.src || url);
         img.dataset.awaitingFallback = "";
         return;
       }
@@ -1288,10 +1423,41 @@
     img.src = url;
   }
 
+  function loadImageViaBlob(img, url) {
+    if (!img?.isConnected || !url || img.dataset.blobFallbackTried === "true") return;
+    if (typeof GM_xmlhttpRequest !== "function") return;
+    img.dataset.blobFallbackTried = "true";
+    GM_xmlhttpRequest({
+      method: "GET",
+      url,
+      responseType: "blob",
+      headers: {
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+      },
+      timeout: 30000,
+      anonymous: false,
+      onload: (response) => {
+        if (!img.isConnected || response.status < 200 || response.status >= 300 || !response.response) return;
+        const objectUrl = URL.createObjectURL(response.response);
+        const previousObjectUrl = img.dataset.objectUrl || "";
+        img.dataset.objectUrl = objectUrl;
+        img.dataset.sourceUrl = url;
+        img.dataset.awaitingFallback = "";
+        img.src = objectUrl;
+        if (previousObjectUrl) setTimeout(() => URL.revokeObjectURL(previousObjectUrl), 30000);
+      },
+      onerror: () => {},
+      ontimeout: () => {}
+    });
+  }
+
   function shouldKeepReferrer(url) {
     try {
       const parsed = new URL(url, location.href);
-      return /(^|\.)xchina\.co$/i.test(parsed.hostname) || /(^|\.)xchina\.co$/i.test(location.hostname);
+      return /(^|\.)xchina\.co$/i.test(parsed.hostname)
+        || /(^|\.)xchina\.co$/i.test(location.hostname)
+        || /(^|\.)155picpic\.com$/i.test(parsed.hostname)
+        || /(^|\.)155zy\.com$/i.test(location.hostname);
     } catch {
       return false;
     }
@@ -1372,7 +1538,7 @@
         preload: "none",
         keepFirstFrame: true,
         previewTime: 1,
-        previewMode: "canvas",
+        previewMode: isGenericX810114Page() || /\/\/video(?:-cf)?\.twimg\.com\//i.test(url) ? "seek" : "canvas",
         deferSource: true
       });
       const size = videoSizeFromUrl(url);
@@ -1479,9 +1645,100 @@
         video.removeAttribute("src");
         video.load();
         observeVideoPreview(video);
+      } else {
+        loadVideoPreviewViaBlob(video);
       }
     }
     pumpVideoPreviewQueue();
+  }
+
+  function loadVideoPreviewViaBlob(video) {
+    const url = video?.dataset?.previewUrl || video?.dataset?.sourceUrl || "";
+    if (!video?.isConnected || !url || video.dataset.previewBlobTried === "true") return;
+    if (typeof GM_xmlhttpRequest !== "function") {
+      video.dataset.previewLoaded = "false";
+      video.dataset.previewLoading = "false";
+      return;
+    }
+    video.dataset.previewBlobTried = "true";
+    const failBlobFallback = () => {
+      if (!video.isConnected) return;
+      video.dataset.previewLoaded = "false";
+      video.dataset.previewLoading = "false";
+      video.dataset.previewQueued = "false";
+      pumpVideoPreviewQueue();
+    };
+    GM_xmlhttpRequest({
+      method: "GET",
+      url,
+      responseType: "blob",
+      timeout: 30000,
+      onload: (response) => {
+        if (!video.isConnected) return;
+        if (response.status < 200 || response.status >= 300 || !response.response) {
+          failBlobFallback();
+          return;
+        }
+        const objectUrl = URL.createObjectURL(response.response);
+        let done = false;
+        const cleanup = () => {
+          video.removeEventListener("loadedmetadata", onReady);
+          video.removeEventListener("loadeddata", onReady);
+          video.removeEventListener("seeked", onSeeked);
+          video.removeEventListener("error", onError);
+        };
+        const capture = () => {
+          if (done || !video.isConnected) return;
+          done = true;
+          cleanup();
+          video.dataset.previewLoaded = "true";
+          video.dataset.previewLoading = "false";
+          captureVideoPreviewFrame(video);
+          pumpVideoPreviewQueue();
+        };
+        const onSeeked = () => capture();
+        const onError = () => {
+          if (done) return;
+          done = true;
+          cleanup();
+          video.dataset.previewLoaded = "true";
+          video.dataset.previewLoading = "false";
+          pumpVideoPreviewQueue();
+        };
+        const onReady = () => {
+          if (done || !video.isConnected) return;
+          const duration = Number(video.duration || 0);
+          const target = Number.isFinite(duration) && duration > 2.2 ? Math.min(duration - 0.2, 1.8) : 0;
+          if (Math.abs((video.currentTime || 0) - target) > 0.15) {
+            try {
+              video.currentTime = target;
+              return;
+            } catch {
+              // Some short blobs are not seekable before decode; capture current frame.
+            }
+          }
+          capture();
+        };
+        video.addEventListener("loadedmetadata", onReady);
+        video.addEventListener("loadeddata", onReady);
+        video.addEventListener("seeked", onSeeked);
+        video.addEventListener("error", onError);
+        video.dataset.previewObjectUrl = objectUrl;
+        video.dataset.previewMode = "canvas";
+        video.dataset.previewLoaded = "false";
+        video.dataset.previewLoading = "true";
+        video.dataset.sourceUrl = url;
+        video.preload = "auto";
+        video.src = objectUrl;
+        video.load();
+        window.setTimeout(() => {
+          if (!done && video.readyState >= 2) capture();
+          else if (!done) onError();
+        }, 9000);
+      },
+      onerror: failBlobFallback,
+      ontimeout: failBlobFallback
+    });
   }
 
   function startVideoPreviewLoad(video) {
@@ -1541,9 +1798,11 @@
       video.dataset.previewCaptured = "true";
       rememberMediaRatio(video.dataset.previewUrl || video.dataset.sourceUrl || "", width, height);
       clearTimeout(Number(video.dataset.loadTimer || 0));
+      const objectUrl = video.dataset.previewObjectUrl || "";
       video.pause();
       video.removeAttribute("src");
       video.load();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       video.replaceWith(img);
       scheduleMasonryLayout();
     } catch {
@@ -1607,7 +1866,7 @@
     const video = document.createElement("video");
     const poster = state.posterByImage.get(keyForUrl(url));
     if (poster) video.poster = poster;
-    if (previewMode === "canvas") video.crossOrigin = "anonymous";
+    if (previewMode === "canvas" && !/\/\/video(?:-cf)?\.twimg\.com\//i.test(url)) video.crossOrigin = "anonymous";
     video.muted = muted;
     video.defaultMuted = muted;
     video.volume = muted ? 0 : 1;
@@ -1810,6 +2069,71 @@
         }
         urls.add(url);
       }
+    }
+
+    let added = 0;
+    for (const url of urls) {
+      if (addImage(url)) added += 1;
+    }
+    return added;
+  }
+
+  function articleContainers(doc) {
+    const selectors = [
+      "article",
+      "#read_tpc",
+      "#content",
+      "#article",
+      ".article",
+      ".content",
+      ".detail",
+      ".post",
+      ".entry",
+      ".main",
+      "[class*='article' i]",
+      "[class*='content' i]",
+      "[class*='detail' i]",
+      "[id*='article' i]",
+      "[id*='content' i]"
+    ].join(",");
+    const nodes = Array.from(doc.querySelectorAll(selectors));
+    return nodes.length ? nodes : [doc.body || doc.documentElement];
+  }
+
+  function collectArticleImageUrls(doc, base) {
+    const urls = new Set();
+
+    function remember(raw) {
+      const url = absoluteUrl(unescapeEmbeddedUrl(raw), base);
+      if (!url || (!MEDIA_EXT.test(url) && !isDiscuzAttachmentUrl(url))) return;
+      if (BAD_IMAGE_RE.test(url) || isX810114Avatar(url)) return;
+      const path = new URL(url).pathname;
+      const likelyArticleMedia = /\/(upload|uploads|media|photos?|files?|art|attachment)\//i.test(path)
+        || /(?:^|[/_-])\d{2,}(?:[/_-]\d{2,})*[/_-][A-Za-z0-9_-]{6,}\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url)
+        || isDiscuzAttachmentUrl(url);
+      if (!likelyArticleMedia) return;
+      if (STATIC_ASSET_RE.test(url) && !/\/(upload|uploads|media|photos?|files?|art|attachment)\//i.test(path)) return;
+      urls.add(url);
+    }
+
+    for (const container of articleContainers(doc)) {
+      container.querySelectorAll?.("img, source, a, meta, link").forEach((node) => {
+        ["src", "currentSrc", "href", "content", "poster", "file", "zoomfile", "data-file", "data-zoomfile", "data-src", "data-original", "data-lazy-src", "data-url", "data-full", "data-large"].forEach((attr) => {
+          const value = attr === "currentSrc" ? node.currentSrc : node.getAttribute?.(attr);
+          if (value) remember(value);
+        });
+        const srcset = node.getAttribute?.("srcset") || node.getAttribute?.("data-srcset");
+        if (srcset) {
+          srcset.split(",").map((item) => item.trim().split(/\s+/)[0]).filter(Boolean).forEach(remember);
+        }
+      });
+      container.querySelectorAll?.("[style]").forEach((node) => {
+        backgroundImageUrls(node.getAttribute("style"), base).forEach(remember);
+      });
+      const html = container.innerHTML || "";
+      const re = /(?:https?:\\?\/\\?\/|\/\/|\/)[^"'()<>\\\s]+\.(?:gif|jpe?g|png|webp|avif|mp4|webm|mov|m4v)(?:\?[^"'()<>\\\s]*)?/gi;
+      let match;
+      while ((match = re.exec(html))) remember(match[0]);
     }
 
     let added = 0;
@@ -2307,6 +2631,10 @@
     });
     state.stage.addEventListener("scroll", onScroll, { passive: true });
     state.stage.addEventListener("click", onStageCaptureClick, true);
+    state.stage.addEventListener("pointerdown", onStagePointerDown);
+    state.stage.addEventListener("pointermove", onStagePointerMove);
+    state.stage.addEventListener("pointerup", endStageSwipe);
+    state.stage.addEventListener("pointercancel", endStageSwipe);
     state.lightbox.addEventListener("click", onLightboxClick);
     state.lightbox.addEventListener("wheel", onLightboxWheel, { passive: false });
     state.lightbox.addEventListener("pointerdown", onLightboxPointerDown);
@@ -2422,6 +2750,13 @@
 
   function setMediaFilter(value) {
     state.mediaFilter = ["image", "video"].includes(value) ? value : "all";
+    const select = state.root?.querySelector('[data-xiv="filter"]');
+    if (select && select.value !== state.mediaFilter) select.value = state.mediaFilter;
+    try {
+      localStorage.setItem("flowlens-media-filter-v1", state.mediaFilter);
+    } catch {
+      // Filter persistence is best-effort.
+    }
     applyMediaFilter();
     updateCounter();
   }
@@ -2799,7 +3134,27 @@
   }
 
   function fetchImageViaBackground(url) {
+    if (xivUserscriptMode) {
+      return userscriptRequest(url, {
+        responseType: "arraybuffer",
+        headers: {
+          "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        }
+      }).then((response) => {
+        if (!response.ok || !response.response) return response;
+        return {
+          ok: true,
+          contentType: response.contentType || "",
+          base64: arrayBufferToBase64(response.response)
+        };
+      });
+    }
+
     return new Promise((resolve) => {
+      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+        resolve({ ok: false, error: "extension runtime unavailable" });
+        return;
+      }
       chrome.runtime.sendMessage({
         type: "XIV_FETCH_IMAGE",
         url,
@@ -2815,7 +3170,27 @@
   }
 
   function fetchTextViaBackground(url, referrer = location.href) {
+    if (xivUserscriptMode) {
+      return userscriptRequest(url, {
+        responseType: "text",
+        headers: {
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+      }).then((response) => {
+        if (!response.ok) return response;
+        return {
+          ok: true,
+          contentType: response.contentType || "",
+          text: response.text || ""
+        };
+      });
+    }
+
     return new Promise((resolve) => {
+      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+        resolve({ ok: false, error: "extension runtime unavailable" });
+        return;
+      }
       chrome.runtime.sendMessage({
         type: "XIV_FETCH_TEXT",
         url,
@@ -2911,7 +3286,7 @@
     }
 
     return [...new Set(urls)].filter((url) => {
-      if (!isMediaUrl(url) || BAD_IMAGE_RE.test(url) || isAdMedia(url) || isX810114Avatar(url)) return false;
+      if (!isMediaUrl(url) || BAD_IMAGE_RE.test(url) || isAdMedia(url) || isX810114Avatar(url) || isBlockedZttaotuImage(url)) return false;
       const path = new URL(url).pathname;
       if (STATIC_ASSET_RE.test(url) && !/(upload|uploads|media|photos?|files?)/i.test(path)) return false;
       return true;
@@ -3302,6 +3677,7 @@
     pauseAutoScrollForLightbox();
     state.index = index;
     state.lightbox.dataset.zoom = "fit";
+    state.lightbox.dataset.flVideoEnded = "false";
     state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     const thumbUrl = state.images[index];
     if (isVideoUrl(thumbUrl)) {
@@ -3334,13 +3710,14 @@
     if (!state.lightbox) return;
     pauseLightboxMedia();
     endLightboxDrag();
+    endStageSwipe();
     state.lightbox.dataset.active = "false";
     state.lightbox.dataset.zoom = "fit";
     if (resumeAutoScroll) resumeAutoScrollAfterLightbox();
   }
 
   function lightboxArrows() {
-    return `<button class="xiv-lightbox-fav" type="button" title="收藏并保存">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
+    return `<button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
   }
 
   function heartIcon() {
@@ -3355,11 +3732,11 @@
     const button = state.lightbox?.querySelector(".xiv-lightbox-fav");
     if (!button) return;
     const key = keyForUrl(sourceUrl || saveUrl);
-    button.dataset.url = isFavoriteImageUrl(saveUrl) ? saveUrl : "";
+    button.dataset.url = isFavoriteMediaUrl(saveUrl) ? saveUrl : "";
     button.dataset.sourceUrl = sourceUrl || saveUrl || "";
     button.dataset.favorited = state.favoriteKeys.has(key) ? "true" : "false";
     button.innerHTML = heartIcon();
-    button.title = button.dataset.favorited === "true" ? "已收藏" : "收藏并保存";
+    button.title = button.dataset.favorited === "true" ? "\u5df2\u4fdd\u5b58" : "\u6536\u85cf";
   }
 
   function lightboxCurrentImageUrl() {
@@ -3370,7 +3747,9 @@
 
   function lightboxLoadedImageUrl() {
     const img = state.lightbox?.querySelector("img");
-    return normalizeMediaUrl(img?.currentSrc || img?.src || "");
+    const loaded = img?.currentSrc || img?.src || "";
+    const source = img?.dataset?.sourceUrl || "";
+    return normalizeMediaUrl(loaded.startsWith("blob:") ? source : loaded);
   }
 
   function favoriteFilename(url, index = state.index) {
@@ -3390,26 +3769,44 @@
       // Keep the generated fallback filename.
     }
     const safeName = `${prefix}${basename}`.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim();
-    return `图片/${safeName || basename}`;
+    const folder = isVideoUrl(url) ? "视频" : "图片";
+    return `${folder}/${safeName || basename}`;
   }
 
   function favoriteExtension(url) {
     try {
       const parsed = new URL(url, location.href);
       const format = parsed.searchParams.get("format")?.toLowerCase();
-      if (format && ["jpg", "jpeg", "png", "webp", "avif", "gif"].includes(format)) return format === "jpeg" ? "jpg" : format;
+      if (format && ["jpg", "jpeg", "png", "webp", "avif", "gif", "mp4", "webm", "mov", "m4v"].includes(format)) return format === "jpeg" ? "jpg" : format;
       const ext = parsed.pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase();
-      if (ext && ["jpg", "jpeg", "png", "webp", "avif", "gif"].includes(ext)) return ext === "jpeg" ? "jpg" : ext;
+      if (ext && ["jpg", "jpeg", "png", "webp", "avif", "gif", "mp4", "webm", "mov", "m4v"].includes(ext)) return ext === "jpeg" ? "jpg" : ext;
     } catch {
       // Fall through to jpg for image-like URLs without extensions.
     }
-    return "jpg";
+    return isVideoUrl(url) ? "mp4" : "jpg";
   }
 
   function downloadUrlViaBackground(url, filename, options = {}) {
+    if (xivUserscriptMode && typeof GM_download === "function") {
+      return new Promise((resolve) => {
+        try {
+          GM_download({
+            url,
+            name: filename.replace(/^(?:图片|视频)\//, ""),
+            saveAs: false,
+            onload: () => resolve({ ok: true, via: "GM_download" }),
+            onerror: (error) => resolve({ ok: false, error: String(error?.error || error?.message || "download failed") }),
+            ontimeout: () => resolve({ ok: false, error: "download timeout" })
+          });
+        } catch (error) {
+          resolve({ ok: false, error: String(error?.message || error) });
+        }
+      });
+    }
+
     return new Promise((resolve) => {
       try {
-        if (!chrome?.runtime?.sendMessage) {
+        if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
           resolve({ ok: false, error: "extension runtime unavailable" });
           return;
         }
@@ -3454,7 +3851,7 @@
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = filename.replace(/^图片\//, "");
+      a.download = filename.replace(/^(?:图片|视频)\//, "");
       document.documentElement.appendChild(a);
       a.click();
       a.remove();
@@ -3469,7 +3866,7 @@
     try {
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename.replace(/^图片\//, "");
+      a.download = filename.replace(/^(?:图片|视频)\//, "");
       a.rel = "noopener";
       document.documentElement.appendChild(a);
       a.click();
@@ -3531,108 +3928,109 @@
     }
     const button = state.lightbox?.querySelector(".xiv-lightbox-fav");
     if (!button) {
-      updateStatus("当前不是图片");
+      updateStatus("当前不是图片或视频");
       return;
     }
     const sourceUrl = button.dataset.sourceUrl || state.images[state.index] || "";
     const loadedUrl = lightboxLoadedImageUrl();
     const currentUrl = loadedUrl || lightboxCurrentImageUrl();
     if (!currentUrl) {
-      updateStatus("图片还没加载出来");
+      updateStatus("图片还没有加载出来");
       return;
     }
-    if (isVideoUrl(currentUrl)) {
-      updateStatus("视频暂不支持红心保存");
-      return;
-    }
+    const currentIsVideo = isVideoUrl(currentUrl)
+      || isVideoUrl(sourceUrl)
+      || !!state.lightbox?.querySelector("video, .xiv-video-frame");
 
     const favoriteKey = keyForUrl(sourceUrl || currentUrl);
     if (button.dataset.favorited === "true" && state.favoriteKeys.has(favoriteKey)) {
-      updateStatus("已收藏");
+      updateStatus("已保存");
       return;
     }
 
     state.savingFavorite = true;
     button.title = "正在保存";
     try {
-      const siteAlbumCandidates = await siteAlbumFavoriteCandidates(sourceUrl, currentUrl);
-      const highResUrl = siteAlbumCandidates.length
-        ? ""
-        : await resolveHighResUrl(sourceUrl || currentUrl, true);
       const candidates = [];
       const candidateKeys = new Set();
-      [loadedUrl, ...siteAlbumCandidates, highResUrl, currentUrl, sourceUrl]
-        .filter(Boolean)
-        .forEach((url) => {
-          [url, siteAlbumOriginalImageUrl(url)].forEach((candidate) => {
-            if (!isFavoriteImageUrl(candidate)) return;
-            const key = keyForUrl(candidate);
-            if (candidateKeys.has(key)) return;
-            candidateKeys.add(key);
-            candidates.push(candidate);
+
+      function rememberCandidate(candidate) {
+        if (!candidate) return;
+        if (currentIsVideo ? !isVideoUrl(candidate) : !isFavoriteImageUrl(candidate)) return;
+        const key = keyForUrl(candidate);
+        if (candidateKeys.has(key)) return;
+        candidateKeys.add(key);
+        candidates.push(candidate);
+      }
+
+      if (currentIsVideo) {
+        [currentUrl, sourceUrl, state.images[state.index] || ""].forEach(rememberCandidate);
+      } else {
+        const siteAlbumCandidates = await siteAlbumFavoriteCandidates(sourceUrl, currentUrl);
+        const highResUrl = siteAlbumCandidates.length
+          ? ""
+          : await resolveHighResUrl(sourceUrl || currentUrl, true);
+        [loadedUrl, ...siteAlbumCandidates, highResUrl, currentUrl, sourceUrl]
+          .filter(Boolean)
+          .forEach((url) => {
+            [url, siteAlbumOriginalImageUrl(url)].forEach(rememberCandidate);
           });
-        });
+      }
+
+      if (!candidates.length && currentIsVideo) {
+        const frameUrl = state.lightbox?.querySelector(".xiv-video-frame")?.dataset.mediaUrl || "";
+        const videoUrl = state.lightbox?.querySelector("video")?.dataset.mediaUrl || state.lightbox?.querySelector("video")?.currentSrc || "";
+        [frameUrl, videoUrl].forEach(rememberCandidate);
+      }
+
       if (!candidates.length) {
-        button.title = "没有可保存的图片地址";
-        debugLog("红心保存无候选", { sourceUrl, currentUrl, index: state.index });
-        updateStatus("没有可保存的图片地址");
+        button.title = currentIsVideo ? "没有可保存的视频地址" : "没有可保存的图片地址";
+        debugLog("红心保存无候选", { sourceUrl, currentUrl, index: state.index, currentIsVideo });
+        updateStatus(currentIsVideo ? "没有可保存的视频地址" : "没有可保存的图片地址");
         return;
       }
-      debugLog("红心保存候选", candidates);
-      let savedUrl = "";
-      let lastError = "";
-      for (const saveUrl of candidates) {
-        updateStatus(`保存 ${saveUrl.split("/").pop() || "图片"}`);
-        let result = null;
-        if (isSiteAlbumImageUrl(saveUrl)) {
-          result = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl), { direct: true });
-        } else {
-          try {
-            result = await downloadUrlViaPageBlob(saveUrl, favoriteFilename(saveUrl));
-          } catch (error) {
-            result = { ok: false, error: String(error?.message || error), via: "page-blob" };
-          }
+
+      const saveUrl = candidates[0];
+      updateStatus(`保存 ${saveUrl.split("/").pop() || (currentIsVideo ? "视频" : "图片")}`);
+      let result = null;
+      if (currentIsVideo || isSiteAlbumImageUrl(saveUrl)) {
+        result = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl), { direct: true });
+      } else {
+        try {
+          result = await downloadUrlViaPageBlob(saveUrl, favoriteFilename(saveUrl));
+        } catch (error) {
+          result = { ok: false, error: String(error?.message || error), via: "page-blob" };
         }
-        if (!result?.ok && !isSiteAlbumImageUrl(saveUrl)) {
-          const fallback = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl));
-          result = fallback?.ok ? fallback : {
-            ok: false,
-            error: `${result?.error || "page failed"}; ${fallback?.error || "background failed"}`
-          };
-        }
-        if (!result?.ok && isExtensionContextError(result?.error)) {
-          result = downloadUrlViaDirectAnchor(saveUrl, favoriteFilename(saveUrl));
-          if (result?.ok) {
-            updateStatus("已触发下载；扩展刚重载，刷新页面可恢复完整保存");
-          }
-        }
-        debugLog("红心保存结果", { url: saveUrl, result });
-        if (result?.ok) {
-          savedUrl = saveUrl;
-          break;
-        }
-        lastError = result?.error || lastError;
       }
-      if (!savedUrl) {
+      if (!result?.ok && !currentIsVideo && !isSiteAlbumImageUrl(saveUrl)) {
+        const fallback = await downloadUrlViaBackground(saveUrl, favoriteFilename(saveUrl));
+        result = fallback?.ok ? fallback : {
+          ok: false,
+          error: `${result?.error || "page failed"}; ${fallback?.error || "background failed"}`
+        };
+      }
+      if (!result?.ok && (currentIsVideo || isExtensionContextError(result?.error))) {
+        result = downloadUrlViaDirectAnchor(saveUrl, favoriteFilename(saveUrl));
+      }
+      debugLog("红心保存结果", { url: saveUrl, result });
+      if (!result?.ok) {
         button.title = "保存失败，可重试";
         button.dataset.favorited = "false";
-        updateStatus(isExtensionContextError(lastError)
+        updateStatus(isExtensionContextError(result?.error)
           ? "扩展已重载，请刷新页面后再保存"
-          : lastError ? `保存失败：${lastError}` : "保存失败");
-        debugLog("红心保存失败", { candidates, lastError });
+          : result?.error ? `保存失败：${result.error}` : "保存失败");
         return;
       }
-      state.favoriteKeys.add(keyForUrl(sourceUrl || savedUrl));
-      state.favoriteKeys.add(keyForUrl(savedUrl));
-      updateFavoriteButton(savedUrl, sourceUrl || savedUrl);
+
+      state.favoriteKeys.add(keyForUrl(sourceUrl || saveUrl));
+      state.favoriteKeys.add(keyForUrl(saveUrl));
+      updateFavoriteButton(saveUrl, sourceUrl || saveUrl);
       updateStatus("已保存");
     } catch (error) {
       button.title = "保存失败，可重试";
       button.dataset.favorited = "false";
       const message = error?.message || error;
-      updateStatus(isExtensionContextError(message)
-        ? "扩展已重载，请刷新页面后再保存"
-        : `保存失败：${message}`);
+      updateStatus(`保存失败：${message}`);
     } finally {
       state.savingFavorite = false;
     }
@@ -3715,7 +4113,7 @@
     url = normalizeMediaUrl(url);
     pauseLightboxMedia();
     state.lightbox.innerHTML = lightboxArrows();
-    state.lightbox.querySelector(".xiv-lightbox-fav")?.remove();
+    updateFavoriteButton(url);
     const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
     const iframe = document.createElement("iframe");
     iframe.title = "video-player";
@@ -3738,7 +4136,7 @@
     }
     pauseLightboxMedia();
     state.lightbox.innerHTML = lightboxArrows();
-    state.lightbox.querySelector(".xiv-lightbox-fav")?.remove();
+    updateFavoriteButton(url);
     const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
     const video = createVideoElement(url, {
       autoplay: true,
@@ -3775,6 +4173,9 @@
     if (message.type !== "XIV_VIDEO_TIME") return;
     const url = normalizeMediaUrl(String(message.url || ""));
     const time = Number(message.currentTime || 0);
+    if (message.eventName === "ended" && state.lightbox?.dataset.active === "true") {
+      state.lightbox.dataset.flVideoEnded = "true";
+    }
     if (!url || !Number.isFinite(time) || time <= 0) return;
     state.videoTimeByImage.set(keyForUrl(url), time);
   }
@@ -3790,12 +4191,58 @@
     openLightbox(next);
   }
 
+  function actualZoomCssSize(media) {
+    if (!media) return null;
+    const width = media.naturalWidth || media.videoWidth || 0;
+    const height = media.naturalHeight || media.videoHeight || 0;
+    if (!width || !height) return null;
+    const dpr = isMobilePointerEvent() ? Math.max(1, Number(window.devicePixelRatio || 1)) : 1;
+    return {
+      width: Math.max(1, Math.round(width / dpr)),
+      height: Math.max(1, Math.round(height / dpr))
+    };
+  }
+
+  function prepareActualZoomMedia(media) {
+    const size = actualZoomCssSize(media);
+    const lb = state.lightbox;
+    if (!size || !lb) return false;
+    const rect = media.getBoundingClientRect?.();
+    const currentWidth = Math.max(1, rect?.width || media.clientWidth || 1);
+    const currentHeight = Math.max(1, rect?.height || media.clientHeight || 1);
+    if (size.width <= currentWidth + 1 && size.height <= currentHeight + 1) return false;
+    media.style.setProperty("--xiv-actual-width", `${size.width}px`);
+    media.style.setProperty("--xiv-actual-height", `${size.height}px`);
+    return true;
+  }
+
+  function centerActualLightboxMedia() {
+    const lb = state.lightbox;
+    if (!lb || lb.dataset.active !== "true" || lb.dataset.zoom !== "actual") return;
+    const media = lb.querySelector("img, video");
+    if (!media) return;
+    const run = () => {
+      if (!state.lightbox || state.lightbox.dataset.zoom !== "actual" || state.lightbox.dataset.dragging === "true") return;
+      const left = Math.max(0, Math.round((state.lightbox.scrollWidth - state.lightbox.clientWidth) / 2));
+      const top = Math.max(0, Math.round((state.lightbox.scrollHeight - state.lightbox.clientHeight) / 2));
+      state.lightbox.scrollTo({ left, top, behavior: "auto" });
+    };
+    if (media.tagName !== "IMG" || media.complete) run();
+    else media.addEventListener("load", run, { once: true });
+    requestAnimationFrame(run);
+  }
+
   function toggleLightboxZoom() {
     if (!state.lightbox) return;
     const zoomed = state.lightbox.dataset.zoom === "actual";
-    state.lightbox.dataset.zoom = zoomed ? "fit" : "actual";
     if (zoomed) {
+      state.lightbox.dataset.zoom = "fit";
       state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+    } else {
+      const media = state.lightbox.querySelector("img, video");
+      if (!prepareActualZoomMedia(media)) return;
+      state.lightbox.dataset.zoom = "actual";
+      centerActualLightboxMedia();
     }
   }
 
@@ -3895,9 +4342,57 @@
     claimEvent(event);
     state.lightboxSuppressClickUntil = Date.now() + 260;
     if (absX >= absY) {
-      showAdjacentImage(dx < 0 ? 1 : -1);
+      if (isMobilePointerEvent(event)) closeLightbox();
+      else showAdjacentImage(dx < 0 ? 1 : -1);
     } else {
       showAdjacentImage(dy < 0 ? 1 : -1);
+    }
+  }
+
+  function onStagePointerDown(event) {
+    if (!state.active || state.lightbox?.dataset.active === "true" || !isMobilePointerEvent(event)) return;
+    if (event.button !== 0) return;
+    if (event.target?.closest?.("button, select, input, textarea, a, .xiv-tile, [role='button']")) return;
+    const edge = Math.max(26, Math.min(44, window.innerWidth * 0.1));
+    const fromLeftEdge = event.clientX <= edge;
+    const fromRightEdge = event.clientX >= window.innerWidth - edge;
+    if (!fromLeftEdge && !fromRightEdge) return;
+    state.viewerSwipe = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      edge: fromLeftEdge ? "left" : "right",
+      moved: false
+    };
+    event.target?.setPointerCapture?.(event.pointerId);
+  }
+
+  function onStagePointerMove(event) {
+    const swipe = state.viewerSwipe;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    const dx = event.clientX - swipe.x;
+    const dy = event.clientY - swipe.y;
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.35) {
+      swipe.moved = true;
+      claimEvent(event);
+    }
+  }
+
+  function endStageSwipe(event = null) {
+    const swipe = state.viewerSwipe;
+    if (!swipe) return;
+    if (event && swipe.pointerId !== event.pointerId) return;
+    state.viewerSwipe = null;
+    if (!event || !swipe.moved || !state.active || state.lightbox?.dataset.active === "true") return;
+    const dx = event.clientX - swipe.x;
+    const dy = event.clientY - swipe.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const threshold = Math.max(52, Math.min(window.innerWidth, window.innerHeight) * 0.12);
+    const inward = swipe.edge === "left" ? dx > 0 : dx < 0;
+    if (inward && absX >= threshold && absX > absY * 1.35) {
+      claimEvent(event);
+      closeViewer();
     }
   }
 
@@ -4002,12 +4497,38 @@
     if (nearBottom) fetchRemainingPages();
   }
 
-  chrome.runtime?.onMessage?.addListener((message) => {
-    if (message?.type === "XIV_TOGGLE") {
-      if (state.active) closeViewer();
-      else openViewer();
-    }
-  });
+  function installControlApi() {
+    window.__flowLensControl = {
+      getMediaFilter() {
+        return state.mediaFilter;
+      },
+      setMediaFilter(value) {
+        setMediaFilter(value);
+        return state.mediaFilter;
+      },
+      isLightboxOpen() {
+        return state.lightbox?.dataset.active === "true";
+      },
+      getLightboxIndex() {
+        return state.index;
+      },
+      showAdjacent(delta = 1) {
+        if (state.lightbox?.dataset.active !== "true") return false;
+        showAdjacentImage(delta >= 0 ? 1 : -1);
+        return true;
+      }
+    };
+  }
 
+  if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type === "XIV_TOGGLE") {
+        if (state.active) closeViewer();
+        else openViewer();
+      }
+    });
+  }
+
+  installControlApi();
   ensureUi();
 })();

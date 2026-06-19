@@ -149,6 +149,7 @@
     rejectedCount: 0,
     collectedCount: 0,
     lastDownloadScope: "all",
+    collectionBase: "",
     x810114ApiMode: false
   };
 
@@ -296,6 +297,12 @@
     }
     #xiv-root[data-theme="light"] { background: #f4f4f1; color: #141414; }
     #xiv-root[data-active="true"] { display: block; }
+    #xiv-root[data-active="true"]:not([data-theme="light"])::before {
+      content: ""; position: fixed; left: 0; right: 0;
+      top: calc(-1 * env(safe-area-inset-top, 0px));
+      height: calc(env(safe-area-inset-top, 0px) + 2px);
+      background: #050505; z-index: 2; pointer-events: none;
+    }
     #xiv-stage {
       position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
       overflow-anchor: none;
@@ -345,6 +352,10 @@
       padding: 9px 12px; box-sizing: border-box;
       background: linear-gradient(to bottom, rgba(0,0,0,.82), rgba(0,0,0,.22), rgba(0,0,0,0));
       pointer-events: none;
+    }
+    #xiv-root:not([data-theme="light"]) #xiv-topbar {
+      background: linear-gradient(to bottom, #050505 0%, rgba(5,5,5,.96) 44px, rgba(5,5,5,.72) 68px, rgba(5,5,5,0) 100%);
+      box-shadow: 0 -1px 0 #050505 inset;
     }
     .xiv-pill {
       pointer-events: auto; display: inline-flex; align-items: center; gap: 8px;
@@ -435,7 +446,7 @@
     }
     #xiv-lightbox[data-zoom="actual"] img,
     #xiv-lightbox[data-zoom="actual"] video {
-      width: auto !important; height: auto !important; max-width: none !important; max-height: none !important; margin: 28px auto; cursor: grab;
+      width: var(--xiv-actual-width, auto) !important; height: var(--xiv-actual-height, auto) !important; max-width: none !important; max-height: none !important; margin: 28px auto; cursor: grab;
       touch-action: none;
     }
     #xiv-lightbox[data-zoom="actual"][data-dragging="true"] img,
@@ -836,9 +847,29 @@
     }
   }
 
+  function isCloudDriveFilesPage(url = location.href) {
+    try {
+      const parsed = new URL(url, location.href);
+      const localHost = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(parsed.hostname);
+      return localHost && parsed.searchParams.get("page") === "files";
+    } catch {
+      return false;
+    }
+  }
+
+  function isCloudDriveThumbUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return /^thumb\.115\.com$/i.test(parsed.hostname) && /\/thumb\/.+_\d+$/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  }
+
   function isGoodImage(url, node) {
     if (!url || BAD_IMAGE_RE.test(url) || isAdMedia(url, node)) return false;
     if (isBlockedZttaotuImage(url, node)) return false;
+    if (isCloudDriveFilesPage() && isCloudDriveThumbUrl(url)) return true;
     if (!isMediaUrl(url)) return false;
     if (isVideoUrl(url)) return true;
     if (isX810114Avatar(url, node)) return false;
@@ -864,15 +895,17 @@
     return galleryContext || photoishPath || photoishName || (displayOk === true && bigNatural);
   }
 
-  function isBlockedZttaotuImage(url, node) {
-    if (!url || !isZttaotuUrl(location.href)) return false;
+  function isBlockedZttaotuImage(url, node, base = "") {
+    const contextBase = base || node?.ownerDocument?.documentElement?.dataset?.xivBase || state.collectionBase || location.href;
+    if (!url || !isZttaotuUrl(contextBase)) return false;
     const text = node ? closestText(node) : "";
     if (BLOCKED_PROMO_TEXT_RE.test(text)) return true;
     try {
       const parsed = new URL(url, location.href);
-      const base = node?.ownerDocument?.documentElement?.dataset?.xivBase || node?.ownerDocument?.baseURI || location.href;
-      const page = pageNumberFromUrl(base) || pageNumberFromUrl(location.href);
-      return /\/photo\/zwebp\//i.test(parsed.pathname) && page > 1;
+      const page = pageNumberFromUrl(contextBase) || pageNumberFromUrl(location.href);
+      const placeholderPath = /\/photo\/zwebp\//i.test(parsed.pathname)
+        || /(?:qrcode|qr|warning|notice|blocked|placeholder|sensitive)/i.test(parsed.pathname);
+      return page > 1 && placeholderPath;
     } catch {
       return false;
     }
@@ -984,7 +1017,7 @@
 
   function addImage(url, detailUrl = "", posterUrl = "") {
     url = normalizeMediaUrl(url);
-    if (!url || isBlockedZttaotuImage(url)) {
+    if (!url || isBlockedZttaotuImage(url, null, state.collectionBase)) {
       state.rejectedCount += 1;
       return false;
     }
@@ -1024,10 +1057,29 @@
     }
   }
 
+  function collectCloudDriveImageUrls(doc, base) {
+    const urls = new Set();
+    doc.querySelectorAll('img.wf-img[src], img[src*="thumb.115.com/thumb/"]').forEach((img) => {
+      const url = absoluteUrl(img.currentSrc || img.getAttribute("src"), base);
+      if (!isCloudDriveThumbUrl(url)) return;
+      urls.add(url);
+      rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
+    });
+    let added = 0;
+    for (const url of urls) {
+      if (addImage(url)) added += 1;
+    }
+    return added;
+  }
+
   function collectFromDocument(doc, base) {
     let added = 0;
+    state.collectionBase = base;
     doc.documentElement.dataset.xivBase = base;
     rememberExpectedImageCount(doc);
+    if (isCloudDriveFilesPage(base)) {
+      added += collectCloudDriveImageUrls(doc, base);
+    }
     if (isPhotoGalleryPage()) discoverPageLinksFromDocument(doc, base);
 
     doc.querySelectorAll("img").forEach((img) => {
@@ -1603,15 +1655,30 @@
   function loadVideoPreviewViaBlob(video) {
     const url = video?.dataset?.previewUrl || video?.dataset?.sourceUrl || "";
     if (!video?.isConnected || !url || video.dataset.previewBlobTried === "true") return;
-    if (typeof GM_xmlhttpRequest !== "function") return;
+    if (typeof GM_xmlhttpRequest !== "function") {
+      video.dataset.previewLoaded = "false";
+      video.dataset.previewLoading = "false";
+      return;
+    }
     video.dataset.previewBlobTried = "true";
+    const failBlobFallback = () => {
+      if (!video.isConnected) return;
+      video.dataset.previewLoaded = "false";
+      video.dataset.previewLoading = "false";
+      video.dataset.previewQueued = "false";
+      pumpVideoPreviewQueue();
+    };
     GM_xmlhttpRequest({
       method: "GET",
       url,
       responseType: "blob",
       timeout: 30000,
       onload: (response) => {
-        if (!video.isConnected || response.status < 200 || response.status >= 300 || !response.response) return;
+        if (!video.isConnected) return;
+        if (response.status < 200 || response.status >= 300 || !response.response) {
+          failBlobFallback();
+          return;
+        }
         const objectUrl = URL.createObjectURL(response.response);
         let done = false;
         const cleanup = () => {
@@ -1669,8 +1736,8 @@
           else if (!done) onError();
         }, 9000);
       },
-      onerror: () => {},
-      ontimeout: () => {}
+      onerror: failBlobFallback,
+      ontimeout: failBlobFallback
     });
   }
 
@@ -4124,6 +4191,31 @@
     openLightbox(next);
   }
 
+  function actualZoomCssSize(media) {
+    if (!media) return null;
+    const width = media.naturalWidth || media.videoWidth || 0;
+    const height = media.naturalHeight || media.videoHeight || 0;
+    if (!width || !height) return null;
+    const dpr = isMobilePointerEvent() ? Math.max(1, Number(window.devicePixelRatio || 1)) : 1;
+    return {
+      width: Math.max(1, Math.round(width / dpr)),
+      height: Math.max(1, Math.round(height / dpr))
+    };
+  }
+
+  function prepareActualZoomMedia(media) {
+    const size = actualZoomCssSize(media);
+    const lb = state.lightbox;
+    if (!size || !lb) return false;
+    const rect = media.getBoundingClientRect?.();
+    const currentWidth = Math.max(1, rect?.width || media.clientWidth || 1);
+    const currentHeight = Math.max(1, rect?.height || media.clientHeight || 1);
+    if (size.width <= currentWidth + 1 && size.height <= currentHeight + 1) return false;
+    media.style.setProperty("--xiv-actual-width", `${size.width}px`);
+    media.style.setProperty("--xiv-actual-height", `${size.height}px`);
+    return true;
+  }
+
   function centerActualLightboxMedia() {
     const lb = state.lightbox;
     if (!lb || lb.dataset.active !== "true" || lb.dataset.zoom !== "actual") return;
@@ -4143,10 +4235,13 @@
   function toggleLightboxZoom() {
     if (!state.lightbox) return;
     const zoomed = state.lightbox.dataset.zoom === "actual";
-    state.lightbox.dataset.zoom = zoomed ? "fit" : "actual";
     if (zoomed) {
+      state.lightbox.dataset.zoom = "fit";
       state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     } else {
+      const media = state.lightbox.querySelector("img, video");
+      if (!prepareActualZoomMedia(media)) return;
+      state.lightbox.dataset.zoom = "actual";
       centerActualLightboxMedia();
     }
   }
@@ -4258,10 +4353,15 @@
     if (!state.active || state.lightbox?.dataset.active === "true" || !isMobilePointerEvent(event)) return;
     if (event.button !== 0) return;
     if (event.target?.closest?.("button, select, input, textarea, a, .xiv-tile, [role='button']")) return;
+    const edge = Math.max(26, Math.min(44, window.innerWidth * 0.1));
+    const fromLeftEdge = event.clientX <= edge;
+    const fromRightEdge = event.clientX >= window.innerWidth - edge;
+    if (!fromLeftEdge && !fromRightEdge) return;
     state.viewerSwipe = {
       pointerId: event.pointerId,
       x: event.clientX,
       y: event.clientY,
+      edge: fromLeftEdge ? "left" : "right",
       moved: false
     };
     event.target?.setPointerCapture?.(event.pointerId);
@@ -4289,7 +4389,8 @@
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
     const threshold = Math.max(52, Math.min(window.innerWidth, window.innerHeight) * 0.12);
-    if (absX >= threshold && absX > absY * 1.35) {
+    const inward = swipe.edge === "left" ? dx > 0 : dx < 0;
+    if (inward && absX >= threshold && absX > absY * 1.35) {
       claimEvent(event);
       closeViewer();
     }

@@ -1,12 +1,12 @@
 {
-  "version": "1.4.20",
+  "version": "1.4.21",
   "desktop": {
-    "version": "1.4.20",
+    "version": "1.4.21",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.20",
+    "version": "1.4.21",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,7 +14,7 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
-    "page-scoped-lightbox-slideshow-speed",
+    "global-lightbox-slideshow-speed",
     "actual-zoom-manual-navigation",
     "mobile-dpr-aware-actual-zoom",
     "mobile-swipe-exit-lightbox-and-viewer",

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudDrive FlowLens fixture</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f5f6f8; }
+  .files-page { padding: 24px; }
+  .waterfall { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .wf-image { position: relative; min-height: 180px; background: #ddd; border-radius: 6px; overflow: hidden; }
+  .wf-img { display: block; width: 100%; min-height: 180px; object-fit: cover; }
+  .wf-overlay { position: absolute; left: 0; right: 0; bottom: 0; color: #fff; padding: 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+</style>
+<main class="files-page">
+  <div class="waterfall">
+    <div class="wf-image">
+      <img class="wf-img" src="https://thumb.115.com/thumb/A/64/FD/A64FD618438F03F55C62CA4A2F4176E5208E1EBA_1440?s=_79DrnLicLS-43xdqE9sVg&t=1781833800" loading="lazy" referrerpolicy="no-referrer">
+      <div class="wf-overlay"><div class="wf-overlay-name" title="2048.cc-1.jpg">2048.cc-1.jpg</div></div>
+    </div>
+    <div class="wf-image">
+      <img class="wf-img" src="https://thumb.115.com/thumb/3/14/AB/314ABDA8E2B0EDE7427CC691E90A0D1C7666A5B9_1440?s=2iOrbok2C8tCOkTVtA2asw&t=1781833800" loading="lazy" referrerpolicy="no-referrer">
+      <div class="wf-overlay"><div class="wf-overlay-name" title="2048.cc-2.jpg">2048.cc-2.jpg</div></div>
+    </div>
+  </div>
+</main>
+<script src="../src/core/flowlens-core.js?v=1421"></script>
+</html>

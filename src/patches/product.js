@@ -384,7 +384,7 @@
     }
     lightboxAutoPlaying = true;
     clearInterval(lightboxAutoTimer);
-    lightboxAutoTimer = window.setInterval(playNextLightbox, Math.max(1200, Number(settings().lightboxAutoDelay || 2600)));
+    lightboxAutoTimer = window.setInterval(playNextLightbox, Math.max(800, Number(settings().lightboxAutoDelay || 1200)));
     syncLightboxAutoButton();
     setStatus("大图自动播放已开启");
   }
