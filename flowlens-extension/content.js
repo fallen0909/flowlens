@@ -124,6 +124,8 @@
     settings: null,
     launchDrag: null,
     observer: null,
+    galleryQueueObserver: null,
+    galleryQueueRefreshTimer: 0,
     videoPreviewObserver: null,
     videoPreviewQueue: [],
     videoPreviewLoading: 0,
@@ -544,6 +546,24 @@
       .xiv-pill { max-width: calc(100vw - 176px); overflow: hidden; text-overflow: ellipsis; }
       .xiv-actions { max-width: calc(100vw - 104px); }
       .xiv-btn { min-width: 36px; width: 36px; height: 36px; }
+      #xiv-lightbox[data-active="true"] ~ #xiv-topbar,
+      #xiv-root:has(#xiv-lightbox[data-active="true"]) #xiv-topbar {
+        align-items: flex-start; gap: 4px; padding: 6px 8px;
+      }
+      #xiv-root:has(#xiv-lightbox[data-active="true"]) .xiv-pill {
+        min-height: 28px; max-width: calc(100vw - 252px); padding: 0;
+        background: transparent !important; border: 0 !important; box-shadow: none !important;
+        backdrop-filter: none !important; font-size: 12px; text-shadow: 0 1px 4px rgba(255,255,255,.7);
+      }
+      #xiv-root:not([data-theme="light"]):has(#xiv-lightbox[data-active="true"]) .xiv-pill {
+        text-shadow: 0 1px 5px rgba(0,0,0,.9);
+      }
+      #xiv-root:has(#xiv-lightbox[data-active="true"]) .xiv-actions {
+        max-width: 244px; gap: 5px; justify-content: flex-end;
+      }
+      #xiv-root:has(#xiv-lightbox[data-active="true"]) .xiv-btn {
+        min-width: 34px; width: 34px; height: 34px;
+      }
     }
   `;
 
@@ -650,10 +670,7 @@
   function collectX810114ProfileQueueFromText(doc = document) {
     const found = [];
     const seen = new Set();
-    const walker = doc.createTreeWalker(doc.body || doc.documentElement, NodeFilter.SHOW_TEXT);
-    let node = null;
-    while ((node = walker.nextNode())) {
-      const text = String(node.nodeValue || "");
+    function scan(text) {
       const matches = text.matchAll(/@([A-Za-z0-9_]{2,64})/g);
       for (const match of matches) {
         const name = match[1];
@@ -663,6 +680,20 @@
         found.push(`https://x.810114.xyz/${name}`);
       }
     }
+
+    const walker = doc.createTreeWalker(doc.body || doc.documentElement, NodeFilter.SHOW_TEXT);
+    let node = null;
+    while ((node = walker.nextNode())) scan(String(node.nodeValue || ""));
+
+    doc.querySelectorAll("[title], [aria-label], [data-username], [data-user], [data-name]").forEach((el) => {
+      scan([
+        el.getAttribute("title"),
+        el.getAttribute("aria-label"),
+        el.getAttribute("data-username"),
+        el.getAttribute("data-user"),
+        el.getAttribute("data-name")
+      ].filter(Boolean).join(" "));
+    });
     return found;
   }
 
@@ -709,6 +740,29 @@
     syncGalleryQueueButtons();
   }
 
+  function scheduleGalleryQueueRefresh() {
+    clearTimeout(state.galleryQueueRefreshTimer);
+    state.galleryQueueRefreshTimer = window.setTimeout(() => refreshGalleryQueue(), 180);
+  }
+
+  function startGalleryQueueObserver() {
+    if (state.galleryQueueObserver || !document.documentElement) return;
+    state.galleryQueueObserver = new MutationObserver((mutations) => {
+      if (mutations.every((mutation) => {
+        const target = mutation.target;
+        return state.root?.contains(target) || state.launch?.contains(target);
+      })) return;
+      scheduleGalleryQueueRefresh();
+    });
+    state.galleryQueueObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["href", "title", "aria-label", "data-username", "data-user", "data-name"]
+    });
+    [300, 900, 1800, 3200].forEach((delay) => window.setTimeout(() => refreshGalleryQueue(), delay));
+  }
+
   function galleryQueueTarget(delta) {
     if (!state.galleryQueue.length) refreshGalleryQueue();
     const queue = state.galleryQueue;
@@ -729,9 +783,64 @@
       const label = button.dataset.xiv === "prev-set" ? "上一组" : "下一组";
       button.disabled = !hasQueue;
       button.dataset.enabled = hasQueue ? "true" : "false";
-      const shortcut = button.dataset.xiv === "prev-set" ? "Shift+←" : "Shift+→";
+      const shortcut = button.dataset.xiv === "prev-set" ? "," : ".";
       button.title = hasQueue && index ? `${label}（${index}/${total}，${shortcut}）` : `${label}（未识别到队列，${shortcut}）`;
     });
+  }
+
+  async function loadGalleryQueueTargetInPlace(target) {
+    const targetUrl = normalizedPageUrl(target);
+    if (!targetUrl || !isQueueCandidateUrl(targetUrl)) return false;
+    try {
+      const parsed = new URL(targetUrl, location.href);
+      if (parsed.origin !== location.origin) return false;
+    } catch {
+      return false;
+    }
+
+    updateStatus("正在加载下一组");
+    saveViewerPosition();
+    closeLightbox(false);
+    stopGenericObserver();
+    resetCollection();
+    try {
+      history.pushState({ flowlensGalleryQueue: true }, "", targetUrl);
+    } catch {
+      return false;
+    }
+    state.active = true;
+    state.root.dataset.active = "true";
+    state.root.dataset.theme = state.theme;
+    document.documentElement.classList.add("xiv-active");
+    state.suppressLightboxUntil = Date.now() + 600;
+    state.fetchedPages.add(location.href);
+    state.pageUrls.add(location.href);
+
+    if (isGenericX810114Page()) {
+      await prepareGenericX810114Page();
+      if (!state.x810114ApiMode) startGenericObserver();
+    } else {
+      const response = await fetch(targetUrl, { credentials: "include" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const html = await response.text();
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      doc.documentElement.dataset.xivBase = targetUrl;
+      collectFromDocument(doc, targetUrl);
+      if (isPhotoGalleryPage()) {
+        discoverNearbyPages();
+        fetchRemainingPages(galleryFetchLimit());
+      } else if (!isPornpicsGalleryPage(targetUrl)) {
+        startGenericObserver();
+      }
+    }
+
+    refreshGalleryQueue(document, location.href);
+    renderImages();
+    applyMediaFilter();
+    updateCounter();
+    updateStatus(`已切换到${state.galleryQueueIndex >= 0 ? `第 ${state.galleryQueueIndex + 1} 组` : "新套图"}`);
+    if (state.stage) state.stage.scrollTo({ top: 0, behavior: "auto" });
+    return state.images.length > 0;
   }
 
   async function navigateGalleryQueue(delta) {
@@ -753,8 +862,14 @@
         // Fullscreen must be requested from the user gesture; if blocked, auto-open still works.
       }
     }
+    try {
+      if (await loadGalleryQueueTargetInPlace(target)) return;
+    } catch {
+      // Fall back to page navigation when in-place loading is blocked.
+    }
     updateStatus(delta > 0 ? "打开下一组" : "打开上一组");
-    location.href = target;
+    if (samePageUrl(target, location.href)) location.reload();
+    else location.href = target;
   }
 
   function maybeAutoOpenFromGalleryQueue() {
@@ -3098,6 +3213,7 @@
     syncSettingsPanel();
     setColumns(state.columns, false);
     refreshGalleryQueue();
+    startGalleryQueueObserver();
   }
 
   function watchSystemTheme() {
@@ -5039,10 +5155,12 @@
       return;
     }
     if (!state.active) return;
-    if (!isTyping && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+    const queuePrevKey = event.key === "," || event.key === "，" || event.code === "Comma";
+    const queueNextKey = event.key === "." || event.key === "。" || event.code === "Period";
+    if (!isTyping && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && (queuePrevKey || queueNextKey)) {
       claimEvent(event);
       if (event.repeat) return;
-      navigateGalleryQueue(event.key === "ArrowRight" ? 1 : -1);
+      navigateGalleryQueue(queueNextKey ? 1 : -1);
       return;
     }
     if (state.lightbox?.dataset.active === "true" && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
