@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "鐎戝厜 FlowLens",
-  "version": "1.4.28",
+  "version": "1.4.29",
   "description": "Collect page images and videos into a fullscreen waterfall viewer with original-size viewing, slideshow controls, and ZIP download.",
   "permissions": ["activeTab", "scripting", "downloads", "downloads.ui", "alarms", "storage"],
   "host_permissions": ["<all_urls>"],
@@ -31,7 +31,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js", "content-patch.js", "content-fixes.js", "content-product.js", "content-ui-cleanup.js", "content-lightbox-stable.js", "content-settings-redesign.js", "content-settings-compact-v2.js", "content-zhihu.js", "content-topfix.js", "content-settings-sync.js", "content-media-sync.js"],
+      "js": ["content-settings-sync.js", "content.js", "content-patch.js", "content-fixes.js", "content-product.js", "content-ui-cleanup.js", "content-lightbox-stable.js", "content-settings-redesign.js", "content-settings-compact-v2.js", "content-zhihu.js", "content-topfix.js", "content-media-sync.js", "content-slideshow-native.js", "content-diagnostics-log.js"],
       "run_at": "document_idle"
     }
   ]

@@ -376,7 +376,12 @@
       background: rgba(18,18,20,.76); color: #fff; border: 1px solid rgba(255,255,255,.16);
       backdrop-filter: blur(12px); font-size: 13px; white-space: nowrap;
     }
-    .xiv-actions { display: flex; gap: 8px; align-items: center; pointer-events: auto; }
+    .xiv-actions {
+      display: flex; gap: 8px; align-items: center; pointer-events: auto;
+      max-width: calc(100vw - 132px); overflow-x: auto; scrollbar-width: none;
+      padding-bottom: 2px;
+    }
+    .xiv-actions::-webkit-scrollbar { display: none; }
     .xiv-btn {
       min-width: 42px; width: 42px; height: 38px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18);
       background: rgba(18,18,20,.76); color: #fff; cursor: pointer;
@@ -387,6 +392,14 @@
     .xiv-btn svg, #xiv-launch svg { display: block; flex: 0 0 auto; }
     .xiv-btn svg { width: 18px; height: 18px; }
     .xiv-btn span { display: none; }
+    .xiv-btn[data-xiv="prev-set"],
+    .xiv-btn[data-xiv="next-set"] {
+      width: auto; min-width: 72px; padding: 0 10px;
+    }
+    .xiv-btn[data-xiv="prev-set"] span,
+    .xiv-btn[data-xiv="next-set"] span {
+      display: inline;
+    }
     .xiv-btn-icon { min-width: 38px; width: 38px; padding: 0; }
     #xiv-root[data-theme="light"] .xiv-pill,
     #xiv-root[data-theme="light"] .xiv-btn {
@@ -537,7 +550,12 @@
       .xiv-masonry-column { gap: 4px; }
       .xiv-tile { border-radius: 6px; }
       .xiv-pill { max-width: calc(100vw - 176px); overflow: hidden; text-overflow: ellipsis; }
+      .xiv-actions { max-width: calc(100vw - 104px); }
       .xiv-btn { min-width: 36px; width: 36px; height: 36px; }
+      .xiv-btn[data-xiv="prev-set"],
+      .xiv-btn[data-xiv="next-set"] {
+        min-width: 66px; width: auto; padding: 0 8px;
+      }
     }
   `;
 
@@ -695,9 +713,13 @@
 
   function syncGalleryQueueButtons() {
     const hasQueue = state.galleryQueue.length > 1;
+    const total = state.galleryQueue.length || 0;
+    const index = state.galleryQueueIndex >= 0 ? state.galleryQueueIndex + 1 : 0;
     state.root?.querySelectorAll('[data-xiv="prev-set"], [data-xiv="next-set"]').forEach((button) => {
+      const label = button.dataset.xiv === "prev-set" ? "上一组" : "下一组";
       button.disabled = !hasQueue;
       button.dataset.enabled = hasQueue ? "true" : "false";
+      button.title = hasQueue && index ? `${label}（${index}/${total}）` : `${label}（未识别到队列）`;
     });
   }
 

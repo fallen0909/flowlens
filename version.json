@@ -1,12 +1,12 @@
 {
-  "version": "1.4.28",
+  "version": "1.4.29",
   "desktop": {
-    "version": "1.4.28",
+    "version": "1.4.29",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.28",
+    "version": "1.4.29",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,6 +14,8 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "visible-gallery-queue-text-buttons",
+    "scrollable-flowlens-toolbar-actions",
     "gallery-set-queue-navigation",
     "gallery-set-auto-open-after-navigation",
     "pornpics-no-expected-count-denominator",
