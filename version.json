@@ -1,12 +1,12 @@
-{
-  "version": "1.4.22",
+﻿{
+  "version": "1.4.23",
   "desktop": {
-    "version": "1.4.22",
+    "version": "1.4.23",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.22",
+    "version": "1.4.23",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -14,6 +14,11 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
+    "mobile-video-actual-zoom",
+    "clouddrive2-lightweight-video-tiles",
+    "stalled-image-card-repair",
+    "x810114-launch-drag-event-capture",
+    "pornpics-main-gallery-only",
     "localized-chinese-settings-panel",
     "dpr-stable-actual-zoom",
     "clouddrive2-data-path-video-capture",

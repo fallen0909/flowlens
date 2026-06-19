@@ -77,12 +77,12 @@
   const AD_PATH_RE = /(?:^|[/?#&_.-])(ad|ads|adv|advert|advertise|advertisement|banner|bnr|sponsor|sponsored|promo|promotion|campaign|popunder|tracking|affiliate|click)(?:[/?#&_.=-]|$)/i;
   const JAVBUS_AD_TEXT_RE = /(廣告|广告|adblock|block ads|ad[s]?|banner|sponsor|jads|poweredby|投放)/i;
   const BLOCKED_PROMO_TEXT_RE = /(仅供访问推特被屏蔽图片|不推荐其他一切用法|不要相信账号内容中的一切广告|推广|广告|直播间|播放视频|扫码|二维码|下载官方套图app|模糊处理|仅限手机|VLM翻译插件|AI帮忙看色图|eh镜像|ex\.810114|x\.810114\.xyz\[推图\]|7she\.tv|换妻|出租妻子|AI脱衣|黑迹)/i;
-  const PROMO_LINK_RE = /(?:7she\.tv|7shemale|casino|bet|promo|ads?|advert|download.*app|appdownload|live|cam|chat|ai.*undress|tuiguang|推广|广告|播放视频|直播间)/i;
+  const PROMO_LINK_RE = /(?:7she\.tv|7shemale|妻社|换妻|出租妻|casino|bet|promo|ads?|advert|download.*app|appdownload|live|cam|chat|ai.*undress|tuiguang|推广|广告|播放视频|直播间|立即访问|真实换妻平台)/i;
   const GALLERY_TEXT_RE = /\bNo\.\s*\d+\b/i;
   const GALLERY_PAGE_WINDOW = 16;
   const GALLERY_FETCH_BATCH = 3;
   const SITE_ALBUM_FETCH_BATCH = 6;
-  const VIDEO_PREVIEW_CONCURRENCY = 2;
+  const VIDEO_PREVIEW_CONCURRENCY = 1;
 
   const state = {
     root: null,
@@ -328,6 +328,15 @@
     .xiv-tile img, .xiv-tile video {
       display: block !important; width: 100%; height: auto; min-height: 96px; max-height: 82vh; object-fit: contain; background: #111; pointer-events: none;
       overflow-anchor: none;
+    }
+    .xiv-video-placeholder {
+      display: grid; place-items: center; width: 100%; min-height: 132px;
+      aspect-ratio: var(--xiv-video-ratio, 16 / 9); background: linear-gradient(145deg, #18181b, #0b0b0d);
+      color: rgba(255,255,255,.72); pointer-events: none;
+    }
+    .xiv-video-placeholder::before {
+      content: "视频"; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.1);
+      font: 800 12px/1 system-ui, sans-serif; letter-spacing: 0;
     }
     .xiv-video-mark {
       position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
@@ -866,6 +875,16 @@
     }
   }
 
+  function isCloudDriveMediaUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(parsed.hostname)
+        && /\/static\/http\/[^/]+\/false\//i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  }
+
   function isCloudDriveVideoPath(path) {
     return /\.(?:mp4|m4v|mov|webm|mkv|avi|wmv|flv|ts)(?:[?#]|$)/i.test(String(path || ""));
   }
@@ -901,10 +920,28 @@
     }
   }
 
+  function isPornpicsGalleryPage(url = location.href) {
+    try {
+      const parsed = new URL(url, location.href);
+      return /(^|\.)pornpics\.com$/i.test(parsed.hostname) && /\/galleries\/[^/]+-\d+\/?$/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  function isPornpicsMainGalleryNode(node) {
+    if (!node || !isPornpicsGalleryPage(node.ownerDocument?.documentElement?.dataset?.xivBase || location.href)) return false;
+    const tileRoot = node.closest?.("#main #tiles, #tiles");
+    if (!tileRoot) return false;
+    if (node.closest?.("#rel-main, #main2, .gallery-info, .comments, header, footer, [class*='related' i], [class*='recommend' i], [class*='suggest' i]")) return false;
+    return true;
+  }
+
   function isGoodImage(url, node) {
     if (!url || BAD_IMAGE_RE.test(url) || isAdMedia(url, node)) return false;
     if (isBlockedZttaotuImage(url, node)) return false;
     if (isCloudDriveFilesPage() && isCloudDriveThumbUrl(url)) return true;
+    if (isPornpicsGalleryPage() && node && !isPornpicsMainGalleryNode(node)) return false;
     if (!isMediaUrl(url)) return false;
     if (isVideoUrl(url)) return true;
     if (isX810114Avatar(url, node)) return false;
@@ -1139,6 +1176,28 @@
     return added;
   }
 
+  function collectPornpicsGalleryUrls(doc, base) {
+    const urls = new Set();
+    doc.querySelectorAll("#main #tiles a[href], #tiles a[href]").forEach((link) => {
+      if (!isPornpicsMainGalleryNode(link)) return;
+      const href = absoluteUrl(link.getAttribute("href"), base);
+      if (href && isMediaUrl(href) && !isVideoUrl(href) && !BAD_IMAGE_RE.test(href)) urls.add(href);
+      const img = link.querySelector("img");
+      const thumb = img ? imageCandidateFromImg(img, base) : "";
+      if (!href && thumb && isMediaUrl(thumb) && !BAD_IMAGE_RE.test(thumb)) urls.add(thumb);
+    });
+    doc.querySelectorAll("#main #tiles img, #tiles img").forEach((img) => {
+      if (!isPornpicsMainGalleryNode(img)) return;
+      const url = imageCandidateFromImg(img, base);
+      if (url && isMediaUrl(url) && !BAD_IMAGE_RE.test(url)) urls.add(url);
+    });
+    let added = 0;
+    for (const url of urls) {
+      if (addImage(url)) added += 1;
+    }
+    return added;
+  }
+
   function collectFromDocument(doc, base) {
     let added = 0;
     state.collectionBase = base;
@@ -1146,6 +1205,13 @@
     rememberExpectedImageCount(doc);
     if (isCloudDriveFilesPage(base)) {
       added += collectCloudDriveMediaUrls(doc, base);
+    }
+    if (isPornpicsGalleryPage(base)) {
+      added += collectPornpicsGalleryUrls(doc, base);
+      renderImages();
+      applyMediaFilter();
+      updateStatus(added ? `新增 ${added} 张` : "就绪");
+      return;
     }
     if (isPhotoGalleryPage()) discoverPageLinksFromDocument(doc, base);
 
@@ -1582,12 +1648,20 @@
     img.decoding = "async";
     applyInitialAspectRatio(img, url);
     setImageSourceWithFallback(img, url);
+    const loadTimer = window.setTimeout(() => {
+      if (!img.isConnected) return;
+      if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) return;
+      if (img.dataset.awaitingFallback === "true") return;
+      repairBrokenImage(url, img);
+    }, 10000);
     img.addEventListener("load", () => {
+      clearTimeout(loadTimer);
       if (!isLoadedPhotoLike(img)) rejectImage(url);
       rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
       if (img.naturalWidth > 0 && img.naturalHeight > 0) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
     }, { once: true });
     img.addEventListener("error", () => {
+      clearTimeout(loadTimer);
       setTimeout(() => {
         if (!img.isConnected || img.naturalWidth || img.naturalHeight) return;
         if (img.dataset.awaitingFallback === "true") return;
@@ -1600,6 +1674,14 @@
   function createVideoPreviewElement(url, index) {
     const poster = state.posterByImage.get(keyForUrl(url));
     if (!poster) {
+      if (isCloudDriveMediaUrl(url)) {
+        const placeholder = document.createElement("div");
+        placeholder.className = "xiv-video-placeholder";
+        placeholder.dataset.sourceUrl = url;
+        const ratio = state.mediaRatioByImage.get(keyForUrl(url)) || ratioFromSize(videoSizeFromUrl(url)) || 16 / 9;
+        placeholder.style.setProperty("--xiv-video-ratio", String(ratio));
+        return placeholder;
+      }
       const video = createVideoElement(url, {
         autoplay: false,
         controls: false,
@@ -2487,6 +2569,7 @@
 
   function onLaunchPointerDown(event) {
     if (event.button !== 0) return;
+    claimEvent(event);
     event.preventDefault();
     const rect = state.launch.getBoundingClientRect();
     state.launchDrag = {
@@ -2504,6 +2587,7 @@
   function onLaunchPointerMove(event) {
     const drag = state.launchDrag;
     if (!drag || drag.id !== event.pointerId) return;
+    claimEvent(event);
     event.preventDefault();
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
@@ -2517,6 +2601,7 @@
   function endLaunchDrag(event) {
     const drag = state.launchDrag;
     if (!drag || drag.id !== event.pointerId) return;
+    claimEvent(event);
     event.preventDefault();
     state.launch.releasePointerCapture?.(event.pointerId);
     state.launch.dataset.dragging = "false";
@@ -4271,6 +4356,22 @@
     };
   }
 
+  function waitForVideoActualZoom(video) {
+    if (!video || video.tagName !== "VIDEO" || video.dataset.xivPendingActual === "true") return;
+    video.dataset.xivPendingActual = "true";
+    updateStatus("等待视频尺寸");
+    const apply = () => {
+      video.dataset.xivPendingActual = "false";
+      if (!video.isConnected || state.lightbox?.dataset.active !== "true") return;
+      if (!prepareActualZoomMedia(video)) return;
+      state.lightbox.dataset.zoom = "actual";
+      centerActualLightboxMedia();
+      updateStatus("1:1");
+    };
+    video.addEventListener("loadedmetadata", apply, { once: true });
+    video.addEventListener("loadeddata", apply, { once: true });
+  }
+
   function prepareActualZoomMedia(media) {
     const size = actualZoomCssSize(media);
     const lb = state.lightbox;
@@ -4310,7 +4411,10 @@
       state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     } else {
       const media = state.lightbox.querySelector("img, video");
-      if (!prepareActualZoomMedia(media)) return;
+      if (!prepareActualZoomMedia(media)) {
+        waitForVideoActualZoom(media);
+        return;
+      }
       state.lightbox.dataset.zoom = "actual";
       centerActualLightboxMedia();
     }
@@ -4319,7 +4423,7 @@
   function onLightboxClick(event) {
     if (state.lightbox?.dataset.active !== "true") return;
     if (!state.lightbox.contains(event.target)) return;
-    if (event.target?.closest?.("#xiv-lightbox video")) return;
+    if (event.target?.closest?.("#xiv-lightbox video") && !isMobilePointerEvent(event)) return;
     claimEvent(event);
     if (Date.now() < state.lightboxSuppressClickUntil) return;
     if (event.target?.closest?.(".xiv-lightbox-fav")) {
