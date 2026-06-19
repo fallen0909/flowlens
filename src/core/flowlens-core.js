@@ -414,6 +414,25 @@
       background: rgba(18,18,20,.76); color: #fff; padding: 0 30px 0 12px;
       font: 800 13px/1 system-ui, sans-serif; backdrop-filter: blur(12px); cursor: pointer;
     }
+    #xiv-root[data-lightbox-active="true"] #xiv-topbar {
+      justify-content: flex-end; gap: 0; padding: 8px 10px;
+      pointer-events: none;
+    }
+    #xiv-root[data-lightbox-active="true"] .xiv-pill {
+      display: none !important;
+    }
+    #xiv-root[data-lightbox-active="true"] .xiv-actions {
+      max-width: calc(100vw - 20px); gap: 7px; justify-content: flex-end;
+      flex-wrap: nowrap; overflow: visible; padding-bottom: 0; pointer-events: auto;
+    }
+    #xiv-root[data-lightbox-active="true"] .xiv-btn {
+      min-width: 38px; width: 38px; height: 38px; flex: 0 0 38px; padding: 0;
+    }
+    #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="prev-set"],
+    #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="next-set"],
+    #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="top"] {
+      display: none;
+    }
     #xiv-root[data-theme="light"] .xiv-select {
       background: rgba(255,255,255,.78); color: #151515; border-color: rgba(0,0,0,.12);
     }
@@ -546,22 +565,8 @@
       .xiv-pill { max-width: calc(100vw - 176px); overflow: hidden; text-overflow: ellipsis; }
       .xiv-actions { max-width: calc(100vw - 104px); }
       .xiv-btn { min-width: 36px; width: 36px; height: 36px; }
-      #xiv-root[data-lightbox-active="true"] #xiv-topbar {
-        justify-content: flex-end; align-items: flex-start; gap: 0; padding: 6px 8px;
-      }
-      #xiv-root[data-lightbox-active="true"] .xiv-pill {
-        display: none !important;
-      }
-      #xiv-root[data-lightbox-active="true"] .xiv-actions {
-        max-width: calc(100vw - 16px); gap: 6px; justify-content: flex-end;
-        flex-wrap: nowrap; overflow: visible; padding-bottom: 0;
-      }
       #xiv-root[data-lightbox-active="true"] .xiv-btn {
         min-width: 34px; width: 34px; height: 34px; flex: 0 0 34px;
-      }
-      #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="prev-set"],
-      #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="next-set"] {
-        display: none;
       }
     }
   `;
