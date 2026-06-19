@@ -1,12 +1,12 @@
 {
-  "version": "1.4.31",
+  "version": "1.4.32",
   "desktop": {
-    "version": "1.4.31",
+    "version": "1.4.32",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.31",
+    "version": "1.4.32",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
