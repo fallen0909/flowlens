@@ -10,8 +10,8 @@
 // ==/UserScript==
 
 (() => {
-  const VERSION = "1.4.46";
-  const CHANNEL = "stable";
+  const VERSION = "__FLOWLENS_BUILD_VERSION__";
+  const CHANNEL = "__FLOWLENS_BUILD_CHANNEL__";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
     "runtime-loader-no-require-cache",

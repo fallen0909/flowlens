@@ -13,7 +13,7 @@
     } catch {
       // Fall through to legacy globals.
     }
-    return window.__FLOWLENS_VERSION__ || "1.4.44";
+    return window.__FLOWLENS_VERSION__ || "dev";
   }
 
   function settingsPanel() {

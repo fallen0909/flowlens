@@ -6,6 +6,9 @@ on:
     branches: [master]
     paths:
       - 'mobile-userscript/**'
+      - 'src/**'
+      - 'scripts/build-userscripts.mjs'
+      - 'version.json'
       - '.github/workflows/publish-userscripts-pages.yml'
 
 permissions:
@@ -29,48 +32,13 @@ jobs:
 
       - name: Prepare Pages files
         run: |
+          node scripts/build-userscripts.mjs
+          node --check flowlens-mobile-all.user.js
           rm -rf public
           mkdir -p public
-          rsync -a mobile-userscript/ public/
-          cp mobile-userscript/install-userscript.html public/index.html
-
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const root = 'mobile-userscript';
-          const files = [
-            'flowlens.user.js',
-            'flowlens-optimizer.user.js',
-            'flowlens-layout-fix.user.js',
-            'flowlens-edge-mask.user.js',
-            'flowlens-global-settings.user.js',
-            'flowlens-zhihu.user.js'
-          ];
-          function stripHeader(source) {
-            const end = source.indexOf('// ==/UserScript==');
-            return end >= 0 ? source.slice(end + '// ==/UserScript=='.length).trim() : source.trim();
-          }
-          const header = `// ==UserScript==
-          // @name         瀑光 FlowLens 手机整合版
-          // @namespace    local.flowlens.mobile.all
-          // @version      1.2.23
-          // @description  手机 Edge / Tampermonkey 整合版：主功能、优化补丁、布局修复、直链图片兼容、全局设置同步、知乎适配。
-          // @match        *://*/*
-          // @run-at       document-idle
-          // @noframes
-          // @grant        GM_xmlhttpRequest
-          // @grant        GM_download
-          // @grant        GM_getValue
-          // @grant        GM_setValue
-          // @connect      *
-          // @updateURL    https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js
-          // @downloadURL  https://fallen0909.github.io/flowlens/flowlens-mobile-all.user.js
-          // ==/UserScript==`;
-          const body = files
-            .map((file) => stripHeader(fs.readFileSync(path.join(root, file), 'utf8')))
-            .join('\n\n');
-          fs.writeFileSync('public/flowlens-mobile-all.user.js', `${header}\n\n${body}\n`, 'utf8');
-          NODE
+          cp flowlens-mobile-all.user.js public/
+          cp flowlens-desktop.user.js public/
+          cp index.html public/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

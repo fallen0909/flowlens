@@ -34,6 +34,27 @@
     return title || hostOf(location.href) || "未命名页面";
   }
 
+  function coverOfCurrentPage() {
+    const selectors = [
+      'meta[property="og:image"]',
+      'meta[name="twitter:image"]',
+      '#xiv-root .xiv-tile img[src]',
+      'img[src]'
+    ];
+    for (const selector of selectors) {
+      const node = document.querySelector(selector);
+      const raw = node?.getAttribute?.("content") || node?.getAttribute?.("src") || "";
+      try {
+        if (raw) return new URL(raw, location.href).href;
+      } catch {}
+    }
+    return "";
+  }
+
+  function mediaCountOfCurrentPage() {
+    return document.querySelectorAll("#xiv-root .xiv-tile").length || 0;
+  }
+
   function safeJson(text, fallback) {
     try { return JSON.parse(text || "") || fallback; } catch { return fallback; }
   }
@@ -112,6 +133,8 @@
         url: normalizeUrl(item.url),
         title: item.title || item.url,
         host: item.host || hostOf(item.url),
+        cover: item.cover || "",
+        mediaCount: Number(item.mediaCount || 0),
         createdAt: item.createdAt || item.updatedAt || new Date().toISOString(),
         updatedAt: item.updatedAt || item.createdAt || new Date().toISOString()
       }));
@@ -139,6 +162,8 @@
         url,
         title: titleOfCurrentPage(),
         host: hostOf(url),
+        cover: coverOfCurrentPage(),
+        mediaCount: mediaCountOfCurrentPage(),
         createdAt: now,
         updatedAt: now
       },
@@ -154,11 +179,29 @@
     status("已删除收藏");
   }
 
-  function openBookmark(url, newTab = false) {
+  async function openBookmarkInFlow(url) {
     const target = normalizeUrl(url);
     if (!target) return;
-    if (newTab) window.open(target, "_blank", "noopener");
-    else location.href = target;
+    const api = window.__flowLensControl;
+    if (typeof api?.loadSavedPage !== "function") {
+      status("图片流尚未准备好");
+      return;
+    }
+    togglePanel(false);
+    status("正在打开收藏页面");
+    const opened = await api.loadSavedPage(target);
+    if (opened) {
+      const item = cache.find((entry) => normalizeUrl(entry.url) === target);
+      if (item) {
+        item.updatedAt = new Date().toISOString();
+        await writeBookmarks([...cache]);
+      }
+    }
+  }
+
+  function openBookmarkInNewTab(url) {
+    const target = normalizeUrl(url);
+    if (target) window.open(target, "_blank", "noopener");
   }
 
   function injectStyle() {
@@ -222,7 +265,7 @@
       #xiv-root .fl-bookmarks-empty { padding: 24px 16px !important; opacity: .66 !important; text-align: center !important; font-weight: 800 !important; }
       #xiv-root .fl-bookmarks-item {
         display: grid !important;
-        grid-template-columns: minmax(0,1fr) auto !important;
+        grid-template-columns: auto minmax(0,1fr) auto !important;
         gap: 10px !important;
         align-items: center !important;
         padding: 12px !important;
@@ -230,6 +273,14 @@
         border-radius: 16px !important;
         background: rgba(0,0,0,.045) !important;
       }
+      #xiv-root .fl-bookmarks-cover {
+        width: 54px !important;
+        height: 54px !important;
+        border-radius: 12px !important;
+        object-fit: cover !important;
+        background: linear-gradient(135deg, #64748b, #334155) !important;
+      }
+      #xiv-root .fl-bookmarks-info { min-width: 0 !important; cursor: pointer !important; }
       #xiv-root[data-theme="dark"] .fl-bookmarks-item { background: rgba(255,255,255,.07) !important; }
       #xiv-root .fl-bookmarks-title { font-size: 14px !important; line-height: 1.35 !important; font-weight: 920 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
       #xiv-root .fl-bookmarks-host { margin-top: 4px !important; font-size: 12px !important; color: #667085 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
@@ -239,7 +290,8 @@
       #xiv-root[data-theme="dark"] .fl-bookmarks-item button { background: rgba(255,255,255,.12) !important; color: #fff !important; }
       @media (max-width: 560px) {
         #xiv-root .fl-bookmarks-panel { left: 8px !important; right: 8px !important; width: auto !important; max-height: min(72vh, calc(100vh - 88px)) !important; }
-        #xiv-root .fl-bookmarks-item { grid-template-columns: 1fr !important; }
+        #xiv-root .fl-bookmarks-item { grid-template-columns: auto minmax(0,1fr) !important; }
+        #xiv-root .fl-bookmarks-actions { grid-column: 1 / -1 !important; }
       }
     `;
     document.documentElement.appendChild(style);
@@ -307,6 +359,7 @@
       const row = document.createElement("div");
       row.className = "fl-bookmarks-item";
       row.innerHTML = `
+        <img class="fl-bookmarks-cover" alt="" />
         <div class="fl-bookmarks-info">
           <div class="fl-bookmarks-title"></div>
           <div class="fl-bookmarks-host"></div>
@@ -317,11 +370,14 @@
           <button type="button" data-action="delete">删除</button>
         </div>`;
       row.querySelector(".fl-bookmarks-title").textContent = item.title || item.url;
-      row.querySelector(".fl-bookmarks-host").textContent = item.host || hostOf(item.url);
-      row.querySelector('[data-action="open"]').addEventListener("click", () => openBookmark(item.url, false));
-      row.querySelector('[data-action="newtab"]').addEventListener("click", () => openBookmark(item.url, true));
+      row.querySelector(".fl-bookmarks-host").textContent = `${item.host || hostOf(item.url)}${item.mediaCount ? ` · ${item.mediaCount} 项` : ""}`;
+      const cover = row.querySelector(".fl-bookmarks-cover");
+      if (item.cover) cover.src = item.cover;
+      else cover.style.visibility = "hidden";
+      row.querySelector('[data-action="open"]').addEventListener("click", () => openBookmarkInFlow(item.url));
+      row.querySelector('[data-action="newtab"]').addEventListener("click", () => openBookmarkInNewTab(item.url));
       row.querySelector('[data-action="delete"]').addEventListener("click", () => removeBookmark(item.url));
-      row.querySelector(".fl-bookmarks-info").addEventListener("click", () => openBookmark(item.url, false));
+      row.querySelector(".fl-bookmarks-info").addEventListener("click", () => openBookmarkInFlow(item.url));
       list.appendChild(row);
     });
   }

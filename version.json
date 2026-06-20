@@ -1,14 +1,14 @@
 {
-  "version": "1.4.46",
+  "version": "1.5.0",
   "desktop": {
-    "version": "1.4.45",
+    "version": "1.5.0",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.46",
+    "version": "1.5.0",
     "entry": "flowlens-mobile-all.user.js",
-    "loader": "runtime-fetch-no-require-cache"
+    "loader": "build-time-single-file"
   },
   "source": {
     "versionCenter": "src/core/version.js",
@@ -16,7 +16,7 @@
     "mobileOnly": "src/mobile"
   },
   "features": [
-    "runtime-loader-no-require-cache",
+    "build-time-single-file",
     "unified-version-center",
     "version-display-sync",
     "video-cover-strategy",
