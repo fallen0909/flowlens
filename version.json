@@ -1,12 +1,12 @@
 {
-  "version": "1.4.44",
+  "version": "1.4.45",
   "desktop": {
-    "version": "1.4.44",
+    "version": "1.4.45",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.4.44",
+    "version": "1.4.45",
     "entry": "flowlens-mobile-all.user.js"
   },
   "source": {
@@ -16,16 +16,16 @@
   },
   "features": [
     "unified-version-center",
+    "version-display-sync",
     "video-cover-strategy",
+    "video-preview-card",
+    "page-bookmarks",
     "diagnostics-log-export",
     "settings-version-display",
     "native-media-filter",
     "core-lightbox-slideshow-control",
     "video-lightbox-favorite",
     "lightbox-nearby-media-preload",
-    "global-lightbox-slideshow-speed",
-    "mobile-dpr-aware-actual-zoom",
-    "mobile-swipe-exit-lightbox-and-viewer",
     "gallery-set-queue-navigation",
     "in-place-gallery-queue-switch",
     "article-content-image-collector",
