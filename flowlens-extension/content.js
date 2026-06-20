@@ -1057,6 +1057,16 @@
       const doc = new DOMParser().parseFromString(html, "text/html");
       if (isSelfieGalleryDocument(doc)) return doc;
     } catch {
+      // Continue with the Tampermonkey request and frame fallbacks.
+    }
+
+    try {
+      const response = await fetchTextViaBackground(targetUrl, referrer);
+      if (response?.ok) {
+        const doc = new DOMParser().parseFromString(response.text || "", "text/html");
+        if (isSelfieGalleryDocument(doc)) return doc;
+      }
+    } catch {
       // The frame attempt below is the navigation-context fallback.
     }
 
