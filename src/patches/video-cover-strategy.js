@@ -205,10 +205,30 @@
     }, { once: true });
     img.addEventListener("error", () => {
       failedPosters.add(mediaKey(poster));
-      replaceWithFallback(tile, url, "封面加载失败");
+      if (!tile.querySelector("video")) replaceWithFallback(tile, url, "封面加载失败");
     }, { once: true });
     img.src = poster;
     return img;
+  }
+
+  function probePosterThenReplace(tile, url, poster) {
+    const posterKey = mediaKey(poster);
+    if (tile.dataset.flPosterProbe === posterKey) return true;
+    tile.dataset.flPosterProbe = posterKey;
+    const probe = new Image();
+    probe.referrerPolicy = "no-referrer-when-downgrade";
+    probe.onload = () => {
+      if (!tile.isConnected || tile.dataset.url !== url || tile.dataset.flVideoCoverFallback === "true") return;
+      replaceMedia(tile, posterImage(tile, url, poster));
+    };
+    probe.onerror = () => {
+      failedPosters.add(posterKey);
+      tile.dataset.flPosterProbeFailed = "true";
+      // Keep the video node alive so the core frame-extraction path can still run.
+      if (!tile.querySelector("video")) replaceWithFallback(tile, url, "封面加载失败");
+    };
+    probe.src = poster;
+    return true;
   }
 
   function applyPosterIfAvailable(tile, url) {
@@ -216,8 +236,7 @@
     if (!poster || failedPosters.has(mediaKey(poster))) return false;
     const current = firstMediaChild(tile);
     if (current?.tagName === "IMG" && mediaKey(current.currentSrc || current.src || "") === mediaKey(poster)) return true;
-    replaceMedia(tile, posterImage(tile, url, poster));
-    return true;
+    return probePosterThenReplace(tile, url, poster);
   }
 
   function watchVideoPreview(tile, video, url) {
@@ -246,14 +265,16 @@
     if (!isVideoUrl(url)) return;
     tile.dataset.flVideoCoverStrategy = "true";
 
-    if (applyPosterIfAvailable(tile, url)) return;
+    const posterReady = applyPosterIfAvailable(tile, url);
 
     const video = tile.querySelector("video");
     if (video) {
-      tile.dataset.flVideoCoverStage = "frame";
+      if (!posterReady) tile.dataset.flVideoCoverStage = "frame";
       watchVideoPreview(tile, video, url);
       return;
     }
+
+    if (posterReady) return;
 
     const placeholder = tile.querySelector(".xiv-video-placeholder");
     if (placeholder) replaceWithFallback(tile, url, "等待点击播放");
