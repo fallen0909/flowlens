@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 电脑油猴版
 // @namespace    local.flowlens.desktop
-// @version      1.5.5
-// @description  稳定版：沉浸式网页图片与视频瀑布流，收藏入口改为顶部图标。
+// @version      1.5.6
+// @description  稳定版：沉浸式网页图片与视频瀑布流，收藏入口改为顶部最左侧图标，并按 x.810114 个人主页头像和用户名收藏。
 // @match        *://*/*
 // @run-at       document-idle
 // @noframes
@@ -17,43 +17,32 @@
 // ==/UserScript==
 
 (() => {
-  if (window.__flowLensBookmarkTopbarFix155) return;
-  window.__flowLensBookmarkTopbarFix155 = true;
+  if (window.__flowLensBookmarkTopbarLeftFix156) return;
+  window.__flowLensBookmarkTopbarLeftFix156 = true;
 
   const KEY = "flowlens-page-bookmarks-v1";
   const LIMIT = 300;
+  const SAVE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4.5h12a1 1 0 0 1 1 1v15l-7-4-7 4v-15a1 1 0 0 1 1-1Z"/></svg>';
+  const LIST_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h11M8 12h11M8 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
+
+  function root() { return document.getElementById("xiv-root"); }
+  function actions() { return root()?.querySelector("#xiv-topbar .xiv-actions") || null; }
 
   function injectStyle() {
-    if (document.getElementById("flowlens-bookmark-topbar-fix-155")) return;
+    if (document.getElementById("flowlens-bookmark-topbar-left-fix-156")) return;
     const style = document.createElement("style");
-    style.id = "flowlens-bookmark-topbar-fix-155";
+    style.id = "flowlens-bookmark-topbar-left-fix-156";
     style.textContent = `
-      #xiv-root #xiv-page-bookmarks-controls {
-        top: max(8px, env(safe-area-inset-top, 0px) + 8px) !important;
-        right: max(106px, env(safe-area-inset-right, 0px) + 106px) !important;
-        display: flex !important;
-        flex-direction: row !important;
-        gap: 7px !important;
-        z-index: 2147483647 !important;
+      #xiv-root #xiv-page-bookmarks-controls { display: none !important; }
+      #xiv-root .fl-bookmarks-tools { display: none !important; }
+      #xiv-root .fl156-bookmark-btn span { display: none !important; }
+      #xiv-root .fl156-bookmark-btn svg { width: 21px !important; height: 21px !important; }
+      #xiv-root .fl156-bookmark-btn[data-saved="true"] {
+        color: #ffb648 !important;
+        border-color: rgba(255,190,80,.56) !important;
+        background: rgba(255,190,80,.22) !important;
       }
-      #xiv-root[data-lightbox-active="true"] #xiv-page-bookmarks-controls { display: none !important; }
-      #xiv-root #xiv-page-bookmarks-controls button {
-        width: 38px !important;
-        min-width: 38px !important;
-        height: 38px !important;
-        padding: 0 !important;
-        font-size: 0 !important;
-        display: grid !important;
-        place-items: center !important;
-      }
-      #xiv-root #xiv-page-bookmarks-controls button::before {
-        font-size: 20px !important;
-        line-height: 1 !important;
-        font-weight: 900 !important;
-      }
-      #xiv-root #xiv-page-bookmarks-controls [data-xiv="page-bookmark-toggle"]::before { content: "☆"; }
-      #xiv-root #xiv-page-bookmarks-controls [data-xiv="page-bookmark-toggle"][data-saved="true"]::before { content: "★"; color: #ffb648; }
-      #xiv-root #xiv-page-bookmarks-controls [data-xiv="page-bookmark-list"]::before { content: "☰"; }
+      #xiv-root .fl156-bookmark-btn[data-saved="true"] svg { fill: currentColor !important; }
     `;
     document.documentElement.appendChild(style);
   }
@@ -68,60 +57,113 @@
     }
   }
 
-  function isX810114Profile(url) {
+  function x810114SlugFromUrl(url) {
     try {
       const parsed = new URL(url, location.href);
       const parts = parsed.pathname.split("/").filter(Boolean);
-      return /^x\.810114\.xyz$/i.test(parsed.hostname) && parts.length === 1 && /^[A-Za-z0-9_]{2,64}$/.test(parts[0]);
+      if (!/^x\.810114\.xyz$/i.test(parsed.hostname)) return "";
+      if (parts.length !== 1) return "";
+      return /^[A-Za-z0-9_]{2,64}$/.test(parts[0]) ? parts[0] : "";
     } catch {
-      return false;
+      return "";
     }
   }
 
   function currentBookmarkUrl() {
+    const direct = normalizeUrl(location.href);
+    if (x810114SlugFromUrl(direct)) return direct;
     const candidates = [
-      location.href,
       document.querySelector('link[rel="canonical"]')?.href || "",
-      document.querySelector('meta[property="og:url"], meta[name="og:url"]')?.getAttribute?.("content") || ""
+      document.querySelector('meta[property="og:url"], meta[name="og:url"]')?.getAttribute?.("content") || "",
+      direct
     ].filter(Boolean).map(normalizeUrl);
-    return candidates.find(isX810114Profile) || candidates[0] || normalizeUrl();
+    return candidates.find((url) => x810114SlugFromUrl(url)) || candidates[0] || direct;
   }
 
-  function json(text, fallback) { try { return JSON.parse(text || "") || fallback; } catch { return fallback; } }
+  function safeJson(text, fallback) { try { return JSON.parse(text || "") || fallback; } catch { return fallback; } }
   async function readBookmarks() {
-    try { if (typeof GM_getValue === "function") return json(await Promise.resolve(GM_getValue(KEY, "[]")), []); } catch {}
-    try { return json(localStorage.getItem(KEY), []); } catch { return []; }
+    try { if (typeof GM_getValue === "function") return safeJson(await Promise.resolve(GM_getValue(KEY, "[]")), []); } catch {}
+    try { return safeJson(localStorage.getItem(KEY), []); } catch { return []; }
   }
   async function writeBookmarks(items) {
     const clean = items.slice(0, LIMIT);
     const text = JSON.stringify(clean);
-    let saved = false;
-    try { if (typeof GM_setValue === "function") { await Promise.resolve(GM_setValue(KEY, text)); saved = true; } } catch {}
-    if (!saved) { try { localStorage.setItem(KEY, text); } catch {} }
+    let gmSaved = false;
+    try { if (typeof GM_setValue === "function") { await Promise.resolve(GM_setValue(KEY, text)); gmSaved = true; } } catch {}
+    if (!gmSaved) { try { localStorage.setItem(KEY, text); } catch {} }
     window.dispatchEvent(new CustomEvent("flowlens:bookmarks-changed", { detail: { items: clean } }));
   }
   function hostOf(url) { try { return new URL(url, location.href).hostname; } catch { return ""; } }
   function status(text) { const node = document.getElementById("xiv-status"); if (node) node.textContent = text; }
-  function cover() {
-    const node = document.querySelector('meta[property="og:image"], meta[name="twitter:image"], #xiv-root .xiv-tile img[src], img[src]');
-    const raw = node?.getAttribute?.("content") || node?.getAttribute?.("src") || "";
+
+  function absoluteUrl(raw) {
     try { return raw ? new URL(raw, location.href).href : ""; } catch { return ""; }
   }
+
+  function findProfileElement(slug) {
+    if (!slug) return null;
+    const needle = `@${slug}`.toLowerCase();
+    const nodes = Array.from(document.querySelectorAll("body *"));
+    return nodes.find((el) => {
+      const text = (el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      return text.includes(needle) && text.length < 240;
+    }) || null;
+  }
+
+  function profileMeta(url) {
+    const slug = x810114SlugFromUrl(url);
+    const meta = { title: "", avatar: "" };
+    if (!slug) return meta;
+    const hit = findProfileElement(slug);
+    if (hit) {
+      const parts = (hit.textContent || "")
+        .split(/\n|\r|\t| {2,}/)
+        .map((part) => part.replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+      const atIndex = parts.findIndex((part) => part.toLowerCase().includes(`@${slug}`.toLowerCase()));
+      const title = atIndex > 0 ? parts[atIndex - 1] : parts.find((part) => !part.startsWith("@") && !part.includes("@"));
+      if (title) meta.title = title;
+      let box = hit;
+      for (let i = 0; i < 5 && box; i += 1, box = box.parentElement) {
+        const img = box.querySelector?.("img[src]");
+        const src = absoluteUrl(img?.getAttribute?.("src") || img?.currentSrc || "");
+        if (src) { meta.avatar = src; break; }
+      }
+    }
+    if (!meta.title) {
+      const title = (document.title || "").replace(/\s+/g, " ").trim();
+      meta.title = title && !/^x\.810114/i.test(title) ? title : slug;
+    }
+    if (!meta.avatar) {
+      const img = document.querySelector('meta[property="og:image"], meta[name="twitter:image"], img[src]');
+      meta.avatar = absoluteUrl(img?.getAttribute?.("content") || img?.getAttribute?.("src") || img?.currentSrc || "");
+    }
+    return meta;
+  }
+
+  function fallbackCover() {
+    const node = document.querySelector('meta[property="og:image"], meta[name="twitter:image"], #xiv-root .xiv-tile img[src], img[src]');
+    return absoluteUrl(node?.getAttribute?.("content") || node?.getAttribute?.("src") || node?.currentSrc || "");
+  }
+
   async function syncButton() {
-    const button = document.querySelector('#xiv-root #xiv-page-bookmarks-controls [data-xiv="page-bookmark-toggle"]');
+    const button = root()?.querySelector('[data-fl156="bookmark-toggle"]');
     if (!button) return;
     const url = currentBookmarkUrl();
     const saved = (await readBookmarks()).some((item) => normalizeUrl(item.url) === url);
     button.dataset.saved = saved ? "true" : "false";
     button.title = saved ? "已收藏本页" : "收藏本页";
+    button.setAttribute("aria-label", button.title);
   }
+
   async function toggleBookmark(event) {
-    const button = event.target?.closest?.('#xiv-root #xiv-page-bookmarks-controls [data-xiv="page-bookmark-toggle"]');
+    const button = event.target?.closest?.('[data-fl156="bookmark-toggle"]');
     if (!button) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
     const url = currentBookmarkUrl();
+    const meta = profileMeta(url);
     const list = await readBookmarks();
     const exists = list.some((item) => normalizeUrl(item.url) === url);
     if (exists) {
@@ -129,14 +171,52 @@
       status("已取消收藏当前页面");
     } else {
       const now = new Date().toISOString();
-      await writeBookmarks([{ url, title: (document.title || hostOf(url) || "未命名页面").replace(/\s+/g, " ").trim(), host: hostOf(url), cover: cover(), mediaCount: document.querySelectorAll("#xiv-root .xiv-tile").length || 0, createdAt: now, updatedAt: now }, ...list]);
+      await writeBookmarks([{ url, title: meta.title || hostOf(url) || url, host: hostOf(url), cover: meta.avatar || fallbackCover(), mediaCount: document.querySelectorAll("#xiv-root .xiv-tile").length || 0, createdAt: now, updatedAt: now }, ...list]);
       status("已收藏当前页面");
     }
     syncButton();
   }
 
-  injectStyle();
+  function showBookmarkList(event) {
+    const button = event.target?.closest?.('[data-fl156="bookmark-list"]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    window.dispatchEvent(new CustomEvent("flowlens:bookmark-list"));
+  }
+
+  function makeButton(type, icon, title) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "xiv-btn fl156-bookmark-btn";
+    button.dataset.fl156 = type;
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    button.innerHTML = `${icon}<span>${title}</span>`;
+    return button;
+  }
+
+  function ensureButtons() {
+    injectStyle();
+    const bar = actions();
+    if (!bar) return;
+    if (!bar.querySelector('[data-fl156="bookmark-toggle"]')) {
+      const toggle = makeButton("bookmark-toggle", SAVE_ICON, "收藏本页");
+      bar.insertBefore(toggle, bar.firstElementChild || null);
+    }
+    if (!bar.querySelector('[data-fl156="bookmark-list"]')) {
+      const list = makeButton("bookmark-list", LIST_ICON, "收藏列表");
+      const toggle = bar.querySelector('[data-fl156="bookmark-toggle"]');
+      if (toggle?.nextSibling) bar.insertBefore(list, toggle.nextSibling);
+      else bar.insertBefore(list, bar.firstElementChild || null);
+    }
+    syncButton();
+  }
+
   document.addEventListener("click", toggleBookmark, true);
-  setInterval(() => { injectStyle(); syncButton(); }, 1000);
-  window.addEventListener("flowlens:bookmarks-changed", syncButton);
+  document.addEventListener("click", showBookmarkList, true);
+  ensureButtons();
+  setInterval(ensureButtons, 800);
+  new MutationObserver(ensureButtons).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "class"] });
 })();
