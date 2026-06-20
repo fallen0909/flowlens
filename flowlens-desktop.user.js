@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 电脑油猴版
 // @namespace    local.flowlens.desktop
-// @version      1.5.1
+// @version      1.5.2
 // @description  完整单文件发布版：沉浸式网页图片与视频瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
@@ -18,7 +18,7 @@
 
 /* src/core/version.js */
 (() => {
-  const VERSION = "1.5.1";
+  const VERSION = "1.5.2";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
@@ -8292,6 +8292,28 @@
         background: rgba(255,190,80,.22) !important;
         color: #ffb648 !important;
       }
+      #xiv-root .fl-bookmarks-fab {
+        position: fixed !important;
+        top: max(70px, calc(env(safe-area-inset-top, 0px) + 58px)) !important;
+        right: max(12px, env(safe-area-inset-right, 0px) + 10px) !important;
+        z-index: 2147483647 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 7px !important;
+        height: 38px !important;
+        padding: 0 14px !important;
+        border: 0 !important;
+        border-radius: 999px !important;
+        background: rgba(22,24,30,.9) !important;
+        color: #fff !important;
+        box-shadow: 0 10px 28px rgba(0,0,0,.28) !important;
+        backdrop-filter: blur(14px) !important;
+        font: 900 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        cursor: pointer !important;
+      }
+      #xiv-root[data-theme="light"] .fl-bookmarks-fab { background: rgba(255,255,255,.92) !important; color: #16181e !important; }
+      #xiv-root .fl-bookmarks-fab[data-saved="true"] { color: #ffb648 !important; }
+      #xiv-root .fl-bookmarks-fab svg { width: 18px !important; height: 18px !important; }
       #xiv-root .fl-bookmarks-panel {
         position: fixed !important;
         right: max(18px, env(safe-area-inset-right, 0px) + 12px) !important;
@@ -8406,6 +8428,26 @@
     });
   }
 
+  function ensureFloatingButton() {
+    const r = root();
+    if (!r) return;
+    let button = r.querySelector(".fl-bookmarks-fab");
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "fl-bookmarks-fab";
+      button.innerHTML = `${buttonIcon()}<span>收藏页</span>`;
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await ensureLoaded();
+        togglePanel();
+      });
+      r.appendChild(button);
+    }
+    button.dataset.saved = currentBookmark() ? "true" : "false";
+  }
+
   function ensurePanel() {
     const r = root();
     if (!r) return null;
@@ -8470,9 +8512,13 @@
 
   function syncButtonState() {
     const btn = document.querySelector("#xiv-root .fl-bookmarks-btn");
-    if (!btn) return;
-    btn.dataset.saved = currentBookmark() ? "true" : "false";
-    btn.title = currentBookmark() ? "当前页面已收藏，点击打开收藏列表" : "页面收藏";
+    const saved = currentBookmark() ? "true" : "false";
+    if (btn) {
+      btn.dataset.saved = saved;
+      btn.title = currentBookmark() ? "当前页面已收藏，点击打开收藏列表" : "页面收藏";
+    }
+    const fab = document.querySelector("#xiv-root .fl-bookmarks-fab");
+    if (fab) fab.dataset.saved = saved;
   }
 
   function togglePanel(force) {
@@ -8486,6 +8532,7 @@
   async function apply() {
     injectStyle();
     ensureButton();
+    ensureFloatingButton();
     ensurePanel();
     await ensureLoaded();
     renderPanel();
