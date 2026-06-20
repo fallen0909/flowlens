@@ -2,10 +2,21 @@
   if (window.__flowLensDiagnosticsPatch) return;
   window.__flowLensDiagnosticsPatch = true;
 
-  const VERSION = "1.4.36";
   const MAX_EVENTS = 80;
   const failedMedia = [];
   const runtimeEvents = [];
+
+  function versionInfo() {
+    try {
+      const info = typeof window.__flowLensGetVersion === "function"
+        ? window.__flowLensGetVersion()
+        : window.__FlowLensVersion;
+      if (info && typeof info === "object") return info;
+    } catch {
+      // Fall through to legacy globals.
+    }
+    return { version: window.__FLOWLENS_VERSION__ || "unknown", source: "diagnostics-fallback" };
+  }
 
   function push(list, item) {
     list.push({ time: new Date().toISOString(), ...item });
@@ -41,7 +52,7 @@
   function filterSelect() { return root()?.querySelector('#xiv-topbar .xiv-select[data-xiv="filter"]'); }
   function mediaKind(tile) {
     const url = tile?.dataset?.url || "";
-    if (/\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(url) || tile?.querySelector?.("video")) return "video";
+    if (/\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(url) || tile?.querySelector?.("video, .fl-video-cover-fallback")) return "video";
     return "image";
   }
   function tileSnapshot() {
@@ -49,9 +60,13 @@
     let images = 0;
     let videos = 0;
     let hidden = 0;
+    let posterCovers = 0;
+    let fallbackCovers = 0;
     for (const tile of tiles) {
       if (mediaKind(tile) === "video") videos += 1;
       else images += 1;
+      if (tile.dataset.flVideoCoverStage === "poster") posterCovers += 1;
+      if (tile.dataset.flVideoCoverFallback === "true") fallbackCovers += 1;
       const style = getComputedStyle(tile);
       if (style.display === "none" || style.visibility === "hidden" || tile.hidden) hidden += 1;
     }
@@ -60,10 +75,15 @@
       images,
       videos,
       hidden,
+      videoCover: {
+        posterCovers,
+        fallbackCovers
+      },
       samples: tiles.slice(0, 12).map((tile) => ({
         index: tile.dataset.index || "",
         kind: mediaKind(tile),
         url: tile.dataset.url || "",
+        videoCoverStage: tile.dataset.flVideoCoverStage || "",
         visible: getComputedStyle(tile).display !== "none" && !tile.hidden
       }))
     };
@@ -78,8 +98,10 @@
   function buildLog() {
     const app = root();
     const box = app?.querySelector("#xiv-lightbox");
+    const info = versionInfo();
     return JSON.stringify({
-      version: VERSION,
+      version: info.version || "unknown",
+      versionInfo: info,
       generatedAt: new Date().toISOString(),
       page: {
         url: location.href,
