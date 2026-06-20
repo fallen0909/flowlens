@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 版本中心
 // @namespace    local.flowlens.version
-// @version      1.4.44
+// @version      1.4.45
 // @description  FlowLens 统一运行时版本中心，供入口脚本、补丁和诊断日志读取同一份版本信息。
 // @match        *://*/*
 // @run-at       document-start
@@ -10,12 +10,15 @@
 // ==/UserScript==
 
 (() => {
-  const VERSION = "1.4.44";
+  const VERSION = "1.4.45";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
     "unified-version-center",
-    "video-cover-strategy"
+    "version-display-sync",
+    "video-cover-strategy",
+    "video-preview-card",
+    "page-bookmarks"
   ];
 
   const previous = window.__FlowLensVersion && typeof window.__FlowLensVersion === "object"
