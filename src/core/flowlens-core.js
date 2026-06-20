@@ -156,7 +156,8 @@
     collectionBase: "",
     x810114ApiMode: false,
     galleryQueue: [],
-    galleryQueueIndex: -1
+    galleryQueueIndex: -1,
+    galleryQueueCurrentUrl: ""
   };
 
   function systemTheme() {
@@ -630,6 +631,19 @@
     return "flowlens-gallery-queue-auto-open";
   }
 
+  function activeGalleryQueueUrl() {
+    return normalizedPageUrl(state.galleryQueueCurrentUrl || location.href);
+  }
+
+  function isSelfieGalleryQueueUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return parsed.origin === location.origin && /\/content_\d+\.html$/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  }
+
   function isQueueCandidateUrl(url) {
     try {
       const parsed = new URL(url, location.href);
@@ -800,7 +814,7 @@
   function refreshGalleryQueue(doc = document, base = location.href) {
     const stored = readStoredGalleryQueue();
     const discovered = collectGalleryQueueFromDocument(doc, base);
-    const current = normalizedPageUrl(location.href);
+    const current = activeGalleryQueueUrl();
     const merged = [];
     const seen = new Set();
 
@@ -823,8 +837,9 @@
   }
 
   function rebuildGalleryQueueFromVisiblePage() {
-    const current = normalizedPageUrl(location.href);
-    const discovered = collectGalleryQueueFromDocument(document, location.href);
+    const current = activeGalleryQueueUrl();
+    const visibleBase = state.collectionBase || location.href;
+    const discovered = collectGalleryQueueFromDocument(document, visibleBase);
     const stored = readStoredGalleryQueue();
     const merged = [];
     const seen = new Set();
@@ -885,11 +900,11 @@
     const queue = state.galleryQueue;
     if (queue.length < 2) return "";
     let index = state.galleryQueueIndex;
-    if (index < 0) index = queue.findIndex((url) => samePageUrl(url, location.href));
+    if (index < 0) index = queue.findIndex((url) => samePageUrl(url, activeGalleryQueueUrl()));
     if (index < 0) index = 0;
     const next = (index + delta + queue.length) % queue.length;
     const url = queue[next];
-    return samePageUrl(url, location.href) ? "" : url;
+    return samePageUrl(url, activeGalleryQueueUrl()) ? "" : url;
   }
 
   function syncGalleryQueueButtons() {
@@ -916,43 +931,56 @@
       return false;
     }
 
+    const virtualSelfieNavigation = isSelfieGalleryQueueUrl(targetUrl);
+    const previousQueueUrl = state.galleryQueueCurrentUrl;
     updateStatus("正在加载下一组");
     saveViewerPosition();
     closeLightbox(false);
     stopGenericObserver();
     resetCollection();
-    try {
-      history.pushState({ flowlensGalleryQueue: true }, "", targetUrl);
-    } catch {
-      return false;
+    if (virtualSelfieNavigation) {
+      // Android Chromium exits Fullscreen when 自拍图库 changes history. Keep the
+      // browser URL stable and switch the collected document in place instead.
+      state.galleryQueueCurrentUrl = targetUrl;
+    } else {
+      try {
+        history.pushState({ flowlensGalleryQueue: true }, "", targetUrl);
+      } catch {
+        return false;
+      }
+      state.galleryQueueCurrentUrl = targetUrl;
     }
     state.active = true;
     state.root.dataset.active = "true";
     state.root.dataset.theme = state.theme;
     document.documentElement.classList.add("xiv-active");
     state.suppressLightboxUntil = Date.now() + 600;
-    state.fetchedPages.add(location.href);
-    state.pageUrls.add(location.href);
+    state.fetchedPages.add(targetUrl);
+    state.pageUrls.add(targetUrl);
 
     if (isGenericX810114Page()) {
       await prepareGenericX810114Page();
       if (!state.x810114ApiMode) startGenericObserver();
     } else {
-      const response = await fetch(targetUrl, { credentials: "include" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const html = await response.text();
+      let html = "";
+      try {
+        html = await fetchHtml(targetUrl, previousQueueUrl || location.href);
+      } catch (error) {
+        if (virtualSelfieNavigation) state.galleryQueueCurrentUrl = previousQueueUrl;
+        throw error;
+      }
       const doc = new DOMParser().parseFromString(html, "text/html");
       doc.documentElement.dataset.xivBase = targetUrl;
       collectFromDocument(doc, targetUrl);
       if (isPhotoGalleryPage()) {
         discoverNearbyPages();
         fetchRemainingPages(galleryFetchLimit());
-      } else if (!isPornpicsGalleryPage(targetUrl)) {
+      } else if (!virtualSelfieNavigation && !isPornpicsGalleryPage(targetUrl)) {
         startGenericObserver();
       }
     }
 
-    refreshGalleryQueue(document, location.href);
+    refreshGalleryQueue(document, targetUrl);
     renderImages();
     applyMediaFilter();
     updateCounter();
@@ -4287,6 +4315,7 @@
     }
 
     resetCollection();
+    state.galleryQueueCurrentUrl = normalizedPageUrl(location.href);
     startViewerPositionRestore();
     closeHostPhotoViewer();
     state.active = true;
@@ -4341,6 +4370,7 @@
     stopGenericObserver();
     stopHostOverlayGuard();
     state.active = false;
+    state.galleryQueueCurrentUrl = "";
     document.documentElement.classList.remove("xiv-active");
     state.root.dataset.active = "false";
     document.documentElement.style.overflow = "";
