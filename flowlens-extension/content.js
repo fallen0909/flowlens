@@ -996,17 +996,14 @@
 
   async function loadSelfieGalleryQueueTargetInPlace(targetUrl) {
     const previousQueueUrl = state.galleryQueueCurrentUrl || location.href;
-    let html = "";
+    let doc = null;
     try {
-      // Fetch before clearing the active stream. Failed requests therefore leave
-      // the current gallery and Android Fullscreen state completely untouched.
-      html = await fetchHtml(targetUrl, previousQueueUrl);
+      doc = await fetchSelfieGalleryDocument(targetUrl, previousQueueUrl);
     } catch {
       updateStatus("下一组加载失败，已保留当前全屏");
       return false;
     }
 
-    const doc = new DOMParser().parseFromString(html, "text/html");
     doc.documentElement.dataset.xivBase = targetUrl;
     updateStatus("正在切换下一组");
     saveViewerPosition();
@@ -1043,6 +1040,58 @@
     updateStatus(`已切换到${state.galleryQueueIndex >= 0 ? `第 ${state.galleryQueueIndex + 1} 组` : "新套图"}`);
     if (state.stage) state.stage.scrollTo({ top: 0, behavior: "auto" });
     return true;
+  }
+
+  function isSelfieGalleryDocument(doc) {
+    const text = (doc?.body?.innerText || doc?.body?.textContent || "").replace(/\s+/g, " ");
+    const images = doc?.querySelectorAll?.("#imgviewer img, .imgviewer img, img")?.length || 0;
+    return images > 0 && /(?:上一组|下一组)/.test(text);
+  }
+
+  async function fetchSelfieGalleryDocument(targetUrl, referrer) {
+    // Some 自拍图库 routes return the home page to fetch/XHR. Prefer it when it
+    // is a genuine detail document, then retry as a same-origin frame so the
+    // request has browser-navigation semantics without changing the top page.
+    try {
+      const html = await fetchHtml(targetUrl, referrer);
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      if (isSelfieGalleryDocument(doc)) return doc;
+    } catch {
+      // The frame attempt below is the navigation-context fallback.
+    }
+
+    return new Promise((resolve, reject) => {
+      const frame = document.createElement("iframe");
+      const timeout = window.setTimeout(() => finish(new Error("selfie gallery frame timeout")), 18000);
+      let settled = false;
+      function finish(error, doc = null) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        frame.remove();
+        if (error) reject(error);
+        else resolve(doc);
+      }
+      frame.setAttribute("aria-hidden", "true");
+      frame.tabIndex = -1;
+      frame.style.cssText = "position:fixed!important;width:1px!important;height:1px!important;left:-9999px!important;top:-9999px!important;opacity:0!important;pointer-events:none!important;border:0!important;";
+      frame.addEventListener("load", () => {
+        try {
+          const frameDoc = frame.contentDocument;
+          if (!isSelfieGalleryDocument(frameDoc)) {
+            finish(new Error("selfie gallery frame returned a non-detail page"));
+            return;
+          }
+          const copy = new DOMParser().parseFromString(frameDoc.documentElement.outerHTML, "text/html");
+          finish(null, copy);
+        } catch (error) {
+          finish(error);
+        }
+      }, { once: true });
+      frame.addEventListener("error", () => finish(new Error("selfie gallery frame failed")), { once: true });
+      frame.src = targetUrl;
+      document.documentElement.appendChild(frame);
+    });
   }
 
   async function navigateGalleryQueue(delta) {
