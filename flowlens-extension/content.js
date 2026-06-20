@@ -374,9 +374,10 @@
     }
     .xiv-pill {
       pointer-events: auto; display: inline-flex; align-items: center; gap: 8px;
-      min-height: 36px; border-radius: 999px; padding: 0 12px;
-      background: rgba(18,18,20,.76); color: #fff; border: 1px solid rgba(255,255,255,.16);
-      backdrop-filter: blur(12px); font-size: 13px; white-space: nowrap;
+      min-height: 36px; border-radius: 0; padding: 0 4px;
+      background: transparent; color: #fff; border: 0;
+      backdrop-filter: none; font-size: 13px; white-space: nowrap;
+      text-shadow: 0 1px 2px rgba(0,0,0,.72), 0 0 10px rgba(0,0,0,.46);
     }
     .xiv-actions {
       display: flex; gap: 8px; align-items: center; pointer-events: auto;
@@ -395,7 +396,9 @@
     .xiv-btn svg { width: 18px; height: 18px; }
     .xiv-btn span { display: none; }
     .xiv-btn-icon { min-width: 38px; width: 38px; padding: 0; }
-    #xiv-root[data-theme="light"] .xiv-pill,
+    #xiv-root[data-theme="light"] .xiv-pill {
+      background: transparent; color: #fff; border-color: transparent;
+    }
     #xiv-root[data-theme="light"] .xiv-btn {
       background: rgba(255,255,255,.78); color: #151515; border-color: rgba(0,0,0,.12);
     }
@@ -632,6 +635,15 @@
       const parsed = new URL(url, location.href);
       const host = parsed.hostname;
       const path = parsed.pathname;
+      const current = new URL(location.href);
+      // 自拍图库 uses opaque internationalized hostnames, but its gallery pages
+      // consistently use this path shape. Keep the rule same-origin so generic
+      // article pages cannot pollute a gallery queue.
+      if (parsed.origin === current.origin
+        && /\/content_\d+\.html$/i.test(current.pathname)
+        && /\/content_\d+\.html$/i.test(path)) {
+        return true;
+      }
       if (/^www\.pornpics\.com$/i.test(host) || /(^|\.)pornpics\.com$/i.test(host)) {
         return /\/(?:[a-z]{2}\/)?galleries\/[^/]+-\d+\/?$/i.test(path);
       }
@@ -665,29 +677,90 @@
     }
 
     doc.querySelectorAll("a[href]").forEach((link) => remember(link.getAttribute("href")));
+    collectGalleryQueueUrlsFromHtml(doc, base).forEach(remember);
     if (/^https?:\/\/x\.810114\.xyz(?:\/|$)/i.test(base)) {
       collectX810114ProfileQueueFromText(doc).forEach(remember);
     }
     return queue;
   }
 
+  function collectGalleryQueueUrlsFromHtml(doc = document, base = location.href) {
+    const found = [];
+    const seen = new Set();
+    const html = doc.documentElement?.innerHTML || "";
+    if (!html) return found;
+
+    function remember(raw) {
+      const url = normalizedPageUrl(absoluteUrl(raw, base));
+      if (!url || !isQueueCandidateUrl(url)) return;
+      const key = url.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      found.push(url);
+    }
+
+    for (const match of html.matchAll(/https?:\/\/(?:www\.)?pornpics\.com\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
+    for (const match of html.matchAll(/["'](\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?)["']/gi)) remember(match[1]);
+    for (const match of html.matchAll(/https?:\/\/(?:www\.)?xchina\.co\/(?:photo\/id-[A-Za-z0-9_-]+\.html|photos\/series-[A-Za-z0-9_-]+\/\d+\.html)/gi)) remember(match[0]);
+    for (const match of html.matchAll(/["'](\/(?:photo\/id-[A-Za-z0-9_-]+\.html|photos\/series-[A-Za-z0-9_-]+\/\d+\.html))["']/gi)) remember(match[1]);
+    for (const match of html.matchAll(/https?:\/\/(?:www\.)?buondua\.com\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
+    for (const match of html.matchAll(/https?:\/\/x\.810114\.xyz\/([A-Za-z0-9_]{2,64})(?:[/?#"'<>\\\s]|$)/g)) remember(`https://x.810114.xyz/${match[1]}`);
+    if (/\/content_\d+\.html$/i.test(new URL(base, location.href).pathname)) {
+      for (const match of html.matchAll(/(?:https?:\/\/[^"'<>\\\s]+)?\/?content_\d+\.html(?:[?#][^"'<>\\\s]*)?/gi)) remember(match[0]);
+    }
+    return found;
+  }
+
   function collectX810114ProfileQueueFromText(doc = document) {
     const found = [];
     const seen = new Set();
+    const banned = /^(static|manifest|favicon|photo|api|tag|search|assets|img|images|css|js)$/i;
+    function add(name) {
+      if (!name || !/^[A-Za-z0-9_]{2,64}$/.test(name) || banned.test(name)) return;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      found.push(`https://x.810114.xyz/${name}`);
+    }
     function scan(text) {
-      const matches = text.matchAll(/@\s*([A-Za-z0-9_]{2,64})/g);
+      const matches = String(text || "").matchAll(/@\s*([A-Za-z0-9_]{2,64})/g);
       for (const match of matches) {
-        const name = match[1];
-        const key = name.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        found.push(`https://x.810114.xyz/${name}`);
+        add(match[1]);
       }
     }
 
-    const walker = doc.createTreeWalker(doc.body || doc.documentElement, NodeFilter.SHOW_TEXT);
-    let node = null;
-    while ((node = walker.nextNode())) scan(String(node.nodeValue || ""));
+    function scanRoot(root) {
+      if (!root) return;
+      try {
+        const filter = doc.defaultView?.NodeFilter || window.NodeFilter;
+        const walker = doc.createTreeWalker(root, filter.SHOW_TEXT);
+        let node = null;
+        while ((node = walker.nextNode())) scan(node.nodeValue);
+      } catch {
+        scan(root.textContent || "");
+      }
+      root.querySelectorAll?.("[title], [aria-label], [data-username], [data-user], [data-name], [href]").forEach((el) => {
+        scan([
+          el.getAttribute("title"),
+          el.getAttribute("aria-label"),
+          el.getAttribute("data-username"),
+          el.getAttribute("data-user"),
+          el.getAttribute("data-name"),
+          el.getAttribute("href"),
+          el.textContent
+        ].filter(Boolean).join(" "));
+      });
+      root.querySelectorAll?.("*").forEach((el) => {
+        if (el.shadowRoot) scanRoot(el.shadowRoot);
+        if (el.tagName === "IFRAME") {
+          try { scanRoot(el.contentDocument); } catch { /* Cross-origin frames are inaccessible. */ }
+        }
+      });
+    }
+
+    scanRoot(doc.body || doc.documentElement);
+    scan(doc.body?.innerText || "");
+    scan(doc.body?.textContent || "");
 
     doc.querySelectorAll("[title], [aria-label], [data-username], [data-user], [data-name]").forEach((el) => {
       scan([
@@ -701,11 +774,7 @@
     const html = doc.documentElement?.innerHTML || "";
     for (const match of html.matchAll(/https?:\/\/x\.810114\.xyz\/([A-Za-z0-9_]{2,64})(?:[/?#"'<>\\\s]|$)|["']\/([A-Za-z0-9_]{2,64})(?:[/?#"'<>\\\s]|$)/g)) {
       const name = match[1] || match[2] || "";
-      if (!name || /^(static|manifest|favicon|photo|api|tag|search)$/i.test(name)) continue;
-      const key = name.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      found.push(`https://x.810114.xyz/${name}`);
+      add(name);
     }
     return found;
   }
@@ -753,6 +822,40 @@
     syncGalleryQueueButtons();
   }
 
+  function rebuildGalleryQueueFromVisiblePage() {
+    const current = normalizedPageUrl(location.href);
+    const discovered = collectGalleryQueueFromDocument(document, location.href);
+    const stored = readStoredGalleryQueue();
+    const merged = [];
+    const seen = new Set();
+
+    function remember(url) {
+      const clean = normalizedPageUrl(url);
+      if (!clean || !isQueueCandidateUrl(clean)) return;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(clean);
+    }
+
+    discovered.forEach(remember);
+    stored.forEach(remember);
+    if (isQueueCandidateUrl(current)) remember(current);
+    if (merged.length < 2) {
+      // x.810114 renders the recommendation rail lazily. A second pass after
+      // layout catches cards that appeared between the original refresh and tap.
+      if (isGenericX810114Page()) {
+        window.setTimeout(() => refreshGalleryQueue(), 120);
+      }
+      return false;
+    }
+    state.galleryQueue = merged;
+    state.galleryQueueIndex = merged.findIndex((url) => samePageUrl(url, current));
+    writeStoredGalleryQueue(merged);
+    syncGalleryQueueButtons();
+    return true;
+  }
+
   function scheduleGalleryQueueRefresh() {
     clearTimeout(state.galleryQueueRefreshTimer);
     state.galleryQueueRefreshTimer = window.setTimeout(() => refreshGalleryQueue(), 180);
@@ -778,6 +881,7 @@
 
   function galleryQueueTarget(delta) {
     if (!state.galleryQueue.length) refreshGalleryQueue();
+    if (state.galleryQueue.length < 2) rebuildGalleryQueueFromVisiblePage();
     const queue = state.galleryQueue;
     if (queue.length < 2) return "";
     let index = state.galleryQueueIndex;
@@ -859,6 +963,7 @@
 
   async function navigateGalleryQueue(delta) {
     refreshGalleryQueue();
+    rebuildGalleryQueueFromVisiblePage();
     const target = galleryQueueTarget(delta);
     if (!target) {
       updateStatus("没有可切换的套图");
