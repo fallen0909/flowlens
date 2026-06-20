@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 电脑油猴版
 // @namespace    local.flowlens.desktop
-// @version      1.5.3
+// @version      1.5.4
 // @description  完整单文件发布版：沉浸式网页图片与视频瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
@@ -18,7 +18,7 @@
 
 /* src/core/version.js */
 (() => {
-  const VERSION = "1.5.3";
+  const VERSION = "1.5.4";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
@@ -551,6 +551,17 @@
     #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="top"] {
       display: none;
     }
+    #xiv-page-bookmarks-controls {
+      position: fixed; top: 66px; right: 14px; z-index: 2147483647;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: auto;
+    }
+    #xiv-page-bookmarks-controls button {
+      height: 38px; padding: 0 14px; border: 0; border-radius: 999px;
+      background: rgba(18,18,20,.9); color: #fff; box-shadow: 0 10px 28px rgba(0,0,0,.28);
+      backdrop-filter: blur(14px); font: 900 13px/1 system-ui, sans-serif; cursor: pointer;
+    }
+    #xiv-root[data-theme="light"] #xiv-page-bookmarks-controls button { background: rgba(255,255,255,.92); color: #16181e; }
+    #xiv-root[data-lightbox-active="true"] #xiv-page-bookmarks-controls { display: none !important; }
     #xiv-root[data-theme="light"] .xiv-select {
       background: rgba(255,255,255,.78); color: #151515; border-color: rgba(0,0,0,.12);
     }
@@ -3582,6 +3593,10 @@
           <button class="xiv-btn" type="button" data-xiv="settings" title="设置">${icons.settings}<span>设置</span></button>
           <button class="xiv-btn xiv-btn-icon" type="button" data-xiv="close" title="关闭">${icons.close}</button>
         </div>
+      </div>
+      <div id="xiv-page-bookmarks-controls" aria-label="页面收藏">
+        <button type="button" data-xiv="page-bookmark-toggle">收藏本页</button>
+        <button type="button" data-xiv="page-bookmark-list">收藏列表</button>
       </div>
       <div class="xiv-panel" data-panel="settings">
         <h3>瀑光设置</h3>
@@ -8291,7 +8306,7 @@
         background: rgba(255,190,80,.22) !important;
         color: #ffb648 !important;
       }
-      #xiv-root .fl-bookmarks-fab-group {
+      #xiv-page-bookmarks-controls {
         position: fixed !important;
         top: max(70px, calc(env(safe-area-inset-top, 0px) + 58px)) !important;
         right: max(12px, env(safe-area-inset-right, 0px) + 10px) !important;
@@ -8301,7 +8316,7 @@
         align-items: stretch !important;
         gap: 8px !important;
       }
-      #xiv-root[data-lightbox-active="true"] .fl-bookmarks-fab-group {
+      #xiv-root[data-lightbox-active="true"] #xiv-page-bookmarks-controls {
         display: none !important;
       }
       #xiv-root .fl-bookmarks-fab,
@@ -8442,31 +8457,34 @@
   function ensureFloatingButton() {
     const r = root();
     if (!r) return;
-    let group = r.querySelector(".fl-bookmarks-fab-group");
-    if (!group) {
-      group = document.createElement("div");
-      group.className = "fl-bookmarks-fab-group";
-      group.innerHTML = `
-        <button type="button" class="fl-bookmarks-fab">${buttonIcon()}<span>收藏本页</span></button>
-        <button type="button" class="fl-bookmarks-list-fab">☰<span>收藏列表</span></button>`;
-      group.querySelector(".fl-bookmarks-fab").addEventListener("click", async (event) => {
+    const group = r.querySelector("#xiv-page-bookmarks-controls");
+    if (!group) return;
+    let button = group.querySelector('[data-xiv="page-bookmark-toggle"]');
+    let listButton = group.querySelector('[data-xiv="page-bookmark-list"]');
+    if (!button || !listButton) return;
+    button.classList.add("fl-bookmarks-fab");
+    listButton.classList.add("fl-bookmarks-list-fab");
+    if (button.dataset.flBookmarksBound !== "true") {
+      button.dataset.flBookmarksBound = "true";
+      button.addEventListener("click", async (event) => {
         event.preventDefault();
         event.stopPropagation();
         await ensureLoaded();
         await toggleCurrentBookmark();
       });
-      group.querySelector(".fl-bookmarks-list-fab").addEventListener("click", async (event) => {
+    }
+    if (listButton.dataset.flBookmarksBound !== "true") {
+      listButton.dataset.flBookmarksBound = "true";
+      listButton.addEventListener("click", async (event) => {
         event.preventDefault();
         event.stopPropagation();
         await ensureLoaded();
         togglePanel();
       });
-      r.appendChild(group);
     }
-    const button = group.querySelector(".fl-bookmarks-fab");
     const saved = !!currentBookmark();
     button.dataset.saved = saved ? "true" : "false";
-    button.querySelector("span").textContent = saved ? "已收藏本页" : "收藏本页";
+    button.textContent = saved ? "已收藏本页" : "收藏本页";
   }
 
   function ensurePanel() {
@@ -8541,7 +8559,7 @@
     const fab = document.querySelector("#xiv-root .fl-bookmarks-fab");
     if (fab) {
       fab.dataset.saved = saved;
-      fab.querySelector("span").textContent = saved === "true" ? "已收藏本页" : "收藏本页";
+      fab.textContent = saved === "true" ? "已收藏本页" : "收藏本页";
     }
   }
 

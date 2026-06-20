@@ -438,6 +438,17 @@
     #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="top"] {
       display: none;
     }
+    #xiv-page-bookmarks-controls {
+      position: fixed; top: 66px; right: 14px; z-index: 2147483647;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: auto;
+    }
+    #xiv-page-bookmarks-controls button {
+      height: 38px; padding: 0 14px; border: 0; border-radius: 999px;
+      background: rgba(18,18,20,.9); color: #fff; box-shadow: 0 10px 28px rgba(0,0,0,.28);
+      backdrop-filter: blur(14px); font: 900 13px/1 system-ui, sans-serif; cursor: pointer;
+    }
+    #xiv-root[data-theme="light"] #xiv-page-bookmarks-controls button { background: rgba(255,255,255,.92); color: #16181e; }
+    #xiv-root[data-lightbox-active="true"] #xiv-page-bookmarks-controls { display: none !important; }
     #xiv-root[data-theme="light"] .xiv-select {
       background: rgba(255,255,255,.78); color: #151515; border-color: rgba(0,0,0,.12);
     }
@@ -3469,6 +3480,10 @@
           <button class="xiv-btn" type="button" data-xiv="settings" title="设置">${icons.settings}<span>设置</span></button>
           <button class="xiv-btn xiv-btn-icon" type="button" data-xiv="close" title="关闭">${icons.close}</button>
         </div>
+      </div>
+      <div id="xiv-page-bookmarks-controls" aria-label="页面收藏">
+        <button type="button" data-xiv="page-bookmark-toggle">收藏本页</button>
+        <button type="button" data-xiv="page-bookmark-list">收藏列表</button>
       </div>
       <div class="xiv-panel" data-panel="settings">
         <h3>瀑光设置</h3>
