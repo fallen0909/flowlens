@@ -24,8 +24,6 @@ const shared = [
   "src/patches/topfix.js",
   "src/patches/media-sync.js",
   "src/patches/slideshow-native.js",
-  "src/patches/video-cover-strategy.js",
-  "src/patches/video-preview-card.js",
   "src/patches/page-bookmarks.js",
   "src/patches/version-display.js",
   "src/patches/diagnostics-log.js"

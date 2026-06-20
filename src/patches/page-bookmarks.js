@@ -9,7 +9,7 @@
   let timer = 0;
 
   function root() { return document.getElementById("xiv-root"); }
-  function topbarActions() { return document.querySelector("#xiv-root #xiv-topbar .xiv-actions"); }
+  function topbarActions() { return root()?.querySelector("#xiv-topbar .xiv-actions") || null; }
   function status(text) {
     const node = document.getElementById("xiv-status");
     if (node) node.textContent = text;
@@ -303,21 +303,28 @@
 
   function ensureButton() {
     const actions = topbarActions();
-    if (!actions || actions.querySelector(".fl-bookmarks-btn")) return;
-    const btn = document.createElement("button");
-    btn.className = "xiv-btn fl-bookmarks-btn";
-    btn.type = "button";
-    btn.title = "页面收藏";
-    btn.innerHTML = `${buttonIcon()}<span>收藏页</span>`;
+    if (!actions) return;
+    let btn = actions.querySelector('[data-xiv="bookmarks"]');
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.className = "xiv-btn fl-bookmarks-btn";
+      btn.type = "button";
+      btn.dataset.xiv = "bookmarks";
+      btn.title = "页面收藏";
+      btn.innerHTML = `${buttonIcon()}<span>收藏页</span>`;
+      const settings = actions.querySelector('[data-xiv="settings"]');
+      if (settings) settings.before(btn);
+      else actions.appendChild(btn);
+    }
+    btn.classList.add("fl-bookmarks-btn");
+    if (btn.dataset.flBookmarksBound === "true") return;
+    btn.dataset.flBookmarksBound = "true";
     btn.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
       await ensureLoaded();
       togglePanel();
     });
-    const settings = actions.querySelector('[data-xiv="settings"]');
-    if (settings) settings.before(btn);
-    else actions.appendChild(btn);
   }
 
   function ensurePanel() {
