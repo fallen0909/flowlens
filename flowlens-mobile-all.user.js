@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.5.2
+// @version      1.5.3
 // @description  完整单文件发布版：沉浸式网页图片与视频瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
@@ -18,7 +18,7 @@
 
 /* src/core/version.js */
 (() => {
-  const VERSION = "1.5.2";
+  const VERSION = "1.5.3";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
@@ -3579,7 +3579,6 @@
           <button class="xiv-btn" type="button" data-xiv="faster" title="加快自动滚动">${icons.fast}<span>加速</span></button>
           <button class="xiv-btn" type="button" data-xiv="top" title="回到顶部">${icons.top}<span>顶部</span></button>
           <button class="xiv-btn" type="button" data-xiv="diag" title="诊断">${icons.info}<span>诊断</span></button>
-          <button class="xiv-btn fl-bookmarks-btn" type="button" data-xiv="bookmarks" title="页面收藏">${icons.heart}<span>收藏页</span></button>
           <button class="xiv-btn" type="button" data-xiv="settings" title="设置">${icons.settings}<span>设置</span></button>
           <button class="xiv-btn xiv-btn-icon" type="button" data-xiv="close" title="关闭">${icons.close}</button>
         </div>
@@ -8292,11 +8291,21 @@
         background: rgba(255,190,80,.22) !important;
         color: #ffb648 !important;
       }
-      #xiv-root .fl-bookmarks-fab {
+      #xiv-root .fl-bookmarks-fab-group {
         position: fixed !important;
         top: max(70px, calc(env(safe-area-inset-top, 0px) + 58px)) !important;
         right: max(12px, env(safe-area-inset-right, 0px) + 10px) !important;
         z-index: 2147483647 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 8px !important;
+      }
+      #xiv-root[data-lightbox-active="true"] .fl-bookmarks-fab-group {
+        display: none !important;
+      }
+      #xiv-root .fl-bookmarks-fab,
+      #xiv-root .fl-bookmarks-list-fab {
         display: inline-flex !important;
         align-items: center !important;
         gap: 7px !important;
@@ -8311,9 +8320,11 @@
         font: 900 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
         cursor: pointer !important;
       }
-      #xiv-root[data-theme="light"] .fl-bookmarks-fab { background: rgba(255,255,255,.92) !important; color: #16181e !important; }
+      #xiv-root[data-theme="light"] .fl-bookmarks-fab,
+      #xiv-root[data-theme="light"] .fl-bookmarks-list-fab { background: rgba(255,255,255,.92) !important; color: #16181e !important; }
       #xiv-root .fl-bookmarks-fab[data-saved="true"] { color: #ffb648 !important; }
-      #xiv-root .fl-bookmarks-fab svg { width: 18px !important; height: 18px !important; }
+      #xiv-root .fl-bookmarks-fab svg,
+      #xiv-root .fl-bookmarks-list-fab svg { width: 18px !important; height: 18px !important; }
       #xiv-root .fl-bookmarks-panel {
         position: fixed !important;
         right: max(18px, env(safe-area-inset-right, 0px) + 12px) !important;
@@ -8431,21 +8442,31 @@
   function ensureFloatingButton() {
     const r = root();
     if (!r) return;
-    let button = r.querySelector(".fl-bookmarks-fab");
-    if (!button) {
-      button = document.createElement("button");
-      button.type = "button";
-      button.className = "fl-bookmarks-fab";
-      button.innerHTML = `${buttonIcon()}<span>收藏页</span>`;
-      button.addEventListener("click", async (event) => {
+    let group = r.querySelector(".fl-bookmarks-fab-group");
+    if (!group) {
+      group = document.createElement("div");
+      group.className = "fl-bookmarks-fab-group";
+      group.innerHTML = `
+        <button type="button" class="fl-bookmarks-fab">${buttonIcon()}<span>收藏本页</span></button>
+        <button type="button" class="fl-bookmarks-list-fab">☰<span>收藏列表</span></button>`;
+      group.querySelector(".fl-bookmarks-fab").addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await ensureLoaded();
+        await toggleCurrentBookmark();
+      });
+      group.querySelector(".fl-bookmarks-list-fab").addEventListener("click", async (event) => {
         event.preventDefault();
         event.stopPropagation();
         await ensureLoaded();
         togglePanel();
       });
-      r.appendChild(button);
+      r.appendChild(group);
     }
-    button.dataset.saved = currentBookmark() ? "true" : "false";
+    const button = group.querySelector(".fl-bookmarks-fab");
+    const saved = !!currentBookmark();
+    button.dataset.saved = saved ? "true" : "false";
+    button.querySelector("span").textContent = saved ? "已收藏本页" : "收藏本页";
   }
 
   function ensurePanel() {
@@ -8518,7 +8539,10 @@
       btn.title = currentBookmark() ? "当前页面已收藏，点击打开收藏列表" : "页面收藏";
     }
     const fab = document.querySelector("#xiv-root .fl-bookmarks-fab");
-    if (fab) fab.dataset.saved = saved;
+    if (fab) {
+      fab.dataset.saved = saved;
+      fab.querySelector("span").textContent = saved === "true" ? "已收藏本页" : "收藏本页";
+    }
   }
 
   function togglePanel(force) {
@@ -8531,7 +8555,6 @@
 
   async function apply() {
     injectStyle();
-    ensureButton();
     ensureFloatingButton();
     ensurePanel();
     await ensureLoaded();
