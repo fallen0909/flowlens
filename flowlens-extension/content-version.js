@@ -1,10 +1,13 @@
 (() => {
-  const VERSION = "1.4.44";
+  const VERSION = "1.4.45";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
     "unified-version-center",
-    "video-cover-strategy"
+    "version-display-sync",
+    "video-cover-strategy",
+    "video-preview-card",
+    "page-bookmarks"
   ];
 
   const previous = window.__FlowLensVersion && typeof window.__FlowLensVersion === "object"
