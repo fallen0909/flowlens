@@ -105,7 +105,7 @@
   }
 
   async function readBookmarks() {
-    const gmRaw = gmGet(KEY, null);
+    const gmRaw = await Promise.resolve(gmGet(KEY, null));
     if (gmRaw) return safeJson(gmRaw, []);
     const chromeRaw = await chromeStorageGet(KEY);
     if (chromeRaw) return typeof chromeRaw === "string" ? safeJson(chromeRaw, []) : chromeRaw;
@@ -121,6 +121,7 @@
     if (!usedGm) {
       try { localStorage.setItem(KEY, text); } catch {}
     }
+    window.dispatchEvent(new CustomEvent("flowlens:bookmarks-changed", { detail: { items: clean } }));
     renderPanel();
     syncButtonState();
   }
@@ -371,24 +372,6 @@
     if (!button || !listButton) return;
     button.classList.add("fl-bookmarks-fab");
     listButton.classList.add("fl-bookmarks-list-fab");
-    if (button.dataset.flBookmarksBound !== "true") {
-      button.dataset.flBookmarksBound = "true";
-      button.addEventListener("click", async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await ensureLoaded();
-        await toggleCurrentBookmark();
-      });
-    }
-    if (listButton.dataset.flBookmarksBound !== "true") {
-      listButton.dataset.flBookmarksBound = "true";
-      listButton.addEventListener("click", async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await ensureLoaded();
-        togglePanel();
-      });
-    }
     const saved = !!currentBookmark();
     button.dataset.saved = saved ? "true" : "false";
     button.textContent = saved ? "已收藏本页" : "收藏本页";
@@ -493,6 +476,16 @@
   }
 
   injectStyle();
+  window.addEventListener("flowlens:bookmark-list", async () => {
+    await ensureLoaded();
+    togglePanel(true);
+  });
+  window.addEventListener("flowlens:bookmarks-changed", async (event) => {
+    cache = Array.isArray(event.detail?.items) ? event.detail.items : await readBookmarks();
+    loaded = true;
+    renderPanel();
+    syncButtonState();
+  });
   schedule();
   document.addEventListener("click", (event) => {
     const panel = document.querySelector("#xiv-root .fl-bookmarks-panel");

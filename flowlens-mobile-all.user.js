@@ -3528,6 +3528,93 @@
     return lines.join("\n");
   }
 
+  const PAGE_BOOKMARKS_KEY = "flowlens-page-bookmarks-v1";
+  const PAGE_BOOKMARKS_LIMIT = 300;
+
+  function normalizePageBookmarkUrl(url = location.href) {
+    try {
+      const parsed = new URL(url, location.href);
+      parsed.hash = "";
+      return parsed.href;
+    } catch {
+      return String(url || "").split("#")[0];
+    }
+  }
+
+  function pageBookmarkHost(url) {
+    try { return new URL(url, location.href).hostname; } catch { return ""; }
+  }
+
+  function parsePageBookmarks(value) {
+    try {
+      const parsed = typeof value === "string" ? JSON.parse(value) : value;
+      return Array.isArray(parsed) ? parsed.filter((item) => item?.url) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function readPageBookmarks() {
+    try {
+      if (typeof GM_getValue === "function") {
+        return parsePageBookmarks(await GM_getValue(PAGE_BOOKMARKS_KEY, "[]"));
+      }
+    } catch {}
+    try { return parsePageBookmarks(localStorage.getItem(PAGE_BOOKMARKS_KEY)); } catch { return []; }
+  }
+
+  async function writePageBookmarks(items) {
+    const clean = items.slice(0, PAGE_BOOKMARKS_LIMIT);
+    const value = JSON.stringify(clean);
+    let stored = false;
+    try {
+      if (typeof GM_setValue === "function") {
+        await GM_setValue(PAGE_BOOKMARKS_KEY, value);
+        stored = true;
+      }
+    } catch {}
+    if (!stored) {
+      try { localStorage.setItem(PAGE_BOOKMARKS_KEY, value); } catch {}
+    }
+    window.dispatchEvent(new CustomEvent("flowlens:bookmarks-changed", { detail: { items: clean } }));
+    return clean;
+  }
+
+  function currentPageBookmarkCover() {
+    const node = document.querySelector('meta[property="og:image"], meta[name="twitter:image"], #xiv-root .xiv-tile img[src], img[src]');
+    const raw = node?.getAttribute?.("content") || node?.getAttribute?.("src") || "";
+    try { return raw ? new URL(raw, location.href).href : ""; } catch { return ""; }
+  }
+
+  async function syncPageBookmarkControls() {
+    const button = state.root?.querySelector('[data-xiv="page-bookmark-toggle"]');
+    if (!button) return;
+    const currentUrl = normalizePageBookmarkUrl();
+    const saved = (await readPageBookmarks()).some((item) => normalizePageBookmarkUrl(item.url) === currentUrl);
+    button.dataset.saved = saved ? "true" : "false";
+    button.textContent = saved ? "已收藏本页" : "收藏本页";
+  }
+
+  async function togglePageBookmarkFromCore() {
+    const currentUrl = normalizePageBookmarkUrl();
+    const bookmarks = await readPageBookmarks();
+    const existing = bookmarks.some((item) => normalizePageBookmarkUrl(item.url) === currentUrl);
+    const next = existing
+      ? bookmarks.filter((item) => normalizePageBookmarkUrl(item.url) !== currentUrl)
+      : [{
+          url: currentUrl,
+          title: (document.title || pageBookmarkHost(currentUrl) || "未命名页面").replace(/\s+/g, " ").trim(),
+          host: pageBookmarkHost(currentUrl),
+          cover: currentPageBookmarkCover(),
+          mediaCount: state.grid?.querySelectorAll(".xiv-tile").length || 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, ...bookmarks];
+    await writePageBookmarks(next);
+    await syncPageBookmarkControls();
+    updateStatus(existing ? "已取消收藏当前页面" : "已收藏当前页面");
+  }
+
   function ensureUi() {
     if (state.root) return;
     if (!state.settings) loadSettings();
@@ -3642,6 +3729,12 @@
     state.root.querySelector('[data-xiv="top"]').addEventListener("click", () => state.stage.scrollTo({ top: 0, behavior: "smooth" }));
     state.root.querySelector('[data-xiv="diag"]').addEventListener("click", toggleDiagnosticsPanel);
     state.root.querySelector('[data-xiv="settings"]').addEventListener("click", toggleSettingsPanel);
+    state.root.querySelector('[data-xiv="page-bookmark-toggle"]').addEventListener("click", () => {
+      void togglePageBookmarkFromCore();
+    });
+    state.root.querySelector('[data-xiv="page-bookmark-list"]').addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("flowlens:bookmark-list"));
+    });
     state.root.querySelectorAll("[data-setting]").forEach((control) => {
       control.addEventListener("change", onSettingsControlChange);
     });
@@ -3665,6 +3758,7 @@
     window.addEventListener("keypress", onKeyRelease, true);
     watchSystemTheme();
     syncSettingsPanel();
+    void syncPageBookmarkControls();
     setColumns(state.columns, false);
     refreshGalleryQueue();
     startGalleryQueueObserver();
@@ -8198,7 +8292,7 @@
   }
 
   async function readBookmarks() {
-    const gmRaw = gmGet(KEY, null);
+    const gmRaw = await Promise.resolve(gmGet(KEY, null));
     if (gmRaw) return safeJson(gmRaw, []);
     const chromeRaw = await chromeStorageGet(KEY);
     if (chromeRaw) return typeof chromeRaw === "string" ? safeJson(chromeRaw, []) : chromeRaw;
@@ -8214,6 +8308,7 @@
     if (!usedGm) {
       try { localStorage.setItem(KEY, text); } catch {}
     }
+    window.dispatchEvent(new CustomEvent("flowlens:bookmarks-changed", { detail: { items: clean } }));
     renderPanel();
     syncButtonState();
   }
@@ -8464,24 +8559,6 @@
     if (!button || !listButton) return;
     button.classList.add("fl-bookmarks-fab");
     listButton.classList.add("fl-bookmarks-list-fab");
-    if (button.dataset.flBookmarksBound !== "true") {
-      button.dataset.flBookmarksBound = "true";
-      button.addEventListener("click", async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await ensureLoaded();
-        await toggleCurrentBookmark();
-      });
-    }
-    if (listButton.dataset.flBookmarksBound !== "true") {
-      listButton.dataset.flBookmarksBound = "true";
-      listButton.addEventListener("click", async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await ensureLoaded();
-        togglePanel();
-      });
-    }
     const saved = !!currentBookmark();
     button.dataset.saved = saved ? "true" : "false";
     button.textContent = saved ? "已收藏本页" : "收藏本页";
@@ -8586,6 +8663,16 @@
   }
 
   injectStyle();
+  window.addEventListener("flowlens:bookmark-list", async () => {
+    await ensureLoaded();
+    togglePanel(true);
+  });
+  window.addEventListener("flowlens:bookmarks-changed", async (event) => {
+    cache = Array.isArray(event.detail?.items) ? event.detail.items : await readBookmarks();
+    loaded = true;
+    renderPanel();
+    syncButtonState();
+  });
   schedule();
   document.addEventListener("click", (event) => {
     const panel = document.querySelector("#xiv-root .fl-bookmarks-panel");
