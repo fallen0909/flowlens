@@ -931,7 +931,11 @@
       return false;
     }
 
-    const virtualSelfieNavigation = isSelfieGalleryQueueUrl(targetUrl);
+    if (isSelfieGalleryQueueUrl(targetUrl)) {
+      return loadSelfieGalleryQueueTargetInPlace(targetUrl);
+    }
+
+    const virtualSelfieNavigation = false;
     const previousQueueUrl = state.galleryQueueCurrentUrl;
     updateStatus("正在加载下一组");
     saveViewerPosition();
@@ -989,6 +993,57 @@
     return state.images.length > 0;
   }
 
+  async function loadSelfieGalleryQueueTargetInPlace(targetUrl) {
+    const previousQueueUrl = state.galleryQueueCurrentUrl || location.href;
+    let html = "";
+    try {
+      // Fetch before clearing the active stream. Failed requests therefore leave
+      // the current gallery and Android Fullscreen state completely untouched.
+      html = await fetchHtml(targetUrl, previousQueueUrl);
+    } catch {
+      updateStatus("下一组加载失败，已保留当前全屏");
+      return false;
+    }
+
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    doc.documentElement.dataset.xivBase = targetUrl;
+    updateStatus("正在切换下一组");
+    saveViewerPosition();
+    closeLightbox(false);
+    stopGenericObserver();
+    resetCollection();
+    state.galleryQueueCurrentUrl = targetUrl;
+    state.active = true;
+    state.root.dataset.active = "true";
+    state.root.dataset.theme = state.theme;
+    document.documentElement.classList.add("xiv-active");
+    state.suppressLightboxUntil = Date.now() + 600;
+    state.fetchedPages.add(targetUrl);
+    state.pageUrls.add(targetUrl);
+    collectFromDocument(doc, targetUrl);
+    refreshGalleryQueue(doc, targetUrl);
+
+    if (!state.images.length) {
+      // Do not navigate the browser as a fallback: that would force Android to
+      // leave Fullscreen. Restore the current document instead.
+      state.galleryQueueCurrentUrl = previousQueueUrl;
+      collectFromDocument(document, location.href);
+      refreshGalleryQueue(document, location.href);
+      renderImages();
+      applyMediaFilter();
+      updateCounter();
+      updateStatus("下一组没有可用图片，已保留当前全屏");
+      return false;
+    }
+
+    renderImages();
+    applyMediaFilter();
+    updateCounter();
+    updateStatus(`已切换到${state.galleryQueueIndex >= 0 ? `第 ${state.galleryQueueIndex + 1} 组` : "新套图"}`);
+    if (state.stage) state.stage.scrollTo({ top: 0, behavior: "auto" });
+    return true;
+  }
+
   async function navigateGalleryQueue(delta) {
     refreshGalleryQueue();
     rebuildGalleryQueueFromVisiblePage();
@@ -997,10 +1052,13 @@
       updateStatus("没有可切换的套图");
       return;
     }
-    try {
-      sessionStorage.setItem(galleryQueueAutoOpenKey(), target);
-    } catch {
-      // Auto-open is best-effort.
+    const selfieTarget = isSelfieGalleryQueueUrl(target);
+    if (!selfieTarget) {
+      try {
+        sessionStorage.setItem(galleryQueueAutoOpenKey(), target);
+      } catch {
+        // Auto-open is best-effort.
+      }
     }
     if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
       try {
@@ -1014,6 +1072,7 @@
     } catch {
       // Fall back to page navigation when in-place loading is blocked.
     }
+    if (selfieTarget) return;
     updateStatus(delta > 0 ? "打开下一组" : "打开上一组");
     if (samePageUrl(target, location.href)) location.reload();
     else location.href = target;
@@ -5215,58 +5274,24 @@
     claimEvent(event);
     state.lightboxSuppressClickUntil = Date.now() + 260;
     if (absX >= absY) {
-      if (isMobilePointerEvent(event)) closeLightbox();
-      else showAdjacentImage(dx < 0 ? 1 : -1);
+      showAdjacentImage(dx < 0 ? 1 : -1);
     } else {
       showAdjacentImage(dy < 0 ? 1 : -1);
     }
   }
 
   function onStagePointerDown(event) {
-    if (!state.active || state.lightbox?.dataset.active === "true" || !isMobilePointerEvent(event)) return;
-    if (event.button !== 0) return;
-    if (event.target?.closest?.("button, select, input, textarea, a, .xiv-tile, [role='button']")) return;
-    const edge = Math.max(26, Math.min(44, window.innerWidth * 0.1));
-    const fromLeftEdge = event.clientX <= edge;
-    const fromRightEdge = event.clientX >= window.innerWidth - edge;
-    if (!fromLeftEdge && !fromRightEdge) return;
-    state.viewerSwipe = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      edge: fromLeftEdge ? "left" : "right",
-      moved: false
-    };
-    event.target?.setPointerCapture?.(event.pointerId);
+    // Edge swipes used to close the image stream. They conflict with normal
+    // horizontal browsing and are intentionally disabled on touch devices.
+    state.viewerSwipe = null;
   }
 
   function onStagePointerMove(event) {
-    const swipe = state.viewerSwipe;
-    if (!swipe || swipe.pointerId !== event.pointerId) return;
-    const dx = event.clientX - swipe.x;
-    const dy = event.clientY - swipe.y;
-    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.35) {
-      swipe.moved = true;
-      claimEvent(event);
-    }
+    state.viewerSwipe = null;
   }
 
   function endStageSwipe(event = null) {
-    const swipe = state.viewerSwipe;
-    if (!swipe) return;
-    if (event && swipe.pointerId !== event.pointerId) return;
     state.viewerSwipe = null;
-    if (!event || !swipe.moved || !state.active || state.lightbox?.dataset.active === "true") return;
-    const dx = event.clientX - swipe.x;
-    const dy = event.clientY - swipe.y;
-    const absX = Math.abs(dx);
-    const absY = Math.abs(dy);
-    const threshold = Math.max(52, Math.min(window.innerWidth, window.innerHeight) * 0.12);
-    const inward = swipe.edge === "left" ? dx > 0 : dx < 0;
-    if (inward && absX >= threshold && absX > absY * 1.35) {
-      claimEvent(event);
-      closeViewer();
-    }
   }
 
   function onLightboxWheel(event) {

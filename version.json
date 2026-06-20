@@ -1,12 +1,12 @@
 {
-    "version":  "1.4.39",
+    "version":  "1.4.40",
     "desktop":  {
-                    "version":  "1.4.39",
+                    "version":  "1.4.40",
                     "recommendedEntry":  "flowlens-desktop.user.js",
                     "extensionEntry":  "flowlens-extension/manifest.json"
                 },
     "mobile":  {
-                   "version":  "1.4.39",
+                   "version":  "1.4.40",
                    "entry":  "flowlens-mobile-all.user.js"
                },
     "source":  {
@@ -14,6 +14,8 @@
                    "mobileOnly":  "src/mobile"
                },
     "features":  [
+                     "mobile-swipe-never-closes-viewer",
+                     "selfie-gallery-no-navigation-fallback",
                      "selfie-gallery-virtual-fullscreen-navigation",
                      "mobile-transparent-inline-gallery-status",
                      "x810114-shadow-dom-and-frame-profile-queue",
