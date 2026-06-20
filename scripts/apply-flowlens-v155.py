@@ -6,32 +6,33 @@ ROOT = Path('.')
 VERSION = '1.5.5'
 
 
-def path(name: str) -> Path:
+def p(name):
     return ROOT / name
 
 
-def read(name: str) -> str:
-    return path(name).read_text(encoding='utf-8')
+def read(name):
+    return p(name).read_text(encoding='utf-8')
 
 
-def write(name: str, text: str) -> None:
-    path(name).write_text(text, encoding='utf-8')
+def write(name, text):
+    p(name).write_text(text, encoding='utf-8')
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    if old not in text:
-        raise SystemExit(f'Missing expected block: {label}')
-    return text.replace(old, new, 1)
+def replace_if_present(text, old, new, label):
+    if old in text:
+        print(f'patch: {label}')
+        return text.replace(old, new, 1)
+    print(f'skip: {label}')
+    return text
 
 
-def regex_once(text: str, pattern: str, repl: str, label: str, flags: int = re.S) -> str:
+def sub_if_present(text, pattern, repl, label, flags=re.S):
     text2, count = re.subn(pattern, repl, text, count=1, flags=flags)
-    if count != 1:
-        raise SystemExit(f'Missing expected pattern: {label}')
+    print(('patch: ' if count else 'skip: ') + label)
     return text2
 
 
-# version.json
+# Version metadata.
 manifest = json.loads(read('version.json'))
 manifest['version'] = VERSION
 manifest.setdefault('desktop', {})['version'] = VERSION
@@ -42,21 +43,20 @@ for feature in ['topbar-page-bookmark-icons', 'x810114-profile-bookmark-url']:
         features.append(feature)
 write('version.json', json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
 
-# Browser extension manifest.
 ext_manifest = json.loads(read('flowlens-extension/manifest.json'))
 ext_manifest['version'] = VERSION
 write('flowlens-extension/manifest.json', json.dumps(ext_manifest, ensure_ascii=False, indent=2) + '\n')
 
-# README and install page.
 readme = read('README.md')
 readme = readme.replace('当前统一版本：`v1.5.4`。', f'当前统一版本：`v{VERSION}`。')
-readme = readme.replace(
-    '## 📝 近期更新\n\n### v1.5.4',
-    '## 📝 近期更新\n\n### v1.5.5\n\n'
-    '- 收藏本页、收藏列表入口改为顶部工具栏图标，电脑端和手机端不再在右侧显示文字悬浮按钮。\n'
-    '- x.810114 收藏会优先保存当前个人主页地址，例如 `https://x.810114.xyz/ObserverAlphaAI`，避免只保存站点首页。\n\n'
-    '### v1.5.4',
-)
+if '### v1.5.5' not in readme:
+    readme = readme.replace(
+        '## 📝 近期更新\n\n### v1.5.4',
+        '## 📝 近期更新\n\n### v1.5.5\n\n'
+        '- 收藏本页、收藏列表入口改为顶部工具栏图标，电脑端和手机端不再在右侧显示文字悬浮按钮。\n'
+        '- x.810114 收藏会优先保存当前个人主页地址，例如 `https://x.810114.xyz/ObserverAlphaAI`，避免只保存站点首页。\n\n'
+        '### v1.5.4',
+    )
 write('README.md', readme)
 
 index = read('index.html')
@@ -73,7 +73,7 @@ write('index.html', index)
 
 version_js = read('src/core/version.js')
 if 'topbar-page-bookmark-icons' not in version_js:
-    version_js = replace_once(
+    version_js = replace_if_present(
         version_js,
         '    "version-display-sync",\n    "page-bookmarks"',
         '    "version-display-sync",\n    "page-bookmarks",\n    "topbar-page-bookmark-icons",\n    "x810114-profile-bookmark-url"',
@@ -81,9 +81,8 @@ if 'topbar-page-bookmark-icons' not in version_js:
     )
 write('src/core/version.js', version_js)
 
-# Core viewer: move bookmark actions into the top toolbar and use the active profile URL.
 core = read('src/core/flowlens-core.js')
-core = regex_once(
+core = sub_if_present(
     core,
     r'    #xiv-page-bookmarks-controls \{.*?#xiv-root\[data-lightbox-active="true"\] #xiv-page-bookmarks-controls \{ display: none !important; \}\n',
     '''    .xiv-btn[data-xiv="page-bookmark-toggle"][data-saved="true"] {
@@ -93,10 +92,10 @@ core = regex_once(
       fill: currentColor;
     }
 ''',
-    'remove floating bookmark css',
+    'core floating bookmark css',
 )
 if 'bookmarkList:' not in core:
-    core = replace_once(
+    core = replace_if_present(
         core,
         "    link: '<svg",
         "    bookmark: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 4.5h12a1 1 0 0 1 1 1v15l-7-4-7 4v-15a1 1 0 0 1 1-1Z\"/></svg>',\n"
@@ -142,8 +141,8 @@ if 'function currentPageBookmarkUrl()' not in core:
   }
 
 '''
-    core = replace_once(core, '  function pageBookmarkHost(url) {\n', helper + '  function pageBookmarkHost(url) {\n', 'core bookmark helpers')
-core = regex_once(
+    core = replace_if_present(core, '  function pageBookmarkHost(url) {\n', helper + '  function pageBookmarkHost(url) {\n', 'core bookmark helpers')
+core = sub_if_present(
     core,
     r'  async function syncPageBookmarkControls\(\) \{.*?  \}\n\n  async function togglePageBookmarkFromCore',
     '''  async function syncPageBookmarkControls() {
@@ -159,25 +158,20 @@ core = regex_once(
   async function togglePageBookmarkFromCore''',
     'core bookmark sync function',
 )
-core = replace_once(
-    core,
-    '  async function togglePageBookmarkFromCore() {\n    const currentUrl = normalizePageBookmarkUrl();',
-    '  async function togglePageBookmarkFromCore() {\n    const currentUrl = currentPageBookmarkUrl();',
-    'core bookmark target url',
-)
-core = replace_once(
+core = replace_if_present(core, '  async function togglePageBookmarkFromCore() {\n    const currentUrl = normalizePageBookmarkUrl();', '  async function togglePageBookmarkFromCore() {\n    const currentUrl = currentPageBookmarkUrl();', 'core bookmark target url')
+core = replace_if_present(
     core,
     '          <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>\n          <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>',
     '          <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>\n          <button class="xiv-btn" type="button" data-xiv="page-bookmark-toggle" title="收藏本页" aria-label="收藏本页">${icons.bookmark}<span>收藏本页</span></button>\n          <button class="xiv-btn" type="button" data-xiv="page-bookmark-list" title="收藏列表" aria-label="收藏列表">${icons.bookmarkList}<span>收藏列表</span></button>\n          <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>',
     'core toolbar buttons',
 )
-core = replace_once(
+core = replace_if_present(
     core,
     '      <div id="xiv-page-bookmarks-controls" aria-label="页面收藏">\n        <button type="button" data-xiv="page-bookmark-toggle">收藏本页</button>\n        <button type="button" data-xiv="page-bookmark-list">收藏列表</button>\n      </div>\n',
     '',
     'core floating controls markup',
 )
-core = replace_once(
+core = replace_if_present(
     core,
     '      loadSavedPage(url) {\n        return loadSavedPageInPlace(url);\n      }',
     '      loadSavedPage(url) {\n        return loadSavedPageInPlace(url);\n      },\n      currentPageBookmarkUrl() {\n        return currentPageBookmarkUrl();\n      }',
@@ -185,7 +179,6 @@ core = replace_once(
 )
 write('src/core/flowlens-core.js', core)
 
-# Page bookmark panel patch: reuse the same active URL and bind topbar icons.
 bookmarks = read('src/patches/page-bookmarks.js')
 if 'function currentPageUrl()' not in bookmarks:
     helper = '''  function isX810114ProfileUrl(url) {
@@ -223,9 +216,9 @@ if 'function currentPageUrl()' not in bookmarks:
   }
 
 '''
-    bookmarks = replace_once(bookmarks, '  function hostOf(url) {\n', helper + '  function hostOf(url) {\n', 'bookmark patch helpers')
+    bookmarks = replace_if_present(bookmarks, '  function hostOf(url) {\n', helper + '  function hostOf(url) {\n', 'bookmark patch helpers')
 bookmarks = bookmarks.replace('    return title || hostOf(location.href) || "未命名页面";', '    return title || hostOf(currentPageUrl()) || "未命名页面";')
-bookmarks = regex_once(
+bookmarks = sub_if_present(
     bookmarks,
     r'  function currentBookmark\(\) \{.*?  \}\n\n  async function toggleCurrentBookmark',
     '''  function currentBookmark() {
@@ -236,8 +229,8 @@ bookmarks = regex_once(
   async function toggleCurrentBookmark''',
     'bookmark patch current bookmark',
 )
-bookmarks = replace_once(bookmarks, '    const url = normalizeUrl();\n    const exists = currentBookmark();', '    const url = currentPageUrl();\n    const exists = currentBookmark();', 'bookmark patch toggle url')
-bookmarks = regex_once(
+bookmarks = replace_if_present(bookmarks, '    const url = normalizeUrl();\n    const exists = currentBookmark();', '    const url = currentPageUrl();\n    const exists = currentBookmark();', 'bookmark patch toggle url')
+bookmarks = sub_if_present(
     bookmarks,
     r'      #xiv-page-bookmarks-controls \{.*?#xiv-root \.fl-bookmarks-list-fab svg \{ width: 18px !important; height: 18px !important; \}\n',
     '''      #xiv-root .fl-bookmarks-fab[data-saved="true"] {
@@ -249,7 +242,7 @@ bookmarks = regex_once(
 ''',
     'bookmark patch floating css',
 )
-bookmarks = regex_once(
+bookmarks = sub_if_present(
     bookmarks,
     r'  function ensureFloatingButton\(\) \{.*?  \}\n\n  function ensurePanel',
     '''  function ensureFloatingButton() {
@@ -270,7 +263,7 @@ bookmarks = regex_once(
   function ensurePanel''',
     'bookmark patch button binding',
 )
-bookmarks = regex_once(
+bookmarks = sub_if_present(
     bookmarks,
     r'  function syncButtonState\(\) \{.*?  \}\n\n  function togglePanel',
     '''  function syncButtonState() {
