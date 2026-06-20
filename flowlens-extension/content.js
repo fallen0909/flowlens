@@ -67,6 +67,7 @@
   const MEDIA_EXT = /(?:\.(avif|gif|jpe?g|png|webp|mp4|webm|mov|m4v)(?:\?|#|$)|[?&]format=(?:avif|gif|jpe?g|png|webp)\b)/i;
   const PAGE_RE = /\/photo\/id-[^/]+\/(\d+)\.html(?:[?#].*)?$/i;
   const GALLERY_ROOT_RE = /\/photo\/id-[^/]+\.html(?:[?#].*)?$/i;
+  const SELFIE_GALLERY_PATH_RE = /\/(?:top_\d+_)?content_\d+\.html$/i;
   const ZTTAOTU_PAGE_RE = /^\/zhuanti\/taotu\/\d+\/(\d+)(?:_(\d+))?\.html$/i;
   const GENERIC_X810114_RE = /^https?:\/\/x\.810114\.xyz(?:\/(?!photo(?:\/|$)).*)?$/i;
   const HTTP_PAGE_RE = /^https?:\/\//i;
@@ -638,7 +639,7 @@
   function isSelfieGalleryQueueUrl(url) {
     try {
       const parsed = new URL(url, location.href);
-      return parsed.origin === location.origin && /\/content_\d+\.html$/i.test(parsed.pathname);
+      return parsed.origin === location.origin && SELFIE_GALLERY_PATH_RE.test(parsed.pathname);
     } catch {
       return false;
     }
@@ -654,8 +655,8 @@
       // consistently use this path shape. Keep the rule same-origin so generic
       // article pages cannot pollute a gallery queue.
       if (parsed.origin === current.origin
-        && /\/content_\d+\.html$/i.test(current.pathname)
-        && /\/content_\d+\.html$/i.test(path)) {
+        && SELFIE_GALLERY_PATH_RE.test(current.pathname)
+        && SELFIE_GALLERY_PATH_RE.test(path)) {
         return true;
       }
       if (/^www\.pornpics\.com$/i.test(host) || /(^|\.)pornpics\.com$/i.test(host)) {
@@ -719,8 +720,8 @@
     for (const match of html.matchAll(/["'](\/(?:photo\/id-[A-Za-z0-9_-]+\.html|photos\/series-[A-Za-z0-9_-]+\/\d+\.html))["']/gi)) remember(match[1]);
     for (const match of html.matchAll(/https?:\/\/(?:www\.)?buondua\.com\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
     for (const match of html.matchAll(/https?:\/\/x\.810114\.xyz\/([A-Za-z0-9_]{2,64})(?:[/?#"'<>\\\s]|$)/g)) remember(`https://x.810114.xyz/${match[1]}`);
-    if (/\/content_\d+\.html$/i.test(new URL(base, location.href).pathname)) {
-      for (const match of html.matchAll(/(?:https?:\/\/[^"'<>\\\s]+)?\/?content_\d+\.html(?:[?#][^"'<>\\\s]*)?/gi)) remember(match[0]);
+    if (SELFIE_GALLERY_PATH_RE.test(new URL(base, location.href).pathname)) {
+      for (const match of html.matchAll(/(?:https?:\/\/[^"'<>\\\s]+)?\/?(?:top_\d+_)?content_\d+\.html(?:[?#][^"'<>\\\s]*)?/gi)) remember(match[0]);
     }
     return found;
   }
