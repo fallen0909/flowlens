@@ -31,7 +31,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-settings-sync.js", "content.js", "content-patch.js", "content-fixes.js", "content-product.js", "content-ui-cleanup.js", "content-lightbox-stable.js", "content-settings-redesign.js", "content-settings-compact-v2.js", "content-zhihu.js", "content-topfix.js", "content-media-sync.js", "content-slideshow-native.js", "content-diagnostics-log.js"],
+      "js": ["content-version.js", "content-settings-sync.js", "content.js", "content-patch.js", "content-fixes.js", "content-product.js", "content-ui-cleanup.js", "content-lightbox-stable.js", "content-settings-redesign.js", "content-settings-compact-v2.js", "content-zhihu.js", "content-topfix.js", "content-media-sync.js", "content-slideshow-native.js", "content-diagnostics-log.js"],
       "run_at": "document_idle"
     }
   ]
