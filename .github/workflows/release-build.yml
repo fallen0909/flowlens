@@ -7,6 +7,9 @@ on:
     paths:
       - 'flowlens-extension/**'
       - 'mobile-userscript/**'
+      - 'src/**'
+      - 'scripts/build-userscripts.mjs'
+      - 'version.json'
       - '.github/workflows/release-build.yml'
 
 jobs:
@@ -19,8 +22,15 @@ jobs:
       - name: Read version
         id: version
         run: |
-          VERSION=$(node -p "require('./flowlens-extension/manifest.json').version")
+          VERSION=$(node -p "require('./version.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build and validate userscripts
+        run: |
+          node scripts/build-userscripts.mjs
+          node --check flowlens-desktop.user.js
+          node --check flowlens-mobile-all.user.js
+          ! grep -E '@require|RuntimeLoader|eval[[:space:]]*\\(' flowlens-desktop.user.js flowlens-mobile-all.user.js
 
       - name: Build ZIP packages
         run: |
@@ -34,7 +44,8 @@ jobs:
           (cd release-work && zip -r "../dist/flowlens-extension-v${VERSION}.zip" flowlens-extension)
 
           mkdir -p release-work/flowlens-userscripts
-          rsync -a mobile-userscript/ release-work/flowlens-userscripts/
+          cp flowlens-desktop.user.js release-work/flowlens-userscripts/
+          cp flowlens-mobile-all.user.js release-work/flowlens-userscripts/
           (cd release-work && zip -r "../dist/flowlens-userscripts-v${VERSION}.zip" flowlens-userscripts)
 
           cat > dist/README.txt <<EOF

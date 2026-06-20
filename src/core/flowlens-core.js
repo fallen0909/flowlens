@@ -994,6 +994,65 @@
     return state.images.length > 0;
   }
 
+  // Loads a saved page without navigating the browser. This is deliberately
+  // separate from gallery-queue navigation: saved pages may belong to another
+  // origin, and pushState cannot change origins while the viewer is open.
+  async function loadSavedPageInPlace(target) {
+    const targetUrl = normalizedPageUrl(target);
+    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
+
+    let html = "";
+    try {
+      updateStatus("正在读取收藏页面");
+      html = await fetchHtml(targetUrl, state.galleryQueueCurrentUrl || location.href);
+    } catch {
+      updateStatus("收藏页面读取失败，已保留当前图片流");
+      return false;
+    }
+
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    if (!doc?.documentElement) {
+      updateStatus("收藏页面无法解析，已保留当前图片流");
+      return false;
+    }
+
+    const previousUrl = state.galleryQueueCurrentUrl || location.href;
+    saveViewerPosition();
+    closeLightbox(false);
+    stopGenericObserver();
+    resetCollection();
+    state.galleryQueueCurrentUrl = targetUrl;
+    state.active = true;
+    state.root.dataset.active = "true";
+    state.root.dataset.theme = state.theme;
+    document.documentElement.classList.add("xiv-active");
+    state.suppressLightboxUntil = Date.now() + 600;
+    state.fetchedPages.add(targetUrl);
+    state.pageUrls.add(targetUrl);
+    doc.documentElement.dataset.xivBase = targetUrl;
+    collectFromDocument(doc, targetUrl);
+    refreshGalleryQueue(doc, targetUrl);
+
+    if (!state.images.length) {
+      resetCollection();
+      state.galleryQueueCurrentUrl = previousUrl;
+      collectFromDocument(document, location.href);
+      refreshGalleryQueue(document, location.href);
+      renderImages();
+      applyMediaFilter();
+      updateCounter();
+      updateStatus("收藏页面没有可用媒体，已保留当前图片流");
+      return false;
+    }
+
+    renderImages();
+    applyMediaFilter();
+    updateCounter();
+    updateStatus(`已打开收藏页面，共 ${state.images.length} 项`);
+    state.stage?.scrollTo({ top: 0, behavior: "auto" });
+    return true;
+  }
+
   async function loadSelfieGalleryQueueTargetInPlace(targetUrl) {
     const previousQueueUrl = state.galleryQueueCurrentUrl || location.href;
     let doc = null;
@@ -5482,6 +5541,9 @@
         if (state.lightbox?.dataset.active !== "true") return false;
         showAdjacentImage(delta >= 0 ? 1 : -1);
         return true;
+      },
+      loadSavedPage(url) {
+        return loadSavedPageInPlace(url);
       }
     };
   }
