@@ -5,12 +5,17 @@ on:
     branches: [master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Validate
         run: |
           node --check flowlens-extension/content.js
@@ -24,6 +29,51 @@ jobs:
           node --check flowlens-extension/options.js
           node --check flowlens-extension/popup.js
           node -e "JSON.parse(require('fs').readFileSync('flowlens-extension/manifest.json','utf8')); console.log('manifest ok')"
+      - name: Build desktop single userscript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          base = subprocess.check_output(['git', 'show', '5cc49acf9f9281da94d0a06084d892ab4cd04e75:flowlens-desktop.user.js'], text=True)
+          patch = Path('flowlens-desktop.user.js').read_text(encoding='utf-8')
+          sep = '// ==/UserScript=='
+          h1 = base.find(sep)
+          h2 = patch.find(sep)
+          if h1 < 0 or h2 < 0:
+              raise SystemExit('missing userscript header')
+          body = base[h1 + len(sep):]
+          patch_body = patch[h2 + len(sep):]
+          header = '''// ==UserScript==
+// @name         瀑光 FlowLens 电脑单文件测试版
+// @namespace    local.flowlens.desktop.single
+// @version      1.5.8
+// @description  单文件测试版：无需 @require，收藏入口在顶部最左侧，收藏列表打开保持在图片流内。
+// @match        *://*/*
+// @run-at       document-idle
+// @noframes
+// @grant        GM_xmlhttpRequest
+// @grant        GM_download
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @connect      *
+// @downloadURL  https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop-single.user.js
+// @updateURL    https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop-single.user.js
+// ==/UserScript==
+'''
+          out = header + body
+          out = out.replace('const VERSION = "1.5.4";', 'const VERSION = "1.5.8";')
+          out += '\n\n/* FlowLens desktop single-file v1.5.8 bookmark patch */\n' + patch_body
+          Path('flowlens-desktop-single.user.js').write_text(out, encoding='utf-8')
+          PY
+          node --check flowlens-desktop-single.user.js
+          ! grep -E '^// @require' flowlens-desktop-single.user.js
+      - name: Commit desktop single userscript
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add flowlens-desktop-single.user.js
+          git commit -m "Build desktop single userscript v1.5.8" || exit 0
+          git push
       - name: Package
         run: |
           mkdir -p dist
