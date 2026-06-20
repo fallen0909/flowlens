@@ -14,11 +14,9 @@
   const CHANNEL = "__FLOWLENS_BUILD_CHANNEL__";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
-    "runtime-loader-no-require-cache",
+    "build-time-single-file",
     "unified-version-center",
     "version-display-sync",
-    "video-cover-strategy",
-    "video-preview-card",
     "page-bookmarks"
   ];
 

@@ -1,12 +1,12 @@
 {
-  "version": "1.5.0",
+  "version": "1.5.1",
   "desktop": {
-    "version": "1.5.0",
+    "version": "1.5.1",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.5.0",
+    "version": "1.5.1",
     "entry": "flowlens-mobile-all.user.js",
     "loader": "build-time-single-file"
   },
@@ -19,8 +19,6 @@
     "build-time-single-file",
     "unified-version-center",
     "version-display-sync",
-    "video-cover-strategy",
-    "video-preview-card",
     "page-bookmarks",
     "diagnostics-log-export",
     "settings-version-display",

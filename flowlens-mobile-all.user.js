@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.5.0
+// @version      1.5.1
 // @description  完整单文件发布版：沉浸式网页图片与视频瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
@@ -18,15 +18,13 @@
 
 /* src/core/version.js */
 (() => {
-  const VERSION = "1.5.0";
+  const VERSION = "1.5.1";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
-    "runtime-loader-no-require-cache",
+    "build-time-single-file",
     "unified-version-center",
     "version-display-sync",
-    "video-cover-strategy",
-    "video-preview-card",
     "page-bookmarks"
   ];
 
@@ -3581,6 +3579,7 @@
           <button class="xiv-btn" type="button" data-xiv="faster" title="加快自动滚动">${icons.fast}<span>加速</span></button>
           <button class="xiv-btn" type="button" data-xiv="top" title="回到顶部">${icons.top}<span>顶部</span></button>
           <button class="xiv-btn" type="button" data-xiv="diag" title="诊断">${icons.info}<span>诊断</span></button>
+          <button class="xiv-btn fl-bookmarks-btn" type="button" data-xiv="bookmarks" title="页面收藏">${icons.heart}<span>收藏页</span></button>
           <button class="xiv-btn" type="button" data-xiv="settings" title="设置">${icons.settings}<span>设置</span></button>
           <button class="xiv-btn xiv-btn-icon" type="button" data-xiv="close" title="关闭">${icons.close}</button>
         </div>
@@ -8077,434 +8076,6 @@
 })();
 
 
-/* src/patches/video-cover-strategy.js */
-(() => {
-  if (window.__flowLensVideoCoverStrategyPatch) return;
-  window.__flowLensVideoCoverStrategyPatch = true;
-
-  const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
-  const IMAGE_RE = /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)|[?&]format=(?:avif|gif|jpe?g|png|webp)\b/i;
-  const posterByVideo = new Map();
-  const failedPosters = new Set();
-  let collectTimer = 0;
-  let enhanceTimer = 0;
-
-  function absoluteUrl(raw, base = location.href) {
-    if (!raw || /^data:/i.test(raw)) return "";
-    try { return new URL(raw, base).href; } catch { return ""; }
-  }
-
-  function mediaKey(url) {
-    try {
-      const parsed = new URL(url, location.href);
-      parsed.hash = "";
-      return `${parsed.origin}${parsed.pathname}`.toLowerCase();
-    } catch {
-      return String(url || "").split("#")[0].split("?")[0].toLowerCase();
-    }
-  }
-
-  function isVideoUrl(url) { return VIDEO_RE.test(String(url || "")); }
-  function isImageUrl(url) { return IMAGE_RE.test(String(url || "")); }
-
-  function rememberPoster(videoUrl, posterUrl) {
-    const video = absoluteUrl(videoUrl);
-    const poster = absoluteUrl(posterUrl);
-    if (!video || !poster || !isVideoUrl(video) || !isImageUrl(poster)) return;
-    const key = mediaKey(video);
-    if (!posterByVideo.has(key) || /poster|thumb|cover|preview/i.test(poster)) {
-      posterByVideo.set(key, poster);
-    }
-  }
-
-  function attrUrl(node, names) {
-    for (const name of names) {
-      const value = node?.getAttribute?.(name) || "";
-      const url = absoluteUrl(value, node?.baseURI || location.href);
-      if (url) return url;
-    }
-    return "";
-  }
-
-  function nearestImageUrl(node) {
-    const scope = node?.closest?.("a, article, li, div, figure, section") || node?.parentElement;
-    const img = scope?.querySelector?.("img[src], img[data-src], img[data-original], img[data-thumb], img[data-lazy-src]");
-    return attrUrl(img, ["src", "data-src", "data-original", "data-thumb", "data-lazy-src"]);
-  }
-
-  function collectPosters(root = document) {
-    try {
-      root.querySelectorAll?.("video").forEach((video) => {
-        const poster = absoluteUrl(video.getAttribute("poster") || video.poster || "", video.baseURI || location.href)
-          || attrUrl(video, ["data-poster", "data-thumb", "data-thumbnail", "data-cover", "data-preview"])
-          || nearestImageUrl(video);
-        const urls = [
-          video.currentSrc,
-          video.src,
-          attrUrl(video, ["src", "data-src", "data-url"]),
-          ...[...video.querySelectorAll("source[src]")].map((source) => attrUrl(source, ["src", "data-src"]))
-        ].filter(Boolean);
-        urls.forEach((url) => rememberPoster(url, poster));
-      });
-
-      root.querySelectorAll?.("a[href]").forEach((link) => {
-        const href = attrUrl(link, ["href"]);
-        if (!isVideoUrl(href)) return;
-        const poster = nearestImageUrl(link)
-          || attrUrl(link, ["data-poster", "data-thumb", "data-thumbnail", "data-cover", "data-preview"]);
-        rememberPoster(href, poster);
-      });
-
-      const metaVideo = attrUrl(root.querySelector?.('meta[property="og:video"], meta[name="twitter:player:stream"]'), ["content"]);
-      const metaPoster = attrUrl(root.querySelector?.('meta[property="og:image"], meta[name="twitter:image"]'), ["content"]);
-      rememberPoster(metaVideo, metaPoster);
-    } catch {
-      // Poster discovery is best-effort; fallback cards still keep the grid usable.
-    }
-  }
-
-  function posterFor(videoUrl, tile) {
-    const fromTileVideo = tile?.querySelector?.("video[poster]")?.poster || "";
-    if (fromTileVideo && isImageUrl(fromTileVideo)) return fromTileVideo;
-    return posterByVideo.get(mediaKey(videoUrl)) || "";
-  }
-
-  function injectStyle() {
-    if (document.getElementById("fl-video-cover-strategy-style")) return;
-    const style = document.createElement("style");
-    style.id = "fl-video-cover-strategy-style";
-    style.textContent = `
-      #xiv-root .fl-video-cover-img {
-        width: 100% !important;
-        height: auto !important;
-        display: block !important;
-        object-fit: cover !important;
-        background: #111 !important;
-      }
-      #xiv-root .fl-video-cover-fallback {
-        width: 100% !important;
-        aspect-ratio: var(--fl-video-cover-ratio, 16 / 9) !important;
-        min-height: 92px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        justify-content: center !important;
-        gap: 8px !important;
-        border-radius: inherit !important;
-        background: linear-gradient(135deg, rgba(18,18,22,.96), rgba(42,42,50,.92)) !important;
-        color: rgba(255,255,255,.92) !important;
-        font: 900 13px/1.25 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-        text-align: center !important;
-        box-sizing: border-box !important;
-      }
-      #xiv-root .fl-video-cover-play {
-        width: 46px !important;
-        height: 46px !important;
-        border-radius: 999px !important;
-        display: grid !important;
-        place-items: center !important;
-        background: rgba(255,255,255,.16) !important;
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,.16) !important;
-      }
-      #xiv-root .fl-video-cover-play::before {
-        content: "";
-        width: 0;
-        height: 0;
-        border-top: 10px solid transparent;
-        border-bottom: 10px solid transparent;
-        border-left: 15px solid currentColor;
-        margin-left: 4px;
-      }
-      #xiv-root .fl-video-cover-sub {
-        opacity: .66 !important;
-        font-size: 11px !important;
-        font-weight: 750 !important;
-      }
-      #xiv-root[data-theme="light"] .fl-video-cover-fallback {
-        background: linear-gradient(135deg, rgba(235,238,242,.98), rgba(210,216,225,.94)) !important;
-        color: rgba(25,28,34,.9) !important;
-      }
-      #xiv-root[data-theme="light"] .fl-video-cover-play {
-        background: rgba(0,0,0,.08) !important;
-        box-shadow: inset 0 0 0 1px rgba(0,0,0,.08) !important;
-      }
-    `;
-    document.documentElement.appendChild(style);
-  }
-
-  function videoRatioFromUrl(url) {
-    const match = String(url || "").match(/(?:^|[/_-])(\d{2,5})x(\d{2,5})(?=[/_.-]|\.[a-z0-9]+(?:[?#]|$))/i);
-    if (!match) return "16 / 9";
-    const width = Number(match[1]);
-    const height = Number(match[2]);
-    return width > 0 && height > 0 ? `${width} / ${height}` : "16 / 9";
-  }
-
-  function firstMediaChild(tile) {
-    return tile?.querySelector?.(":scope > img, :scope > video, :scope > .xiv-video-placeholder, :scope > .fl-video-cover-fallback")
-      || tile?.querySelector?.("img, video, .xiv-video-placeholder, .fl-video-cover-fallback")
-      || null;
-  }
-
-  function replaceMedia(tile, node) {
-    const media = firstMediaChild(tile);
-    if (media) media.replaceWith(node);
-    else tile.insertBefore(node, tile.firstChild);
-    window.setTimeout(() => window.dispatchEvent(new Event("resize")), 30);
-  }
-
-  function fallbackCard(url, reason = "封面不可用") {
-    const node = document.createElement("div");
-    node.className = "fl-video-cover-fallback";
-    node.dataset.sourceUrl = url;
-    node.dataset.coverReason = reason;
-    node.style.aspectRatio = videoRatioFromUrl(url);
-    node.innerHTML = `<span class="fl-video-cover-play" aria-hidden="true"></span><strong>视频</strong><span class="fl-video-cover-sub">${reason}，点击播放</span>`;
-    return node;
-  }
-
-  function replaceWithFallback(tile, url, reason) {
-    if (!tile?.isConnected || tile.dataset.flVideoCoverFallback === "true") return;
-    tile.dataset.flVideoCoverStage = "fallback";
-    tile.dataset.flVideoCoverFallback = "true";
-    replaceMedia(tile, fallbackCard(url, reason));
-  }
-
-  function posterImage(tile, url, poster) {
-    const img = document.createElement("img");
-    img.className = "fl-video-cover-img";
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.alt = "";
-    img.referrerPolicy = "no-referrer-when-downgrade";
-    img.dataset.sourceUrl = url;
-    img.dataset.posterUrl = poster;
-    img.addEventListener("load", () => {
-      tile.dataset.flVideoCoverStage = "poster";
-      if (img.naturalWidth > 0 && img.naturalHeight > 0) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-    }, { once: true });
-    img.addEventListener("error", () => {
-      failedPosters.add(mediaKey(poster));
-      if (!tile.querySelector("video")) replaceWithFallback(tile, url, "封面加载失败");
-    }, { once: true });
-    img.src = poster;
-    return img;
-  }
-
-  function probePosterThenReplace(tile, url, poster) {
-    const posterKey = mediaKey(poster);
-    if (tile.dataset.flPosterProbe === posterKey) return true;
-    tile.dataset.flPosterProbe = posterKey;
-    const probe = new Image();
-    probe.referrerPolicy = "no-referrer-when-downgrade";
-    probe.onload = () => {
-      if (!tile.isConnected || tile.dataset.url !== url || tile.dataset.flVideoCoverFallback === "true") return;
-      replaceMedia(tile, posterImage(tile, url, poster));
-    };
-    probe.onerror = () => {
-      failedPosters.add(posterKey);
-      tile.dataset.flPosterProbeFailed = "true";
-      // Keep the video node alive so the core frame-extraction path can still run.
-      if (!tile.querySelector("video")) replaceWithFallback(tile, url, "封面加载失败");
-    };
-    probe.src = poster;
-    return true;
-  }
-
-  function applyPosterIfAvailable(tile, url) {
-    const poster = posterFor(url, tile);
-    if (!poster || failedPosters.has(mediaKey(poster))) return false;
-    const current = firstMediaChild(tile);
-    if (current?.tagName === "IMG" && mediaKey(current.currentSrc || current.src || "") === mediaKey(poster)) return true;
-    return probePosterThenReplace(tile, url, poster);
-  }
-
-  function watchVideoPreview(tile, video, url) {
-    if (!video || video.dataset.flCoverWatched === "true") return;
-    video.dataset.flCoverWatched = "true";
-    let settled = false;
-    const done = () => { settled = true; };
-    ["loadeddata", "canplay", "seeked"].forEach((eventName) => video.addEventListener(eventName, done, { once: true }));
-    video.addEventListener("error", () => {
-      window.setTimeout(() => {
-        if (settled || !tile.isConnected) return;
-        if (applyPosterIfAvailable(tile, url)) return;
-        replaceWithFallback(tile, url, "预览加载失败");
-      }, 2400);
-    });
-    window.setTimeout(() => {
-      if (settled || !tile.isConnected || tile.querySelector("img.fl-video-cover-img, .fl-video-cover-fallback")) return;
-      if ((video.readyState || 0) >= 2 || video.dataset.previewCaptured === "true") return;
-      if (applyPosterIfAvailable(tile, url)) return;
-      replaceWithFallback(tile, url, "预览超时");
-    }, 13000);
-  }
-
-  function enhanceTile(tile) {
-    const url = tile?.dataset?.url || "";
-    if (!isVideoUrl(url)) return;
-    tile.dataset.flVideoCoverStrategy = "true";
-
-    const posterReady = applyPosterIfAvailable(tile, url);
-
-    const video = tile.querySelector("video");
-    if (video) {
-      if (!posterReady) tile.dataset.flVideoCoverStage = "frame";
-      watchVideoPreview(tile, video, url);
-      return;
-    }
-
-    if (posterReady) return;
-
-    const placeholder = tile.querySelector(".xiv-video-placeholder");
-    if (placeholder) replaceWithFallback(tile, url, "等待点击播放");
-  }
-
-  function enhanceAllTiles() {
-    injectStyle();
-    collectPosters(document);
-    document.querySelectorAll("#xiv-root .xiv-tile").forEach(enhanceTile);
-  }
-
-  function scheduleEnhance() {
-    clearTimeout(enhanceTimer);
-    enhanceTimer = window.setTimeout(enhanceAllTiles, 100);
-  }
-
-  function schedulePosterCollect() {
-    clearTimeout(collectTimer);
-    collectTimer = window.setTimeout(() => collectPosters(document), 220);
-  }
-
-  injectStyle();
-  collectPosters(document);
-  scheduleEnhance();
-
-  new MutationObserver((mutations) => {
-    let shouldCollect = false;
-    let shouldEnhance = false;
-    for (const mutation of mutations) {
-      if (mutation.target?.closest?.("#xiv-root")) shouldEnhance = true;
-      for (const node of mutation.addedNodes || []) {
-        if (node?.nodeType !== 1) continue;
-        if (node.matches?.("video, source, a[href], img, meta") || node.querySelector?.("video, source, a[href], img, meta")) shouldCollect = true;
-        if (node.matches?.("#xiv-root, .xiv-tile") || node.querySelector?.("#xiv-root .xiv-tile, .xiv-tile")) shouldEnhance = true;
-      }
-    }
-    if (shouldCollect) schedulePosterCollect();
-    if (shouldEnhance) scheduleEnhance();
-  }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "href", "poster", "data-src", "data-poster", "data-thumb", "data-url", "data-active"] });
-})();
-
-
-/* src/patches/video-preview-card.js */
-(() => {
-  if (window.__flowLensVideoPreviewCardPatch) return;
-  window.__flowLensVideoPreviewCardPatch = true;
-
-  const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
-  let timer = 0;
-
-  function injectStyle() {
-    if (document.getElementById("fl-video-preview-card-style")) return;
-    const style = document.createElement("style");
-    style.id = "fl-video-preview-card-style";
-    style.textContent = `
-      #xiv-root .xiv-tile { position: relative !important; }
-      #xiv-root .fl-video-preview-card {
-        position: absolute !important;
-        inset: 0 !important;
-        z-index: 3 !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        justify-content: center !important;
-        gap: 8px !important;
-        border-radius: inherit !important;
-        background: radial-gradient(circle at 50% 38%, rgba(70,78,96,.42), transparent 34%), linear-gradient(135deg, rgba(18,18,22,.98), rgba(37,39,46,.96)) !important;
-        color: rgba(255,255,255,.94) !important;
-        font: 900 13px/1.25 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-        text-align: center !important;
-        pointer-events: none !important;
-        box-sizing: border-box !important;
-      }
-      #xiv-root .fl-video-preview-card::before {
-        content: "";
-        width: 50px !important;
-        height: 50px !important;
-        border-radius: 999px !important;
-        background: rgba(255,255,255,.13) !important;
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 12px 32px rgba(0,0,0,.22) !important;
-      }
-      #xiv-root .fl-video-preview-card::after {
-        content: "";
-        position: absolute !important;
-        left: calc(50% - 5px) !important;
-        top: calc(50% - 25px) !important;
-        width: 0 !important;
-        height: 0 !important;
-        border-top: 10px solid transparent !important;
-        border-bottom: 10px solid transparent !important;
-        border-left: 15px solid currentColor !important;
-      }
-      #xiv-root .fl-video-preview-card strong { margin-top: 2px !important; font-size: 14px !important; }
-      #xiv-root .fl-video-preview-card span { opacity: .66 !important; font-size: 11px !important; font-weight: 750 !important; }
-      #xiv-root[data-theme="light"] .fl-video-preview-card {
-        background: radial-gradient(circle at 50% 38%, rgba(165,174,190,.5), transparent 34%), linear-gradient(135deg, rgba(232,235,241,.98), rgba(208,215,226,.96)) !important;
-        color: rgba(24,27,34,.9) !important;
-      }
-      #xiv-root .xiv-tile[data-fl-has-real-cover="true"] .fl-video-preview-card { display: none !important; }
-    `;
-    document.documentElement.appendChild(style);
-  }
-
-  function isVideoTile(tile) {
-    return VIDEO_RE.test(tile?.dataset?.url || "") || !!tile?.querySelector?.("video, .xiv-video-placeholder, .fl-video-cover-fallback");
-  }
-
-  function hasRealCover(tile) {
-    const image = tile?.querySelector?.("img.fl-video-cover-img, img:not(.fl-video-preview-card img)");
-    const fallback = tile?.querySelector?.(".fl-video-cover-fallback");
-    return !!image || !!fallback;
-  }
-
-  function ensureCard(tile) {
-    if (!tile || !isVideoTile(tile)) return;
-    if (hasRealCover(tile)) {
-      tile.dataset.flHasRealCover = "true";
-      tile.querySelector?.(".fl-video-preview-card")?.remove();
-      return;
-    }
-    tile.dataset.flHasRealCover = "false";
-    if (tile.querySelector(".fl-video-preview-card")) return;
-    const card = document.createElement("div");
-    card.className = "fl-video-preview-card";
-    card.innerHTML = `<strong>视频</strong><span>封面生成中，点击播放</span>`;
-    tile.appendChild(card);
-    tile.dataset.flVideoCoverStage = tile.dataset.flVideoCoverStage || "card";
-  }
-
-  function apply() {
-    injectStyle();
-    document.querySelectorAll("#xiv-root .xiv-tile").forEach(ensureCard);
-  }
-
-  function schedule() {
-    clearTimeout(timer);
-    timer = window.setTimeout(apply, 80);
-  }
-
-  injectStyle();
-  schedule();
-  new MutationObserver(schedule).observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["src", "poster", "data-active", "data-url", "data-fl-video-cover-stage"]
-  });
-})();
-
-
 /* src/patches/page-bookmarks.js */
 (() => {
   if (window.__flowLensPageBookmarksPatch) return;
@@ -8517,7 +8088,7 @@
   let timer = 0;
 
   function root() { return document.getElementById("xiv-root"); }
-  function topbarActions() { return document.querySelector("#xiv-root #xiv-topbar .xiv-actions"); }
+  function topbarActions() { return root()?.querySelector("#xiv-topbar .xiv-actions") || null; }
   function status(text) {
     const node = document.getElementById("xiv-status");
     if (node) node.textContent = text;
@@ -8811,21 +8382,28 @@
 
   function ensureButton() {
     const actions = topbarActions();
-    if (!actions || actions.querySelector(".fl-bookmarks-btn")) return;
-    const btn = document.createElement("button");
-    btn.className = "xiv-btn fl-bookmarks-btn";
-    btn.type = "button";
-    btn.title = "页面收藏";
-    btn.innerHTML = `${buttonIcon()}<span>收藏页</span>`;
+    if (!actions) return;
+    let btn = actions.querySelector('[data-xiv="bookmarks"]');
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.className = "xiv-btn fl-bookmarks-btn";
+      btn.type = "button";
+      btn.dataset.xiv = "bookmarks";
+      btn.title = "页面收藏";
+      btn.innerHTML = `${buttonIcon()}<span>收藏页</span>`;
+      const settings = actions.querySelector('[data-xiv="settings"]');
+      if (settings) settings.before(btn);
+      else actions.appendChild(btn);
+    }
+    btn.classList.add("fl-bookmarks-btn");
+    if (btn.dataset.flBookmarksBound === "true") return;
+    btn.dataset.flBookmarksBound = "true";
     btn.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
       await ensureLoaded();
       togglePanel();
     });
-    const settings = actions.querySelector('[data-xiv="settings"]');
-    if (settings) settings.before(btn);
-    else actions.appendChild(btn);
   }
 
   function ensurePanel() {
