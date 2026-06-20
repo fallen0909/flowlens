@@ -3466,7 +3466,6 @@
           <button class="xiv-btn" type="button" data-xiv="faster" title="加快自动滚动">${icons.fast}<span>加速</span></button>
           <button class="xiv-btn" type="button" data-xiv="top" title="回到顶部">${icons.top}<span>顶部</span></button>
           <button class="xiv-btn" type="button" data-xiv="diag" title="诊断">${icons.info}<span>诊断</span></button>
-          <button class="xiv-btn fl-bookmarks-btn" type="button" data-xiv="bookmarks" title="页面收藏">${icons.heart}<span>收藏页</span></button>
           <button class="xiv-btn" type="button" data-xiv="settings" title="设置">${icons.settings}<span>设置</span></button>
           <button class="xiv-btn xiv-btn-icon" type="button" data-xiv="close" title="关闭">${icons.close}</button>
         </div>
