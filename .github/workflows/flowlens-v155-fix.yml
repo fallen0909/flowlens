@@ -26,139 +26,63 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply code changes
+      - name: Apply source patch
         run: |
           python <<'PY'
           from pathlib import Path
-          import json
-          import re
-
-          VERSION = "1.5.5"
+          import json, re
           root = Path('.')
+          VERSION = '1.5.5'
 
-          def read(path):
-              return (root / path).read_text(encoding='utf-8')
+          def p(path): return root / path
+          def read(path): return p(path).read_text(encoding='utf-8')
+          def write(path, text): p(path).write_text(text, encoding='utf-8')
+          def subn(text, pattern, repl, label, flags=re.S):
+              text2, n = re.subn(pattern, repl, text, count=1, flags=flags)
+              if n != 1:
+                  raise SystemExit(f'Missing expected block: {label}')
+              return text2
 
-          def write(path, text):
-              (root / path).write_text(text, encoding='utf-8')
+          data = json.loads(read('version.json'))
+          data['version'] = VERSION
+          data.setdefault('desktop', {})['version'] = VERSION
+          data.setdefault('mobile', {})['version'] = VERSION
+          feats = data.setdefault('features', [])
+          for f in ['topbar-page-bookmark-icons', 'x810114-profile-bookmark-url']:
+              if f not in feats: feats.append(f)
+          write('version.json', json.dumps(data, ensure_ascii=False, indent=2) + '\n')
 
-          def replace_once(text, old, new, label):
-              if old not in text:
-                  raise SystemExit(f"Missing expected block: {label}")
-              return text.replace(old, new, 1)
+          em = json.loads(read('flowlens-extension/manifest.json'))
+          em['version'] = VERSION
+          write('flowlens-extension/manifest.json', json.dumps(em, ensure_ascii=False, indent=2) + '\n')
 
-          # version.json
-          manifest_path = root / 'version.json'
-          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-          manifest['version'] = VERSION
-          manifest.setdefault('desktop', {})['version'] = VERSION
-          manifest.setdefault('mobile', {})['version'] = VERSION
-          features = manifest.setdefault('features', [])
-          for feature in ['topbar-page-bookmark-icons', 'x810114-profile-bookmark-url']:
-              if feature not in features:
-                  features.append(feature)
-          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-
-          # extension manifest
-          ext_manifest_path = root / 'flowlens-extension/manifest.json'
-          ext_manifest = json.loads(ext_manifest_path.read_text(encoding='utf-8'))
-          ext_manifest['version'] = VERSION
-          ext_manifest_path.write_text(json.dumps(ext_manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-
-          # README changelog/version
-          readme = read('README.md')
-          readme = readme.replace('当前统一版本：`v1.5.4`。', f'当前统一版本：`v{VERSION}`。')
-          readme = replace_once(
-              readme,
-              '## 📝 近期更新\n\n### v1.5.4',
-              '## 📝 近期更新\n\n### v1.5.5\n\n- 收藏本页、收藏列表入口改为顶部工具栏图标，电脑端和手机端不再在右侧显示文字悬浮按钮。\n- x.810114 收藏会优先保存当前个人主页地址，例如 `https://x.810114.xyz/ObserverAlphaAI`，避免只保存站点首页。\n\n### v1.5.4',
-              'README changelog'
-          )
+          readme = read('README.md').replace('当前统一版本：`v1.5.4`。', f'当前统一版本：`v{VERSION}`。')
+          readme = readme.replace('## 📝 近期更新\n\n### v1.5.4', '## 📝 近期更新\n\n### v1.5.5\n\n- 收藏本页、收藏列表入口改为顶部工具栏图标，电脑端和手机端不再在右侧显示文字悬浮按钮。\n- x.810114 收藏会优先保存当前个人主页地址，例如 `https://x.810114.xyz/ObserverAlphaAI`，避免只保存站点首页。\n\n### v1.5.4')
           write('README.md', readme)
 
-          # Install page
           index = read('index.html')
-          index = re.sub(
-              r'<p class="note"><strong>.*?</p>',
-              '<p class="note"><strong>当前统一版本：v1.5.5。</strong>收藏入口已并入顶部工具栏图标；x.810114 会收藏当前个人主页地址，不再只保存站点首页。</p>',
-              index,
-              count=1,
-              flags=re.S
-          )
+          index = re.sub(r'<p class="note"><strong>.*?</p>', '<p class="note"><strong>当前统一版本：v1.5.5。</strong>收藏入口已并入顶部工具栏图标；x.810114 会收藏当前个人主页地址，不再只保存站点首页。</p>', index, count=1, flags=re.S)
           index = re.sub(r'安装/更新电脑油猴版 v[0-9.]+', f'安装/更新电脑油猴版 v{VERSION}', index)
           index = re.sub(r'安装/更新手机整合版 v[0-9.]+', f'安装/更新手机整合版 v{VERSION}', index)
           write('index.html', index)
 
-          # Version center features
-          version_js = read('src/core/version.js')
-          version_js = replace_once(
-              version_js,
-              '    "version-display-sync",\n    "page-bookmarks"',
-              '    "version-display-sync",\n    "page-bookmarks",\n    "topbar-page-bookmark-icons",\n    "x810114-profile-bookmark-url"',
-              'version features'
-          )
-          write('src/core/version.js', version_js)
+          vjs = read('src/core/version.js')
+          if 'topbar-page-bookmark-icons' not in vjs:
+              vjs = vjs.replace('    "version-display-sync",\n    "page-bookmarks"', '    "version-display-sync",\n    "page-bookmarks",\n    "topbar-page-bookmark-icons",\n    "x810114-profile-bookmark-url"')
+          write('src/core/version.js', vjs)
 
-          # Core UI/bookmark behavior
           core = read('src/core/flowlens-core.js')
-          core = replace_once(
-              core,
-              '''    #xiv-page-bookmarks-controls {
-      position: fixed; top: 66px; right: 14px; z-index: 2147483647;
-      display: flex; flex-direction: column; gap: 8px; pointer-events: auto;
-    }
-    #xiv-page-bookmarks-controls button {
-      height: 38px; padding: 0 14px; border: 0; border-radius: 999px;
-      background: rgba(18,18,20,.9); color: #fff; box-shadow: 0 10px 28px rgba(0,0,0,.28);
-      backdrop-filter: blur(14px); font: 900 13px/1 system-ui, sans-serif; cursor: pointer;
-    }
-    #xiv-root[data-theme="light"] #xiv-page-bookmarks-controls button { background: rgba(255,255,255,.92); color: #16181e; }
-    #xiv-root[data-lightbox-active="true"] #xiv-page-bookmarks-controls { display: none !important; }
-''',
-              '''    .xiv-btn[data-xiv="page-bookmark-toggle"][data-saved="true"] {
+          core = subn(core, r'    #xiv-page-bookmarks-controls \{.*?#xiv-root\[data-lightbox-active="true"\] #xiv-page-bookmarks-controls \{ display: none !important; \}\n', '''    .xiv-btn[data-xiv="page-bookmark-toggle"][data-saved="true"] {
       color: #ffb648; border-color: rgba(255,190,80,.56); background: rgba(255,190,80,.22);
     }
     .xiv-btn[data-xiv="page-bookmark-toggle"][data-saved="true"] svg {
       fill: currentColor;
     }
-''',
-              'core page bookmark css'
-          )
-          core = replace_once(
-              core,
-              '''    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/></svg>',
-''',
-              '''    bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5h12a1 1 0 0 1 1 1v15l-7-4-7 4v-15a1 1 0 0 1 1-1Z"/></svg>',
-    bookmarkList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h11M8 12h11M8 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>',
-    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1"/></svg>',
-''',
-              'core icons'
-          )
-          core = replace_once(
-              core,
-              '''  function normalizePageBookmarkUrl(url = location.href) {
-    try {
-      const parsed = new URL(url, location.href);
-      parsed.hash = "";
-      return parsed.href;
-    } catch {
-      return String(url || "").split("#")[0];
-    }
-  }
-
-  function pageBookmarkHost(url) {
-''',
-              '''  function normalizePageBookmarkUrl(url = location.href) {
-    try {
-      const parsed = new URL(url, location.href);
-      parsed.hash = "";
-      return parsed.href;
-    } catch {
-      return String(url || "").split("#")[0];
-    }
-  }
-
-  function isX810114ProfileBookmarkUrl(url) {
+''', 'core bookmark css')
+          if 'bookmarkList:' not in core:
+              core = core.replace("    link: '<svg", "    bookmark: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 4.5h12a1 1 0 0 1 1 1v15l-7-4-7 4v-15a1 1 0 0 1 1-1Z\"/></svg>',\n    bookmarkList: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 6h11M8 12h11M8 18h11\"/><path d=\"M4.5 6h.01M4.5 12h.01M4.5 18h.01\"/></svg>',\n    link: '<svg", 1)
+          if 'function currentPageBookmarkUrl()' not in core:
+              helper = '''  function isX810114ProfileBookmarkUrl(url) {
     try {
       const parsed = new URL(url, location.href);
       const parts = parsed.pathname.split("/").filter(Boolean);
@@ -180,7 +104,6 @@ jobs:
       document.querySelector('meta[property="og:url"], meta[name="og:url"]')?.getAttribute?.("content") || "",
       location.href
     ].filter(Boolean).map((url) => normalizePageBookmarkUrl(url));
-
     const profile = candidates.find(isX810114ProfileBookmarkUrl);
     if (profile) return profile;
     return candidates[candidates.length - 1] || normalizePageBookmarkUrl();
@@ -195,22 +118,9 @@ jobs:
     else button.textContent = label;
   }
 
-  function pageBookmarkHost(url) {
-''',
-              'core bookmark url helper'
-          )
-          core = replace_once(
-              core,
-              '''  async function syncPageBookmarkControls() {
-    const button = state.root?.querySelector('[data-xiv="page-bookmark-toggle"]');
-    if (!button) return;
-    const currentUrl = normalizePageBookmarkUrl();
-    const saved = (await readPageBookmarks()).some((item) => normalizePageBookmarkUrl(item.url) === currentUrl);
-    button.dataset.saved = saved ? "true" : "false";
-    button.textContent = saved ? "已收藏本页" : "收藏本页";
-  }
-''',
-              '''  async function syncPageBookmarkControls() {
+'''
+              core = core.replace('  function pageBookmarkHost(url) {\n', helper + '  function pageBookmarkHost(url) {\n', 1)
+          core = subn(core, r'  async function syncPageBookmarkControls\(\) \{.*?  \}\n\n  async function togglePageBookmarkFromCore', '''  async function syncPageBookmarkControls() {
     const button = state.root?.querySelector('[data-xiv="page-bookmark-toggle"]');
     if (!button) return;
     const currentUrl = currentPageBookmarkUrl();
@@ -219,85 +129,17 @@ jobs:
     button.dataset.saved = saved ? "true" : "false";
     setPageBookmarkButtonLabel(button, label);
   }
-''',
-              'core sync bookmark controls'
-          )
-          core = replace_once(
-              core,
-              '''  async function togglePageBookmarkFromCore() {
-    const currentUrl = normalizePageBookmarkUrl();
-''',
-              '''  async function togglePageBookmarkFromCore() {
-    const currentUrl = currentPageBookmarkUrl();
-''',
-              'core toggle bookmark current url'
-          )
-          core = replace_once(
-              core,
-              '''          <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>
-          <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>
-''',
-              '''          <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>
-          <button class="xiv-btn" type="button" data-xiv="page-bookmark-toggle" title="收藏本页" aria-label="收藏本页">${icons.bookmark}<span>收藏本页</span></button>
-          <button class="xiv-btn" type="button" data-xiv="page-bookmark-list" title="收藏列表" aria-label="收藏列表">${icons.bookmarkList}<span>收藏列表</span></button>
-          <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>
-''',
-              'core topbar bookmark buttons'
-          )
-          core = replace_once(
-              core,
-              '''      <div id="xiv-page-bookmarks-controls" aria-label="页面收藏">
-        <button type="button" data-xiv="page-bookmark-toggle">收藏本页</button>
-        <button type="button" data-xiv="page-bookmark-list">收藏列表</button>
-      </div>
-''',
-              '',
-              'remove floating bookmark controls'
-          )
-          core = replace_once(
-              core,
-              '''      loadSavedPage(url) {
-        return loadSavedPageInPlace(url);
-      }
-''',
-              '''      loadSavedPage(url) {
-        return loadSavedPageInPlace(url);
-      },
-      currentPageBookmarkUrl() {
-        return currentPageBookmarkUrl();
-      }
-''',
-              'control api current bookmark url'
-          )
+
+  async function togglePageBookmarkFromCore''', 'core sync bookmark')
+          core = core.replace('  async function togglePageBookmarkFromCore() {\n    const currentUrl = normalizePageBookmarkUrl();', '  async function togglePageBookmarkFromCore() {\n    const currentUrl = currentPageBookmarkUrl();', 1)
+          core = core.replace('          <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>\n          <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>', '          <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>\n          <button class="xiv-btn" type="button" data-xiv="page-bookmark-toggle" title="收藏本页" aria-label="收藏本页">${icons.bookmark}<span>收藏本页</span></button>\n          <button class="xiv-btn" type="button" data-xiv="page-bookmark-list" title="收藏列表" aria-label="收藏列表">${icons.bookmarkList}<span>收藏列表</span></button>\n          <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>', 1)
+          core = subn(core, r'      <div id="xiv-page-bookmarks-controls" aria-label="页面收藏">\n        <button type="button" data-xiv="page-bookmark-toggle">收藏本页</button>\n        <button type="button" data-xiv="page-bookmark-list">收藏列表</button>\n      </div>\n', '', 'remove floating controls', flags=0)
+          core = core.replace('      loadSavedPage(url) {\n        return loadSavedPageInPlace(url);\n      }', '      loadSavedPage(url) {\n        return loadSavedPageInPlace(url);\n      },\n      currentPageBookmarkUrl() {\n        return currentPageBookmarkUrl();\n      }', 1)
           write('src/core/flowlens-core.js', core)
 
-          # Page bookmarks patch: share the same canonical URL and keep buttons icon-only.
           pb = read('src/patches/page-bookmarks.js')
-          pb = replace_once(
-              pb,
-              '''  function normalizeUrl(url = location.href) {
-    try {
-      const parsed = new URL(url, location.href);
-      parsed.hash = "";
-      return parsed.href;
-    } catch {
-      return String(url || "").split("#")[0];
-    }
-  }
-
-  function hostOf(url) {
-''',
-              '''  function normalizeUrl(url = location.href) {
-    try {
-      const parsed = new URL(url, location.href);
-      parsed.hash = "";
-      return parsed.href;
-    } catch {
-      return String(url || "").split("#")[0];
-    }
-  }
-
-  function isX810114ProfileUrl(url) {
+          if 'function currentPageUrl()' not in pb:
+              pb = pb.replace('  function hostOf(url) {\n', '''  function isX810114ProfileUrl(url) {
     try {
       const parsed = new URL(url, location.href);
       const parts = parsed.pathname.split("/").filter(Boolean);
@@ -311,12 +153,8 @@ jobs:
 
   function currentPageUrl() {
     const apiUrl = window.__flowLensControl?.currentPageBookmarkUrl?.();
-    const candidates = [
-      apiUrl,
-      document.querySelector('link[rel="canonical"]')?.href || "",
-      document.querySelector('meta[property="og:url"], meta[name="og:url"]')?.getAttribute?.("content") || "",
-      location.href
-    ].filter(Boolean).map((url) => normalizeUrl(url));
+    const candidates = [apiUrl, document.querySelector('link[rel="canonical"]')?.href || "", document.querySelector('meta[property="og:url"], meta[name="og:url"]')?.getAttribute?.("content") || "", location.href]
+      .filter(Boolean).map((url) => normalizeUrl(url));
     const profile = candidates.find(isX810114ProfileUrl);
     if (profile) return profile;
     return candidates[0] || normalizeUrl();
@@ -331,99 +169,23 @@ jobs:
     else button.textContent = label;
   }
 
-  function hostOf(url) {
-''',
-              'page bookmarks current url helper'
-          )
+  function hostOf(url) {\n''', 1)
           pb = pb.replace('    return title || hostOf(location.href) || "未命名页面";', '    return title || hostOf(currentPageUrl()) || "未命名页面";')
-          pb = replace_once(
-              pb,
-              '''  function currentBookmark() {
-    const url = normalizeUrl();
-    return cache.find((item) => normalizeUrl(item.url) === url) || null;
-  }
-''',
-              '''  function currentBookmark() {
+          pb = subn(pb, r'  function currentBookmark\(\) \{.*?  \}\n\n  async function toggleCurrentBookmark', '''  function currentBookmark() {
     const url = currentPageUrl();
     return cache.find((item) => normalizeUrl(item.url) === url) || null;
   }
-''',
-              'page bookmarks currentBookmark'
-          )
-          pb = replace_once(
-              pb,
-              '''    const url = normalizeUrl();
-    const exists = currentBookmark();
-''',
-              '''    const url = currentPageUrl();
-    const exists = currentBookmark();
-''',
-              'page bookmarks toggle url'
-          )
-          pb = replace_once(
-              pb,
-              '''      #xiv-page-bookmarks-controls {
-        position: fixed !important;
-        top: max(70px, calc(env(safe-area-inset-top, 0px) + 58px)) !important;
-        right: max(12px, env(safe-area-inset-right, 0px) + 10px) !important;
-        z-index: 2147483647 !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: stretch !important;
-        gap: 8px !important;
-      }
-      #xiv-root[data-lightbox-active="true"] #xiv-page-bookmarks-controls {
-        display: none !important;
-      }
-      #xiv-root .fl-bookmarks-fab,
-      #xiv-root .fl-bookmarks-list-fab {
-        display: inline-flex !important;
-        align-items: center !important;
-        gap: 7px !important;
-        height: 38px !important;
-        padding: 0 14px !important;
-        border: 0 !important;
-        border-radius: 999px !important;
-        background: rgba(22,24,30,.9) !important;
-        color: #fff !important;
-        box-shadow: 0 10px 28px rgba(0,0,0,.28) !important;
-        backdrop-filter: blur(14px) !important;
-        font: 900 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-        cursor: pointer !important;
-      }
-      #xiv-root[data-theme="light"] .fl-bookmarks-fab,
-      #xiv-root[data-theme="light"] .fl-bookmarks-list-fab { background: rgba(255,255,255,.92) !important; color: #16181e !important; }
-      #xiv-root .fl-bookmarks-fab[data-saved="true"] { color: #ffb648 !important; }
-      #xiv-root .fl-bookmarks-fab svg,
-      #xiv-root .fl-bookmarks-list-fab svg { width: 18px !important; height: 18px !important; }
-''',
-              '''      #xiv-root .fl-bookmarks-fab[data-saved="true"] {
+
+  async function toggleCurrentBookmark''', 'page current bookmark')
+          pb = pb.replace('    const url = normalizeUrl();\n    const exists = currentBookmark();', '    const url = currentPageUrl();\n    const exists = currentBookmark();', 1)
+          pb = subn(pb, r'      #xiv-page-bookmarks-controls \{.*?#xiv-root \.fl-bookmarks-list-fab svg \{ width: 18px !important; height: 18px !important; \}\n', '''      #xiv-root .fl-bookmarks-fab[data-saved="true"] {
         background: rgba(255,190,80,.22) !important;
         color: #ffb648 !important;
         border-color: rgba(255,190,80,.56) !important;
       }
       #xiv-root .fl-bookmarks-fab[data-saved="true"] svg { fill: currentColor !important; }
-''',
-              'page bookmarks floating css removal'
-          )
-          pb = replace_once(
-              pb,
-              '''  function ensureFloatingButton() {
-    const r = root();
-    if (!r) return;
-    const group = r.querySelector("#xiv-page-bookmarks-controls");
-    if (!group) return;
-    let button = group.querySelector('[data-xiv="page-bookmark-toggle"]');
-    let listButton = group.querySelector('[data-xiv="page-bookmark-list"]');
-    if (!button || !listButton) return;
-    button.classList.add("fl-bookmarks-fab");
-    listButton.classList.add("fl-bookmarks-list-fab");
-    const saved = !!currentBookmark();
-    button.dataset.saved = saved ? "true" : "false";
-    button.textContent = saved ? "已收藏本页" : "收藏本页";
-  }
-''',
-              '''  function ensureFloatingButton() {
+''', 'page bookmark button css')
+          pb = subn(pb, r'  function ensureFloatingButton\(\) \{.*?  \}\n\n  function ensurePanel', '''  function ensureFloatingButton() {
     const r = root();
     if (!r) return;
     const button = r.querySelector('[data-xiv="page-bookmark-toggle"]');
@@ -437,26 +199,9 @@ jobs:
     setIconButtonLabel(button, label);
     setIconButtonLabel(listButton, "收藏列表");
   }
-''',
-              'page bookmarks topbar buttons sync'
-          )
-          pb = replace_once(
-              pb,
-              '''  function syncButtonState() {
-    const btn = document.querySelector("#xiv-root .fl-bookmarks-btn");
-    const saved = currentBookmark() ? "true" : "false";
-    if (btn) {
-      btn.dataset.saved = saved;
-      btn.title = currentBookmark() ? "当前页面已收藏，点击打开收藏列表" : "页面收藏";
-    }
-    const fab = document.querySelector("#xiv-root .fl-bookmarks-fab");
-    if (fab) {
-      fab.dataset.saved = saved;
-      fab.textContent = saved === "true" ? "已收藏本页" : "收藏本页";
-    }
-  }
-''',
-              '''  function syncButtonState() {
+
+  function ensurePanel''', 'page ensure topbar buttons')
+          pb = subn(pb, r'  function syncButtonState\(\) \{.*?  \}\n\n  function togglePanel', '''  function syncButtonState() {
     const btn = document.querySelector("#xiv-root .fl-bookmarks-btn");
     const current = currentBookmark();
     const saved = current ? "true" : "false";
@@ -471,13 +216,11 @@ jobs:
       setIconButtonLabel(fab, label);
     }
   }
-''',
-              'page bookmarks sync button state'
-          )
+
+  function togglePanel''', 'page sync button state')
           pb = pb.replace('.fl-bookmarks-panel, .fl-bookmarks-btn', '.fl-bookmarks-panel, .fl-bookmarks-btn, .fl-bookmarks-fab, .fl-bookmarks-list-fab')
           write('src/patches/page-bookmarks.js', pb)
-
-          print('Applied FlowLens v1.5.5 source patch')
+          print('Applied FlowLens v1.5.5 patch')
           PY
 
       - name: Build and validate userscripts
