@@ -9,7 +9,6 @@ on:
       - 'mobile-userscript/**'
       - 'src/**'
       - 'scripts/build-userscripts.mjs'
-      - 'scripts/flowlens-postbuild-v160.py'
       - 'version.json'
       - '.github/workflows/release-build.yml'
 
@@ -35,7 +34,6 @@ jobs:
       - name: Build and validate userscripts
         run: |
           node scripts/build-userscripts.mjs
-          python scripts/flowlens-postbuild-v160.py
           node --check flowlens-desktop.user.js
           node --check flowlens-mobile-all.user.js
           ! grep -E '@require|RuntimeLoader|eval[[:space:]]*\(' flowlens-desktop.user.js flowlens-mobile-all.user.js
