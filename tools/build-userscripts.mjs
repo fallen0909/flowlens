@@ -66,6 +66,9 @@ async function build({ name, namespace, description, output, additions = [] }) {
   if (/\b(?:eval|GM_xmlhttpRequest\s*\(\s*\{\s*method:\s*["']GET["'])/.test(bundle.slice(0, bundle.indexOf("/* src/core/version.js */")))) {
     throw new Error("The userscript entry must not contain a runtime loader");
   }
+  if (!bundle.includes('data-xiv="full"') || !bundle.includes('not([data-xiv="full"])')) {
+    throw new Error("The fullscreen toolbar control must remain visible in the compact toolbar");
+  }
   await writeFile(resolve(root, output), `${bundle.trim()}\n`, "utf8");
 }
 
