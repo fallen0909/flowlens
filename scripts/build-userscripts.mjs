@@ -21,6 +21,7 @@ const shared = [
   "src/patches/lightbox-stable.js",
   "src/patches/settings-compact.js",
   "src/patches/zhihu.js",
+  "src/patches/zhihu-dedupe.js",
   "src/patches/topfix.js",
   "src/patches/media-sync.js",
   "src/patches/slideshow-native.js",

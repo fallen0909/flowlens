@@ -11,7 +11,7 @@
    - Chrome: `chrome://extensions`
 2. 开启开发者模式。
 3. 点击“加载解压缩的扩展”或“Load unpacked”。
-4. 选择 `flowlens-extension` 文件夹。
+4. 选择 `apps/extension` 文件夹。
 
 ## 使用
 

@@ -73,5 +73,5 @@ outputs\flowlens-extension
 不要加载源码目录：
 
 ```text
-flowlens-extension
+apps\extension
 ```

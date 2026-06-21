@@ -1,4 +1,6 @@
-# 手机端：瀑光 FlowLens 油猴脚本
+# 历史手机端脚本（已归档）
+
+> 此目录仅保存旧实验脚本，不再维护。请安装仓库根目录的 `flowlens-mobile-all.user.js`。
 
 这是给 Android Edge + Tampermonkey 使用的版本。手机端不能像桌面浏览器那样直接加载本地未打包扩展，所以这里提供独立的油猴脚本。
 

@@ -1,12 +1,12 @@
 # FlowLens Edge 自动同步脚本
 # 用法：在项目根目录运行：powershell -ExecutionPolicy Bypass -File scripts\auto-sync-edge.ps1
-# 效果：自动 git pull → 同步 flowlens-extension 到 outputs/flowlens-extension → 更新 reload-token.txt 触发 Edge 扩展重载。
+# 效果：自动 git pull → 同步 apps/extension 到 outputs/flowlens-extension → 更新 reload-token.txt 触发 Edge 扩展重载。
 
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptDir
-$src = Join-Path $projectRoot "flowlens-extension"
+$src = Join-Path $projectRoot "apps\extension"
 $dst = Join-Path $projectRoot "outputs\flowlens-extension"
 $tokenFile = Join-Path $dst "reload-token.txt"
 $branch = "master"
@@ -37,7 +37,7 @@ function Sync-ExtensionToEdge {
         New-Item -ItemType Directory -Force -Path $dst | Out-Null
     }
 
-    # /MIR 表示镜像同步，让 outputs 目录和 flowlens-extension 保持一致。
+    # /MIR 表示镜像同步，让 outputs 目录和 apps/extension 保持一致。
     robocopy $src $dst /MIR /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         throw "同步文件失败，robocopy exit code: $LASTEXITCODE"
