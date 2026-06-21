@@ -9,15 +9,22 @@ on:
       - 'mobile-userscript/**'
       - 'src/**'
       - 'scripts/build-userscripts.mjs'
+      - 'scripts/flowlens-postbuild-v160.py'
       - 'version.json'
       - '.github/workflows/release-build.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip release-build]')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Read version
         id: version
@@ -28,9 +35,18 @@ jobs:
       - name: Build and validate userscripts
         run: |
           node scripts/build-userscripts.mjs
+          python scripts/flowlens-postbuild-v160.py
           node --check flowlens-desktop.user.js
           node --check flowlens-mobile-all.user.js
-          ! grep -E '@require|RuntimeLoader|eval[[:space:]]*\\(' flowlens-desktop.user.js flowlens-mobile-all.user.js
+          ! grep -E '@require|RuntimeLoader|eval[[:space:]]*\(' flowlens-desktop.user.js flowlens-mobile-all.user.js
+
+      - name: Commit generated userscripts
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add flowlens-desktop.user.js flowlens-mobile-all.user.js
+          git commit -m "Build FlowLens userscripts v${{ steps.version.outputs.version }} [skip release-build]" || exit 0
+          git push
 
       - name: Build ZIP packages
         run: |
@@ -38,26 +54,21 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           rm -rf dist release-work
           mkdir -p release-work dist
-
           mkdir -p release-work/flowlens-extension
           rsync -a flowlens-extension/ release-work/flowlens-extension/
           (cd release-work && zip -r "../dist/flowlens-extension-v${VERSION}.zip" flowlens-extension)
-
           mkdir -p release-work/flowlens-userscripts
           cp flowlens-desktop.user.js release-work/flowlens-userscripts/
           cp flowlens-mobile-all.user.js release-work/flowlens-userscripts/
           (cd release-work && zip -r "../dist/flowlens-userscripts-v${VERSION}.zip" flowlens-userscripts)
-
           cat > dist/README.txt <<EOF
           FlowLens release v${VERSION}
 
-          Desktop extension:
-          - unzip flowlens-extension-v${VERSION}.zip
-          - Edge/Chrome -> extensions -> developer mode -> load unpacked -> choose flowlens-extension folder
+          Desktop userscript:
+          - flowlens-desktop.user.js
 
-          Mobile userscripts:
-          - unzip flowlens-userscripts-v${VERSION}.zip
-          - open install-userscript.html or install scripts from GitHub Pages if enabled
+          Mobile userscript:
+          - flowlens-mobile-all.user.js
           EOF
 
       - name: Upload release packages
