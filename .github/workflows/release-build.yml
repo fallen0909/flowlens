@@ -1,97 +1,55 @@
-name: Build release packages
+name: Verify and package FlowLens
 
 on:
-  workflow_dispatch:
+  pull_request:
   push:
     branches: [master]
     paths:
-      - 'flowlens-extension/**'
-      - 'mobile-userscript/**'
+      - 'apps/extension/**'
       - 'src/**'
       - 'scripts/build-userscripts.mjs'
       - 'version.json'
       - '.github/workflows/release-build.yml'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
-    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip release-build]')
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version: 22
 
-      - name: Apply bookmark open patch
+      - name: Rebuild official userscripts
+        run: node scripts/build-userscripts.mjs
+
+      - name: Require committed release files
+        run: git diff --exit-code -- flowlens-desktop.user.js flowlens-mobile-all.user.js
+
+      - name: Validate JavaScript and extension manifest
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          cpath = Path('src/core/flowlens-core.js')
-          s = cpath.read_text(encoding='utf-8')
-          old = '''  async function loadSavedPageInPlace(target) {
-    const targetUrl = normalizedPageUrl(target);
-    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
-
-    let html = "";'''
-          new = '''  async function loadSavedPageInPlace(target) {
-    const targetUrl = normalizedPageUrl(target);
-    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
-
-    if (isQueueCandidateUrl(targetUrl)) {
-      try {
-        const switched = await loadGalleryQueueTargetInPlace(targetUrl);
-        if (switched) return true;
-      } catch {
-        // Fall through to normal saved-page loading.
-      }
-    }
-
-    let html = "";'''
-          if new not in s:
-              if old not in s:
-                  raise SystemExit('anchor not found')
-              s = s.replace(old, new, 1)
-          cpath.write_text(s, encoding='utf-8')
-          PY
-
-      - name: Read version
-        id: version
-        run: |
-          VERSION=$(node -p "require('./version.json').version")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Build and validate userscripts
-        run: |
-          node scripts/build-userscripts.mjs
           node --check flowlens-desktop.user.js
           node --check flowlens-mobile-all.user.js
+          node --check apps/extension/content.js
+          node --check apps/extension/background.js
+          node --check apps/extension/options.js
+          node --check apps/extension/popup.js
+          node -e "JSON.parse(require('fs').readFileSync('apps/extension/manifest.json', 'utf8')); console.log('manifest ok')"
 
-      - name: Commit generated userscripts
+      - name: Package release artifacts
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add src/core/flowlens-core.js flowlens-desktop.user.js flowlens-mobile-all.user.js
-          git commit -m "Build FlowLens userscripts v${{ steps.version.outputs.version }} [skip release-build]" || exit 0
-          git push
+          VERSION=$(node -p "require('./version.json').version")
+          mkdir -p dist/flowlens-userscripts
+          cp flowlens-desktop.user.js flowlens-mobile-all.user.js dist/flowlens-userscripts/
+          (cd dist && zip -r "flowlens-userscripts-v${VERSION}.zip" flowlens-userscripts)
+          (cd apps && zip -r "../dist/flowlens-extension-v${VERSION}.zip" extension)
 
-      - name: Build ZIP packages
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          rm -rf dist release-work
-          mkdir -p release-work dist
-          mkdir -p release-work/flowlens-extension
-          rsync -a flowlens-extension/ release-work/flowlens-extension/
-          (cd release-work && zip -r "../dist/flowlens-extension-v${VERSION}.zip" flowlens-extension)
-          mkdir -p release-work/flowlens-userscripts
-          cp flowlens-desktop.user.js release-work/flowlens-userscripts/
-          cp flowlens-mobile-all.user.js release-work/flowlens-userscripts/
-          (cd release-work && zip -r "../dist/flowlens-userscripts-v${VERSION}.zip" flowlens-userscripts)
-
-      - name: Upload release packages
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: flowlens-release-v${{ steps.version.outputs.version }}
-          path: dist/*
+          name: flowlens-release
+          path: dist/*.zip

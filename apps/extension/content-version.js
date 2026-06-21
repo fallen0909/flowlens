@@ -22,7 +22,7 @@
     releaseDate: RELEASE_DATE,
     features: Object.freeze([...(Array.isArray(previous.features) ? previous.features : []), ...FEATURES]
       .filter((item, index, array) => item && array.indexOf(item) === index)),
-    source: "flowlens-extension/content-version.js"
+    source: "apps/extension/content-version.js"
   });
 
   window.__FlowLensVersion = info;

@@ -8,7 +8,7 @@ FlowLens Edge 自动同步最简说明
 3. 双击 scripts\start-edge-auto-sync.bat
 4. Edge 打开 edge://extensions/
 5. 打开开发人员模式。
-6. 加载解压缩的扩展，选择：outputs\flowlens-extension
+6. 加载解压缩的扩展，选择：outputs\flowlens-extension（由 apps\extension 自动同步生成）
 
 二、以后：
 只要 start-edge-auto-sync.bat 这个窗口开着，GitHub 有新代码，本地会自动更新，Edge 扩展会自动重载。
