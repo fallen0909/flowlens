@@ -1,0 +1,108 @@
+name: Add fullscreen button v1.6.9
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/add-fullscreen-v169.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add fullscreen button and bump version
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          VERSION = '1.6.9'
+          PATCH = r'''
+
+  const FULLSCREEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H4a1 1 0 0 0-1 1v4"/><path d="M16 3h4a1 1 0 0 1 1 1v4"/><path d="M8 21H4a1 1 0 0 1-1-1v-4"/><path d="M16 21h4a1 1 0 0 0 1-1v-4"/></svg>';
+  function ensureFullscreenButton() {
+    const root = document.getElementById("xiv-root");
+    const bar = root?.querySelector("#xiv-topbar .xiv-actions");
+    if (!root || !bar || bar.querySelector('[data-fl-fullscreen="toggle"]')) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "xiv-btn fl-fullscreen-btn";
+    button.dataset.flFullscreen = "toggle";
+    button.title = "全屏";
+    button.setAttribute("aria-label", "全屏");
+    button.innerHTML = FULLSCREEN_ICON;
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        } else {
+          await (root.requestFullscreen?.() || document.documentElement.requestFullscreen?.());
+        }
+      } catch {
+        root.classList.toggle("fl-fake-fullscreen");
+      }
+    });
+    const close = bar.querySelector('[data-xiv="close"], [aria-label="关闭"], [title="关闭"]');
+    const settings = bar.querySelector('[data-xiv="settings"], [aria-label="设置"], [title="设置"]');
+    bar.insertBefore(button, close || settings || null);
+  }
+  function injectFullscreenStyle() {
+    if (document.getElementById("flowlens-fullscreen-169")) return;
+    const style = document.createElement("style");
+    style.id = "flowlens-fullscreen-169";
+    style.textContent = `
+      #xiv-root .fl-fullscreen-btn svg { width: 21px !important; height: 21px !important; }
+      #xiv-root.fl-fake-fullscreen { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 2147483647 !important; background: var(--xiv-bg, #fff) !important; }
+    `;
+    document.documentElement.appendChild(style);
+  }
+'''
+
+          for file_name in ['flowlens-desktop.user.js', 'flowlens-mobile-all.user.js']:
+              path = Path(file_name)
+              s = path.read_text(encoding='utf-8')
+              s = s.replace('// @version      1.6.8', f'// @version      {VERSION}')
+              s = s.replace('const VERSION = "1.6.8";', f'const VERSION = "{VERSION}";')
+              s = s.replace('page-bookmarks.js?fl=1.6.8', f'page-bookmarks.js?fl={VERSION}')
+              s = s.replace('xchina 加速版：提升多图页面加载速度，降低大量图片/视频卡顿，收藏同步低频防限流。', '全屏按钮版：右上角新增全屏按钮，保留 xchina 加速和同步防限流。')
+              s = s.replace('window.__flowLensRelease168Patch', 'window.__flowLensRelease169Patch')
+              s = s.replace('"fast-photo-site-mode"', '"fast-photo-site-mode", "topbar-fullscreen-button"')
+              if 'ensureFullscreenButton' not in s:
+                  marker = '  setVersion();'
+                  idx = s.rfind(marker)
+                  if idx < 0:
+                      raise SystemExit(f'marker not found in {file_name}')
+                  s = s[:idx] + PATCH + s[idx:]
+              s = s.replace('setVersion(); patchControlApi(); autoOpenAfterNavigation(); startPerformancePatch(); setInterval(() => { setVersion(); patchControlApi(); }, 1000);', 'setVersion(); patchControlApi(); autoOpenAfterNavigation(); startPerformancePatch(); injectFullscreenStyle(); ensureFullscreenButton(); setInterval(() => { setVersion(); patchControlApi(); injectFullscreenStyle(); ensureFullscreenButton(); }, 1000);')
+              s = s.replace('setVersion();\n  patchControlApi();\n  autoOpenAfterNavigation();\n  startPerformancePatch();\n  setInterval(() => { setVersion(); patchControlApi(); }, 1000);', 'setVersion();\n  patchControlApi();\n  autoOpenAfterNavigation();\n  startPerformancePatch();\n  injectFullscreenStyle();\n  ensureFullscreenButton();\n  setInterval(() => { setVersion(); patchControlApi(); injectFullscreenStyle(); ensureFullscreenButton(); }, 1000);')
+              path.write_text(s, encoding='utf-8')
+
+          vp = Path('version.json')
+          v = json.loads(vp.read_text(encoding='utf-8'))
+          v['version'] = VERSION
+          v.setdefault('desktop', {})['version'] = VERSION
+          v.setdefault('mobile', {})['version'] = VERSION
+          feats = v.setdefault('features', [])
+          for f in ['topbar-fullscreen-button', 'fast-photo-site-mode']:
+              if f not in feats:
+                  feats.append(f)
+          vp.write_text(json.dumps(v, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+      - name: Validate
+        run: |
+          node --check flowlens-desktop.user.js
+          node --check flowlens-mobile-all.user.js
+      - name: Commit
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add flowlens-desktop.user.js flowlens-mobile-all.user.js version.json
+          git commit -m "Release FlowLens v1.6.9 fullscreen button" || exit 0
+          git push
