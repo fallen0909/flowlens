@@ -1,14 +1,14 @@
 {
-  "version": "1.6.8",
+  "version": "1.6.9",
   "desktop": {
-    "version": "1.6.8",
+    "version": "1.6.9",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.6.8",
+    "version": "1.6.9",
     "entry": "flowlens-mobile-all.user.js",
-    "loader": "wrapper-with-fast-photo-site-mode"
+    "loader": "wrapper-with-fullscreen-button"
   },
   "source": {
     "versionCenter": "src/core/version.js",
@@ -24,6 +24,7 @@
     "github-rate-limit-backoff",
     "large-gallery-performance-mode",
     "fast-photo-site-mode",
+    "topbar-fullscreen-button",
     "mobile-sync-code-hotfix",
     "diagnostics-log-export",
     "settings-version-display",
