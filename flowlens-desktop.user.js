@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 电脑油猴版
 // @namespace    local.flowlens.desktop
-// @version      1.7.1
+// @version      1.7.2
 // @description  完整单文件发布版：沉浸式网页图片与视频瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
@@ -18,7 +18,7 @@
 
 /* src/core/version.js */
 (() => {
-  const VERSION = "1.7.1";
+  const VERSION = "1.7.2";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
@@ -5839,7 +5839,7 @@
     #xiv-topbar { top: 0 !important; padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important; background: linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.36), rgba(0,0,0,0)) !important; }
     #xiv-root[data-theme="light"] #xiv-topbar { background: linear-gradient(to bottom, rgba(244,244,241,.92), rgba(244,244,241,.45), rgba(244,244,241,0)) !important; }
     #xiv-topbar .xiv-pill { background: transparent !important; border: 0 !important; color: #fff !important; padding: 0 4px !important; box-shadow: none !important; backdrop-filter: none !important; text-shadow: 0 1px 2px rgba(0,0,0,.72), 0 0 10px rgba(0,0,0,.46) !important; }
-    #xiv-topbar [data-xiv]:not([data-xiv="download"]):not([data-xiv="auto"]):not([data-xiv="prev-set"]):not([data-xiv="next-set"]):not([data-xiv="top"]):not([data-xiv="settings"]):not([data-xiv="close"]), #xiv-topbar .xiv-select[data-xiv="filter"] { display: none !important; }
+    #xiv-topbar [data-xiv]:not([data-xiv="download"]):not([data-xiv="auto"]):not([data-xiv="full"]):not([data-xiv="prev-set"]):not([data-xiv="next-set"]):not([data-xiv="top"]):not([data-xiv="settings"]):not([data-xiv="close"]), #xiv-topbar .xiv-select[data-xiv="filter"] { display: none !important; }
     #xiv-topbar .xiv-actions { gap: 8px !important; flex-wrap: nowrap !important; }
     #xiv-root[data-lightbox-active="true"] #xiv-topbar { justify-content: flex-end !important; gap: 0 !important; padding: 8px 10px !important; pointer-events: none !important; }
     #xiv-root[data-lightbox-active="true"] #xiv-topbar .xiv-pill { display: none !important; }
