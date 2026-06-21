@@ -1,14 +1,14 @@
 {
-  "version": "1.6.9",
+  "version": "1.7.0",
   "desktop": {
-    "version": "1.6.9",
+    "version": "1.7.0",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.6.9",
+    "version": "1.7.0",
     "entry": "flowlens-mobile-all.user.js",
-    "loader": "wrapper-with-fullscreen-button"
+    "loader": "wrapper-with-zhihu-dedupe"
   },
   "source": {
     "versionCenter": "src/core/version.js",
@@ -25,6 +25,7 @@
     "large-gallery-performance-mode",
     "fast-photo-site-mode",
     "topbar-fullscreen-button",
+    "zhihu-media-dedupe",
     "mobile-sync-code-hotfix",
     "diagnostics-log-export",
     "settings-version-display",
