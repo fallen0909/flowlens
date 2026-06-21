@@ -121,20 +121,21 @@
   function saveSyncConfig(config) {
     syncConfig = config || null;
     storageSet(SYNC_KEY, JSON.stringify(syncConfig));
+    if (syncConfig) startAutoSync();
+    else if (syncTimer) { clearInterval(syncTimer); syncTimer = 0; }
     updateSyncUi();
   }
-  const encodeSyncCode = (config) => `FLGIST1.${b64urlEncode(JSON.stringify({ g: config.gistId, t: config.token }))}`;
+  const encodeSyncCode = (config) => `FLGIST2.${b64urlEncode(JSON.stringify({ g: config.gistId }))}`;
   function decodeSyncCode(code) {
     const raw = normalizeSyncCode(code);
-    if (!raw) return null;
-    if (raw.startsWith("{")) {
-      const json = safeJson(raw, null);
-      if (json?.g && json?.t) return { provider: "gist", gistId: json.g, token: json.t };
-      if (json?.gistId && json?.token) return { provider: "gist", gistId: json.gistId, token: json.token };
-    }
-    const body = raw.startsWith("FLGIST1.") ? raw.slice("FLGIST1.".length) : raw;
+    if (!raw || !raw.startsWith("FLGIST2.")) return null;
+    const body = raw.slice("FLGIST2.".length);
     const parsed = safeJson(b64urlDecode(body), null);
-    return parsed?.g && parsed?.t ? { provider: "gist", gistId: parsed.g, token: parsed.t } : null;
+    return parsed?.g ? { provider: "gist", gistId: parsed.g } : null;
+  }
+  function promptForToken() {
+    const token = window.prompt("请输入 GitHub Token（需要 gist 权限）。Token 只保存在当前设备，绝不会写入同步码。", "");
+    return String(token || "").trim();
   }
   function isBackoffActive() {
     if (Date.now() < rateLimitedUntil) {
@@ -234,7 +235,7 @@
     pushTimer = window.setTimeout(() => pushSync(), Math.max(PUSH_DEBOUNCE_MS, MIN_PUSH_MS - (Date.now() - lastPushAt)));
   }
   function startAutoSync() {
-    if (syncTimer) return;
+    if (!loadSyncConfig() || syncTimer) return;
     syncTimer = window.setInterval(() => {
       if (loadSyncConfig() && Date.now() - lastPullAt > AUTO_PULL_MS) pullSync({ silent: true });
     }, 60000);
@@ -246,10 +247,13 @@
       if (input === null) return;
       if (String(input).trim().toLowerCase() === "clear") { saveSyncConfig(null); updateSyncUi("未同步"); status("已关闭收藏同步"); window.alert?.("已关闭收藏同步"); return; }
       const next = decodeSyncCode(input);
-      if (!next) { status("同步码格式不正确"); window.alert?.("同步码格式不正确，请完整复制 FLGIST1 开头的同步码"); return; }
-      saveSyncConfig(next); updateSyncUi("正在验证同步码");
+      if (!next) { status("同步码格式不正确"); window.alert?.("同步码格式不正确，请完整复制 FLGIST2 开头的同步码"); return; }
+      const token = promptForToken();
+      if (!token) return;
+      const config = { ...next, token };
+      saveSyncConfig(config); updateSyncUi("正在验证同步码");
       const pulled = await pullSync({ silent: false });
-      const pushed = pulled ? await patchRemote(await readBookmarks(), next).then(() => true).catch((e) => { handleSyncError(e, "上传失败"); return false; }) : false;
+      const pushed = pulled ? await patchRemote(await readBookmarks(), config).then(() => true).catch((e) => { handleSyncError(e, "上传失败"); return false; }) : false;
       window.alert?.(pulled && pushed ? "同步码已生效，收藏夹会自动同步。" : `同步失败：${lastSyncError || "请检查同步码、Token 权限和网络"}`);
       return;
     }
@@ -258,16 +262,19 @@
     const trimmed = normalizeSyncCode(code);
     if (trimmed) {
       const parsed = decodeSyncCode(trimmed);
-      if (!parsed) { status("同步码格式不正确"); window.alert?.("同步码格式不正确，请完整复制 FLGIST1 开头的同步码"); return; }
-      saveSyncConfig(parsed); updateSyncUi("正在验证同步码");
+      if (!parsed) { status("同步码格式不正确"); window.alert?.("同步码格式不正确，请完整复制 FLGIST2 开头的同步码"); return; }
+      const token = promptForToken();
+      if (!token) return;
+      const config = { ...parsed, token };
+      saveSyncConfig(config); updateSyncUi("正在验证同步码");
       const pulled = await pullSync({ silent: false });
-      const pushed = pulled ? await patchRemote(await readBookmarks(), parsed).then(() => true).catch((e) => { handleSyncError(e, "上传失败"); return false; }) : false;
+      const pushed = pulled ? await patchRemote(await readBookmarks(), config).then(() => true).catch((e) => { handleSyncError(e, "上传失败"); return false; }) : false;
       window.alert?.(pulled && pushed ? "同步码已生效，收藏夹会自动同步。" : `同步失败：${lastSyncError || "请检查同步码、Token 权限和网络"}`);
       return;
     }
-    const token = window.prompt("请输入 GitHub Token（需要 gist 权限）。只保存在本机，用来创建私有 Gist 同步收藏。", "");
+    const token = promptForToken();
     if (!token) return;
-    try { status("正在创建同步空间"); const config = await createRemote(token.trim()); saveSyncConfig(config); await patchRemote(await readBookmarks(), config); window.prompt("同步已开启。复制这个同步码到手机或另一台电脑即可自动同步。", encodeSyncCode(config)); }
+    try { status("正在创建同步空间"); const config = await createRemote(token); saveSyncConfig(config); await patchRemote(await readBookmarks(), config); window.prompt("同步已开启。复制此同步码到另一台设备；新设备需单独输入自己的 GitHub Token。", encodeSyncCode(config)); }
     catch (error) { const msg = handleSyncError(error, "同步空间创建失败"); status(`同步空间创建失败：${msg}`); window.alert?.(`同步空间创建失败：${msg}`); }
   }
   function updateSyncUi(text = "") {
@@ -373,6 +380,14 @@
     if (event.target.closest("[data-action='open'],.fl-safe-info")) { event.preventDefault(); event.stopPropagation(); openBookmark(index); }
   }, true);
   window.addEventListener("flowlens:bookmarks-changed", () => { cache = null; renderPanel(); syncButton(); });
-  setInterval(installButtons, 1500);
+  let installTimer = 0;
+  const scheduleInstall = () => {
+    clearTimeout(installTimer);
+    installTimer = window.setTimeout(installButtons, 80);
+  };
+  new MutationObserver(() => {
+    const bar = actions();
+    if (bar && (!bar.querySelector('[data-fl-bookmark-safe="toggle"]') || !bar.querySelector('[data-fl-bookmark-safe="list"]'))) scheduleInstall();
+  }).observe(document.documentElement, { childList: true, subtree: true });
   installButtons();
 })();

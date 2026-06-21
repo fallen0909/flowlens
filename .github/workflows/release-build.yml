@@ -7,7 +7,7 @@ on:
     paths:
       - 'apps/extension/**'
       - 'src/**'
-      - 'scripts/build-userscripts.mjs'
+      - 'tools/**'
       - 'version.json'
       - '.github/workflows/release-build.yml'
   workflow_dispatch:
@@ -25,11 +25,13 @@ jobs:
         with:
           node-version: 22
 
-      - name: Rebuild official userscripts
-        run: node scripts/build-userscripts.mjs
+      - name: Rebuild official release files
+        run: |
+          node tools/sync-extension-sources.mjs
+          node tools/build-userscripts.mjs
 
       - name: Require committed release files
-        run: git diff --exit-code -- flowlens-desktop.user.js flowlens-mobile-all.user.js
+        run: git diff --exit-code -- apps/extension flowlens-desktop.user.js flowlens-mobile-all.user.js
 
       - name: Validate JavaScript and extension manifest
         run: |

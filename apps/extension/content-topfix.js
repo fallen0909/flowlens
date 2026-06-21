@@ -80,22 +80,24 @@
         display: inline-flex !important;
         visibility: visible !important;
         opacity: 1 !important;
-        flex: 1 1 auto !important;
-        min-width: 88px !important;
+        flex: 0 1 auto !important;
+        min-width: 0 !important;
         max-width: calc(100vw - 178px) !important;
-        min-height: 34px !important;
-        padding: 0 9px !important;
+        min-height: 28px !important;
+        padding: 0 !important;
         overflow: hidden !important;
         white-space: nowrap !important;
-        background: rgba(18,18,20,.72) !important;
+        background: transparent !important;
         color: #fff !important;
-        border: 1px solid rgba(255,255,255,.16) !important;
-        backdrop-filter: blur(12px) !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,.72), 0 0 10px rgba(0,0,0,.46) !important;
       }
       #xiv-root[data-active="true"][data-theme="light"] #xiv-topbar .xiv-pill {
-        background: rgba(255,255,255,.82) !important;
-        color: #151515 !important;
-        border-color: rgba(0,0,0,.12) !important;
+        background: transparent !important;
+        color: #fff !important;
+        border-color: transparent !important;
       }
       #xiv-root[data-active="true"] #xiv-counter,
       #xiv-root[data-active="true"] #xiv-status {

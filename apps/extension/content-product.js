@@ -562,9 +562,25 @@
     applyTimer = window.setTimeout(applyAll, 120);
   }
 
+  let observedRoot = null;
+  let rootObserver = null;
+  let bootstrapObserver = null;
+  function observeViewerRoot() {
+    const root = document.getElementById("xiv-root");
+    if (!root || root === observedRoot) return;
+    rootObserver?.disconnect();
+    observedRoot = root;
+    rootObserver = new MutationObserver(scheduleApplyAll);
+    rootObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "src", "style", "hidden", "class"] });
+    bootstrapObserver?.disconnect();
+    bootstrapObserver = null;
+    scheduleApplyAll();
+  }
+
   injectStyle();
-  new MutationObserver(scheduleApplyAll).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "src", "style", "hidden", "class"] });
+  bootstrapObserver = new MutationObserver(observeViewerRoot);
+  bootstrapObserver.observe(document.documentElement, { childList: true, subtree: true });
+  observeViewerRoot();
   window.addEventListener("scroll", scheduleHistory, { passive: true });
   window.addEventListener("resize", scheduleApplyAll, { passive: true });
-  window.setInterval(() => { if (active() || lightboxActive()) applyAll(); }, 1000);
 })();

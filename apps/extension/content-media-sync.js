@@ -2,7 +2,7 @@
   if (window.__flowLensMediaSyncPatch) return;
   window.__flowLensMediaSyncPatch = true;
 
-  const VERSION = "1.4.36";
+  const VERSION = window.__FLOWLENS_VERSION__ || "dev";
   const FILTER_ORDER = ["all", "image", "video"];
   const FILTER_TEXT = { all: "全部", image: "图片", video: "视频" };
   const FILTER_KEY = "flowlens-media-filter-v1";

@@ -1,5 +1,5 @@
 # 取消 FlowLens Edge 自动同步脚本开机启动。
-# 用法：powershell -ExecutionPolicy Bypass -File scripts\uninstall-edge-auto-sync-startup.ps1
+# 用法：powershell -ExecutionPolicy Bypass -File tools\uninstall-edge-auto-sync-startup.ps1
 
 $shortcutPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\FlowLens Edge Auto Sync.lnk"
 

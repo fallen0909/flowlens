@@ -8,7 +8,7 @@
   "mobile": {
     "version": "1.7.0",
     "entry": "flowlens-mobile-all.user.js",
-    "loader": "wrapper-with-zhihu-dedupe"
+    "loader": "single-file-build"
   },
   "source": {
     "versionCenter": "src/core/version.js",
@@ -26,6 +26,9 @@
     "fast-photo-site-mode",
     "topbar-fullscreen-button",
     "zhihu-media-dedupe",
+    "event-driven-ui-patches",
+    "token-free-bookmark-sync-code",
+    "extension-source-sync",
     "mobile-sync-code-hotfix",
     "diagnostics-log-export",
     "settings-version-display",

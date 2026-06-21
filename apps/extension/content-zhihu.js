@@ -85,8 +85,6 @@
       });
     });
 
-    const html = document.documentElement?.innerHTML || "";
-    (html.match(ZHIMG_RE) || []).forEach((url) => rememberUrl(result, url));
     return [...result.values()];
   }
 
@@ -280,13 +278,11 @@
 
   syncPrecollector();
   window.addEventListener("load", scheduleSync, { once: true });
-  window.addEventListener("scroll", scheduleSync, { passive: true });
   window.addEventListener("keydown", () => setTimeout(maybeStartAnswerAutoload, 200), true);
   window.addEventListener("click", () => setTimeout(maybeStartAnswerAutoload, 200), true);
-  window.setInterval(() => {
-    if (loaderRunning && !viewerActive()) stopAnswerAutoload("就绪");
-    else maybeStartAnswerAutoload();
-  }, 1200);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") maybeStartAnswerAutoload();
+  });
   new MutationObserver(scheduleSync).observe(document.documentElement, {
     childList: true,
     subtree: true,

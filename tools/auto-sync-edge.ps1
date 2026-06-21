@@ -1,5 +1,5 @@
 # FlowLens Edge 自动同步脚本
-# 用法：在项目根目录运行：powershell -ExecutionPolicy Bypass -File scripts\auto-sync-edge.ps1
+# 用法：在项目根目录运行：powershell -ExecutionPolicy Bypass -File tools\auto-sync-edge.ps1
 # 效果：自动 git pull → 同步 apps/extension 到 outputs/flowlens-extension → 更新 reload-token.txt 触发 Edge 扩展重载。
 
 $ErrorActionPreference = "Stop"

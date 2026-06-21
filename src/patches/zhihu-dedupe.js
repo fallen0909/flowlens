@@ -66,6 +66,8 @@
     observedRoot = root;
     rootObserver = new MutationObserver(schedule);
     rootObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "poster"] });
+    bootstrapObserver?.disconnect();
+    bootstrapObserver = null;
     schedule();
   }
 
