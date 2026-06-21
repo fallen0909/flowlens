@@ -128,6 +128,7 @@
     galleryQueueObserver: null,
     galleryQueueRefreshTimer: 0,
     videoPreviewObserver: null,
+    imageLoadObserver: null,
     videoPreviewQueue: [],
     videoPreviewLoading: 0,
     hostOverlayObserver: null,
@@ -2387,9 +2388,10 @@
 
   function createImageElement(url, index) {
     const img = document.createElement("img");
-    const eagerLimit = isKnownGalleryUrl() ? 24 : 8;
+    const eagerLimit = isKnownGalleryUrl() ? 32 : 16;
     img.loading = index < eagerLimit ? "eager" : "lazy";
-    if (index < eagerLimit) img.fetchPriority = "high";
+    if (index < Math.min(6, eagerLimit)) img.fetchPriority = "high";
+    else if (index >= eagerLimit) img.dataset.xivDeferredImage = "true";
     img.decoding = "async";
     applyInitialAspectRatio(img, url);
     setImageSourceWithFallback(img, url);
@@ -2439,7 +2441,10 @@
     }
 
     const img = document.createElement("img");
-    img.loading = index < 8 ? "eager" : "lazy";
+    const eagerLimit = isKnownGalleryUrl() ? 24 : 12;
+    img.loading = index < eagerLimit ? "eager" : "lazy";
+    if (index < Math.min(6, eagerLimit)) img.fetchPriority = "high";
+    else if (index >= eagerLimit) img.dataset.xivDeferredImage = "true";
     img.decoding = "async";
     applyInitialAspectRatio(img, poster);
     img.referrerPolicy = shouldKeepReferrer(poster) ? "no-referrer-when-downgrade" : "no-referrer";
@@ -3722,10 +3727,33 @@
     if (fragment.childNodes.length) {
       ensureMasonryColumns();
       appendTilesToMasonry([...fragment.childNodes]);
+      observeDeferredImages();
     }
     syncTileIndexes();
     updateCounter();
     scheduleRestoreViewerPosition();
+  }
+
+  function ensureImageLoadObserver() {
+    if (state.imageLoadObserver || !state.stage || typeof IntersectionObserver !== "function") return;
+    state.imageLoadObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const img = entry.target;
+        img.loading = "eager";
+        if (img.fetchPriority !== "high") img.fetchPriority = "auto";
+        delete img.dataset.xivDeferredImage;
+        state.imageLoadObserver?.unobserve(img);
+      }
+    }, { root: state.stage, rootMargin: "900px 0px", threshold: 0.01 });
+  }
+
+  function observeDeferredImages() {
+    ensureImageLoadObserver();
+    if (!state.imageLoadObserver) return;
+    state.grid?.querySelectorAll('img[data-xiv-deferred-image="true"]').forEach((img) => {
+      state.imageLoadObserver.observe(img);
+    });
   }
 
   function useSimpleGridLayout() {
