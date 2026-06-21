@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 电脑油猴版
 // @namespace    local.flowlens.desktop
-// @version      1.6.8
-// @description  xchina 加速版：提升多图页面加载速度，降低大量图片/视频卡顿，收藏同步低频防限流。
+// @version      1.6.9
+// @description  全屏按钮版：右上角新增全屏按钮，保留 xchina 加速和同步防限流。
 // @match        *://*/*
 // @run-at       document-idle
 // @noframes
@@ -12,19 +12,20 @@
 // @grant        GM_setValue
 // @connect      *
 // @connect      api.github.com
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/page-bookmarks.js?fl=1.6.8
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/page-bookmarks.js?fl=1.6.9
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/454158f8e196ac28c0416d06a8dec51a635d4c5a/flowlens-desktop.user.js
 // @downloadURL  https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop.user.js
 // @updateURL    https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop.user.js
 // ==/UserScript==
 
 (() => {
-  if (window.__flowLensRelease168Patch) return;
-  window.__flowLensRelease168Patch = true;
-  const VERSION = "1.6.8";
+  if (window.__flowLensRelease169Patch) return;
+  window.__flowLensRelease169Patch = true;
+  const VERSION = "1.6.9";
   const AUTO_KEY = "flowlens-gallery-queue-auto-open";
   const BOOKMARK_AUTO_KEY = "flowlens-bookmark-auto-open";
   const hintedHosts = new Set();
+  const FULLSCREEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H4a1 1 0 0 0-1 1v4"/><path d="M16 3h4a1 1 0 0 1 1 1v4"/><path d="M8 21H4a1 1 0 0 1-1-1v-4"/><path d="M16 21h4a1 1 0 0 0 1-1v-4"/></svg>';
 
   function normalizeUrl(url = location.href) {
     try { const parsed = new URL(url, location.href); parsed.hash = ""; return parsed.href; }
@@ -52,7 +53,7 @@
       ...prev,
       version: VERSION,
       channel: "stable",
-      features: Array.from(new Set([...(prev.features || []), "page-bookmarks-auto-sync-throttled", "large-gallery-performance-mode", "fast-photo-site-mode"]))
+      features: Array.from(new Set([...(prev.features || []), "page-bookmarks-auto-sync-throttled", "large-gallery-performance-mode", "fast-photo-site-mode", "topbar-fullscreen-button"]))
     };
     window.__FLOWLENS_VERSION__ = VERSION;
     window.__flowLensGetVersion = () => window.__FlowLensVersion;
@@ -75,10 +76,10 @@
   }
   function patchControlApi() {
     const api = window.__flowLensControl;
-    if (!api || typeof api.loadSavedPage !== "function" || api.__flowLensBookmarkOpen168) return;
+    if (!api || typeof api.loadSavedPage !== "function" || api.__flowLensBookmarkOpen169) return;
     const original = api.loadSavedPage.bind(api);
     api.loadSavedPage = (url) => openTargetPageInFlow(url) ? Promise.resolve(true) : original(url);
-    api.__flowLensBookmarkOpen168 = true;
+    api.__flowLensBookmarkOpen169 = true;
   }
   function autoOpenAfterNavigation() {
     let target = "";
@@ -99,9 +100,9 @@
   }
 
   function injectPerformanceStyle() {
-    if (document.getElementById("flowlens-performance-168")) return;
+    if (document.getElementById("flowlens-performance-169")) return;
     const style = document.createElement("style");
-    style.id = "flowlens-performance-168";
+    style.id = "flowlens-performance-169";
     style.textContent = `
       #xiv-root[data-perf-mode="true"] .xiv-tile,
       #xiv-root[data-perf-mode="true"] .xiv-card,
@@ -111,6 +112,8 @@
       }
       #xiv-root[data-perf-mode="true"] img,
       #xiv-root[data-perf-mode="true"] video { backface-visibility: hidden !important; }
+      #xiv-root .fl-fullscreen-btn svg { width: 21px !important; height: 21px !important; }
+      #xiv-root.fl-fake-fullscreen { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 2147483647 !important; background: var(--xiv-bg, #fff) !important; }
     `;
     document.documentElement.appendChild(style);
   }
@@ -177,22 +180,47 @@
       } catch {}
     });
   }
+  function ensureFullscreenButton() {
+    const root = document.getElementById("xiv-root");
+    const bar = root?.querySelector("#xiv-topbar .xiv-actions");
+    if (!root || !bar || bar.querySelector('[data-fl-fullscreen="toggle"]')) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "xiv-btn fl-fullscreen-btn";
+    button.dataset.flFullscreen = "toggle";
+    button.title = "全屏";
+    button.setAttribute("aria-label", "全屏");
+    button.innerHTML = FULLSCREEN_ICON;
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await (root.requestFullscreen?.() || document.documentElement.requestFullscreen?.());
+      } catch {
+        root.classList.toggle("fl-fake-fullscreen");
+      }
+    });
+    const close = bar.querySelector('[data-xiv="close"], [aria-label="关闭"], [title="关闭"]');
+    const settings = bar.querySelector('[data-xiv="settings"], [aria-label="设置"], [title="设置"]');
+    bar.insertBefore(button, close || settings || null);
+  }
   function startPerformancePatch() {
     let timer = 0;
     const schedule = () => {
       clearTimeout(timer);
-      timer = setTimeout(optimizeHeavyMedia, 160);
+      timer = setTimeout(() => { optimizeHeavyMedia(); ensureFullscreenButton(); }, 160);
     };
     schedule();
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule, { passive: true });
     new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
-    setInterval(optimizeHeavyMedia, 1600);
+    setInterval(() => { optimizeHeavyMedia(); ensureFullscreenButton(); }, 1600);
   }
 
   setVersion();
   patchControlApi();
   autoOpenAfterNavigation();
   startPerformancePatch();
-  setInterval(() => { setVersion(); patchControlApi(); }, 1000);
+  setInterval(() => { setVersion(); patchControlApi(); ensureFullscreenButton(); }, 1000);
 })();
