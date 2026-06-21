@@ -20,11 +20,26 @@
   }
 
   function removeIntrusiveAutoButtons() {
-    document.querySelectorAll(".xiv-fl-lightbox-auto").forEach((button) => button.remove());
+    document.querySelectorAll("#xiv-root .xiv-fl-lightbox-auto").forEach((button) => button.remove());
+  }
+
+  let observedRoot = null;
+  let rootObserver = null;
+  let bootstrapObserver = null;
+  function observeViewerRoot() {
+    const root = document.getElementById("xiv-root");
+    if (!root || root === observedRoot) return;
+    rootObserver?.disconnect();
+    observedRoot = root;
+    rootObserver = new MutationObserver(removeIntrusiveAutoButtons);
+    rootObserver.observe(root, { childList: true, subtree: true });
+    bootstrapObserver?.disconnect();
+    bootstrapObserver = null;
+    removeIntrusiveAutoButtons();
   }
 
   injectStyle();
-  removeIntrusiveAutoButtons();
-  new MutationObserver(removeIntrusiveAutoButtons).observe(document.documentElement, { childList: true, subtree: true });
-  window.setInterval(removeIntrusiveAutoButtons, 800);
+  bootstrapObserver = new MutationObserver(observeViewerRoot);
+  bootstrapObserver.observe(document.documentElement, { childList: true, subtree: true });
+  observeViewerRoot();
 })();

@@ -14,7 +14,7 @@ cd flowlens
 2. 运行自动同步脚本：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\auto-sync-edge.ps1
+powershell -ExecutionPolicy Bypass -File tools\auto-sync-edge.ps1
 ```
 
 3. 打开 Edge 扩展页：
@@ -40,7 +40,7 @@ flowlens\outputs\flowlens-extension
 ```text
 git pull
 ↓
-同步 flowlens-extension 到 outputs/flowlens-extension
+同步 apps/extension 到 outputs/flowlens-extension
 ↓
 更新 reload-token.txt
 ↓

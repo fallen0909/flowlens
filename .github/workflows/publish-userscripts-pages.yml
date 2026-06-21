@@ -1,13 +1,13 @@
-name: Publish mobile userscripts
+name: Publish FlowLens installation page
 
 on:
   workflow_dispatch:
   push:
     branches: [master]
     paths:
-      - 'mobile-userscript/**'
+      - 'apps/**'
       - 'src/**'
-      - 'scripts/build-userscripts.mjs'
+      - 'tools/**'
       - 'version.json'
       - '.github/workflows/publish-userscripts-pages.yml'
 
@@ -30,9 +30,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Prepare Pages files
         run: |
-          node scripts/build-userscripts.mjs
+          node tools/sync-extension-sources.mjs
+          node tools/build-userscripts.mjs
           node --check flowlens-mobile-all.user.js
           rm -rf public
           mkdir -p public

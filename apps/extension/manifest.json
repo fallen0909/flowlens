@@ -1,10 +1,19 @@
 {
   "manifest_version": 3,
   "name": "鐎戝厜 FlowLens",
-  "version": "1.5.4",
+  "version": "1.7.0",
   "description": "Collect page images and videos into a fullscreen waterfall viewer with original-size viewing, slideshow controls, and ZIP download.",
-  "permissions": ["activeTab", "scripting", "downloads", "downloads.ui", "alarms", "storage"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "downloads",
+    "downloads.ui",
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "action": {
     "default_title": "鎵撳紑鐎戝厜 FlowLens",
     "default_popup": "popup.html",
@@ -30,8 +39,26 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content-version.js", "content-settings-sync.js", "content.js", "content-patch.js", "content-fixes.js", "content-product.js", "content-ui-cleanup.js", "content-lightbox-stable.js", "content-settings-redesign.js", "content-settings-compact-v2.js", "content-zhihu.js", "content-topfix.js", "content-media-sync.js", "content-slideshow-native.js", "content-video-cover-strategy.js", "content-diagnostics-log.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content-settings-sync.js",
+        "content.js",
+        "content-patch.js",
+        "content-fixes.js",
+        "content-product.js",
+        "content-ui-cleanup.js",
+        "content-lightbox-stable.js",
+        "content-settings-redesign.js",
+        "content-settings-compact-v2.js",
+        "content-zhihu.js",
+        "content-topfix.js",
+        "content-media-sync.js",
+        "content-slideshow-native.js",
+        "content-video-cover-strategy.js",
+        "content-diagnostics-log.js"
+      ],
       "run_at": "document_idle"
     }
   ]

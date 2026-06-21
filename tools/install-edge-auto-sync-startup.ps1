@@ -1,5 +1,5 @@
 # 将 FlowLens Edge 自动同步脚本加入当前用户开机启动。
-# 用法：powershell -ExecutionPolicy Bypass -File scripts\install-edge-auto-sync-startup.ps1
+# 用法：powershell -ExecutionPolicy Bypass -File tools\install-edge-auto-sync-startup.ps1
 
 $ErrorActionPreference = "Stop"
 

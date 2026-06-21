@@ -51,18 +51,20 @@ src/                          两端共享源码
   patches/                    功能补丁
   mobile/                     手机端适配
 docs/                         安装页、素材和历史资料
-scripts/                      构建与本地开发工具
-tests/                        本地验证页
+tools/                        构建、测试和本地开发工具
 ```
+
+`src/` 是电脑端、手机端和扩展端共享逻辑的唯一来源。运行 `tools/sync-extension-sources.mjs` 会把共享文件同步到 `apps/extension/`，避免三个版本分别修改后产生行为差异。
 
 ## 开发与发布
 
 ```bash
-node scripts/build-userscripts.mjs
+node tools/sync-extension-sources.mjs
+node tools/build-userscripts.mjs
 node --check flowlens-desktop.user.js
 node --check flowlens-mobile-all.user.js
 ```
 
-构建后必须提交两个正式入口。GitHub Actions 只做重建、校验和打包，不会直接修改源码或自动提交发布文件。
+构建后必须提交两个正式入口。GitHub Actions 会重建扩展与油猴产物并执行语法检查，但不会直接修改源码或自动提交发布文件。
 
 完整的历史记录请查看 [变更日志](docs/CHANGELOG.md)。
