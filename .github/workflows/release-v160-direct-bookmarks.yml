@@ -1,0 +1,107 @@
+name: Release FlowLens v1.6.0 direct bookmarks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/release-v160-direct-bookmarks.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate userscripts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          BASE = '5cc49acf9f9281da94d0a06084d892ab4cd04e75'
+          VERSION = '1.6.0'
+          PATCH = r'''
+
+/* FlowLens v1.6.0 bookmark UI and x.810114 profile metadata patch */
+(() => {
+  if (window.__flowLensBookmarkPatch160) return;
+  window.__flowLensBookmarkPatch160 = true;
+  const KEY = "flowlens-page-bookmarks-v1";
+  const LIMIT = 300;
+  const SAVE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4.5h12a1 1 0 0 1 1 1v15l-7-4-7 4v-15a1 1 0 0 1 1-1Z"/></svg>';
+  const LIST_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h11M8 12h11M8 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
+  function root(){return document.getElementById("xiv-root");}
+  function actions(){return root()?.querySelector("#xiv-topbar .xiv-actions")||null;}
+  function normalizeUrl(url=location.href){try{const u=new URL(url,location.href);u.hash="";return u.href;}catch{return String(url||"").split("#")[0];}}
+  function slugOf(url){try{const u=new URL(url,location.href);const p=u.pathname.split("/").filter(Boolean);return /^x\\.810114\\.xyz$/i.test(u.hostname)&&p.length===1&&/^[A-Za-z0-9_]{2,64}$/.test(p[0])?p[0]:"";}catch{return "";}}
+  function fullCurrentUrl(){const direct=normalizeUrl(location.href);if(slugOf(direct))return direct;const candidates=[document.querySelector('link[rel="canonical"]')?.href||"",document.querySelector('meta[property="og:url"],meta[name="og:url"]')?.getAttribute?.("content")||"",direct].filter(Boolean).map(normalizeUrl);return candidates.find(slugOf)||candidates[0]||direct;}
+  function shortTitle(item){const u=normalizeUrl(item?.url||"");const s=slugOf(u);const raw=String(item?.title||"").trim();if(s&&(!raw||/^推图\s*-\s*推特看图纯享版$/i.test(raw)||raw===item.host))return `@${s}`;return raw|| (s?`@${s}`:u);}
+  function safeJson(text,fallback){try{return JSON.parse(text||"")||fallback;}catch{return fallback;}}
+  async function readBookmarks(){try{if(typeof GM_getValue==="function")return safeJson(await Promise.resolve(GM_getValue(KEY,"[]")),[]);}catch{}try{return safeJson(localStorage.getItem(KEY),[]);}catch{return [];}}
+  async function writeBookmarks(items){const clean=items.slice(0,LIMIT);const text=JSON.stringify(clean);let ok=false;try{if(typeof GM_setValue==="function"){await Promise.resolve(GM_setValue(KEY,text));ok=true;}}catch{}if(!ok){try{localStorage.setItem(KEY,text);}catch{}}window.dispatchEvent(new CustomEvent("flowlens:bookmarks-changed",{detail:{items:clean}}));}
+  function abs(raw){try{return raw?new URL(raw,location.href).href:"";}catch{return "";}}
+  function profileElement(slug){if(!slug)return null;const needle=`@${slug}`.toLowerCase();return Array.from(document.querySelectorAll("body *")).find(el=>{const text=(el.textContent||"").replace(/\s+/g," ").trim().toLowerCase();return text.includes(needle)&&text.length<240;})||null;}
+  function profileMeta(url){const slug=slugOf(url);const meta={title:"",avatar:""};if(!slug)return meta;const hit=profileElement(slug);if(hit){const parts=(hit.textContent||"").split(/\n|\r|\t| {2,}/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean);const idx=parts.findIndex(x=>x.toLowerCase().includes(`@${slug}`.toLowerCase()));const title=idx>0?parts[idx-1]:parts.find(x=>!x.startsWith("@")&&!x.includes("@"));if(title)meta.title=title;for(let box=hit,i=0;box&&i<5;box=box.parentElement,i++){const img=box.querySelector?.("img[src]");const src=abs(img?.getAttribute?.("src")||img?.currentSrc||"");if(src){meta.avatar=src;break;}}}if(!meta.title)meta.title=slug?`@${slug}`:(document.title||url);if(!meta.avatar){const img=document.querySelector('meta[property="og:image"],meta[name="twitter:image"],img[src]');meta.avatar=abs(img?.getAttribute?.("content")||img?.getAttribute?.("src")||img?.currentSrc||"");}return meta;}
+  function fallbackCover(){const n=document.querySelector('meta[property="og:image"],meta[name="twitter:image"],#xiv-root .xiv-tile img[src],img[src]');return abs(n?.getAttribute?.("content")||n?.getAttribute?.("src")||n?.currentSrc||"");}
+  function status(text){const n=document.getElementById("xiv-status");if(n)n.textContent=text;}
+  function injectStyle(){if(document.getElementById("flowlens-bookmark-v160-style"))return;const style=document.createElement("style");style.id="flowlens-bookmark-v160-style";style.textContent=`
+    #xiv-root #xiv-page-bookmarks-controls{display:none!important}
+    #xiv-root .fl-bookmarks-tools{display:none!important}
+    #xiv-root .fl160-bookmark-btn span{display:none!important}
+    #xiv-root .fl160-bookmark-btn svg{width:21px!important;height:21px!important}
+    #xiv-root .fl160-bookmark-btn[data-saved=true]{color:#ffb648!important;border-color:rgba(255,190,80,.56)!important;background:rgba(255,190,80,.22)!important}
+    #xiv-root .fl160-bookmark-btn[data-saved=true] svg{fill:currentColor!important}
+    #xiv-root .fl-bookmarks-panel{width:min(390px,calc(100vw - 18px))!important;max-height:min(78vh,620px)!important;border-radius:16px!important}
+    #xiv-root .fl-bookmarks-head{padding:10px 12px!important}
+    #xiv-root .fl-bookmarks-head h3{font-size:18px!important}
+    #xiv-root .fl-bookmarks-close{width:32px!important;height:32px!important;font-size:18px!important}
+    #xiv-root .fl-bookmarks-list{padding:4px 8px 10px!important}
+    #xiv-root .fl-bookmarks-item{grid-template-columns:44px minmax(0,1fr) auto!important;gap:8px!important;padding:8px!important;margin:5px 0!important;border-radius:12px!important}
+    #xiv-root .fl-bookmarks-cover{width:44px!important;height:44px!important;border-radius:10px!important}
+    #xiv-root .fl-bookmarks-title{font-size:13px!important;line-height:1.25!important}
+    #xiv-root .fl-bookmarks-host{margin-top:2px!important;font-size:11px!important;max-width:190px!important;direction:ltr!important}
+    #xiv-root .fl-bookmarks-actions{gap:4px!important;grid-column:auto!important}
+    #xiv-root .fl-bookmarks-actions [data-action=newtab]{display:none!important}
+    #xiv-root .fl-bookmarks-item button{height:30px!important;padding:0 10px!important;font-size:13px!important}
+    @media(max-width:560px){#xiv-root .fl-bookmarks-panel{left:6px!important;right:6px!important;width:auto!important}#xiv-root .fl-bookmarks-item{grid-template-columns:42px minmax(0,1fr) auto!important}#xiv-root .fl-bookmarks-item button{padding:0 8px!important}}
+  `;document.documentElement.appendChild(style);}
+  async function syncRows(){const panel=root()?.querySelector(".fl-bookmarks-panel");if(!panel)return;const items=await readBookmarks();panel.querySelectorAll(".fl-bookmarks-item").forEach((row,i)=>{const item=items[i];if(!item?.url)return;const url=normalizeUrl(item.url);row.dataset.flBookmarkUrl=url;const t=row.querySelector(".fl-bookmarks-title");const h=row.querySelector(".fl-bookmarks-host");if(t)t.textContent=shortTitle(item);if(h)h.textContent=`${url}${item.mediaCount?` · ${item.mediaCount} 项`:""}`;});}
+  async function syncButton(){const b=root()?.querySelector('[data-fl160="bookmark-toggle"]');if(!b)return;const u=fullCurrentUrl();const saved=(await readBookmarks()).some(x=>normalizeUrl(x.url)===u);b.dataset.saved=saved?"true":"false";b.title=saved?"已收藏本页":"收藏本页";b.setAttribute("aria-label",b.title);}
+  async function toggleBookmark(e){const b=e.target?.closest?.('[data-fl160="bookmark-toggle"]');if(!b)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation?.();const url=fullCurrentUrl();const meta=profileMeta(url);const list=await readBookmarks();const exists=list.some(x=>normalizeUrl(x.url)===url);if(exists){await writeBookmarks(list.filter(x=>normalizeUrl(x.url)!==url));status("已取消收藏当前页面");}else{const now=new Date().toISOString();await writeBookmarks([{url,title:meta.title||url,host:new URL(url).hostname,cover:meta.avatar||fallbackCover(),mediaCount:document.querySelectorAll("#xiv-root .xiv-tile").length||0,createdAt:now,updatedAt:now},...list]);status("已收藏当前页面");}syncButton();syncRows();}
+  function openList(e){const b=e.target?.closest?.('[data-fl160="bookmark-list"]');if(!b)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation?.();window.dispatchEvent(new CustomEvent("flowlens:bookmark-list"));setTimeout(syncRows,80);}
+  function button(kind,icon,title){const b=document.createElement("button");b.type="button";b.className="xiv-btn fl160-bookmark-btn";b.dataset.fl160=kind;b.title=title;b.setAttribute("aria-label",title);b.innerHTML=`${icon}<span>${title}</span>`;return b;}
+  function ensure(){injectStyle();const bar=actions();if(!bar)return;if(!bar.querySelector('[data-fl160="bookmark-toggle"]'))bar.insertBefore(button("bookmark-toggle",SAVE_ICON,"收藏本页"),bar.firstElementChild||null);if(!bar.querySelector('[data-fl160="bookmark-list"]')){const toggle=bar.querySelector('[data-fl160="bookmark-toggle"]');bar.insertBefore(button("bookmark-list",LIST_ICON,"收藏列表"),toggle?.nextSibling||bar.firstElementChild||null);}syncButton();syncRows();}
+  document.addEventListener("click",toggleBookmark,true);document.addEventListener("click",openList,true);window.addEventListener("flowlens:bookmarks-changed",()=>setTimeout(syncRows,80));ensure();setInterval(ensure,800);new MutationObserver(ensure).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:["data-active","class","data-open"]});
+})();
+'''
+          def build(path, name, ns):
+              src = subprocess.check_output(['git','show',f'{BASE}:{path}'], text=True)
+              src = src.replace('// @version      1.5.4','// @version      '+VERSION)
+              src = src.replace('// @description  ', '// @description  v1.6.0：')
+              src = src.replace('// @name         '+name, '// @name         '+name)
+              src = src.replace('// @namespace    '+ns, '// @namespace    '+ns)
+              old = '  async function loadSavedPageInPlace(target) {\n    const targetUrl = normalizedPageUrl(target);\n    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;\n\n    let html = "";'
+              new = '  async function loadSavedPageInPlace(target) {\n    const targetUrl = normalizedPageUrl(target);\n    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;\n    if (isQueueCandidateUrl(targetUrl)) {\n      const switched = await loadGalleryQueueTargetInPlace(targetUrl);\n      if (switched) return true;\n    }\n\n    let html = "";'
+              if old not in src:
+                  raise SystemExit('core loadSavedPageInPlace block not found in '+path)
+              src = src.replace(old, new, 1)
+              src += PATCH
+              Path(path).write_text(src, encoding='utf-8')
+          build('flowlens-desktop.user.js','瀑光 FlowLens 电脑油猴版','local.flowlens.desktop')
+          build('flowlens-mobile-all.user.js','瀑光 FlowLens 手机整合版','local.flowlens.mobile.all')
+          PY
+      - name: Validate
+        run: |
+          node --check flowlens-desktop.user.js
+          node --check flowlens-mobile-all.user.js
+      - name: Commit release
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add flowlens-desktop.user.js flowlens-mobile-all.user.js
+          git commit -m "Release FlowLens v1.6.0 direct bookmark switching" || exit 0
+          git push
