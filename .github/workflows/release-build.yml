@@ -29,17 +29,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json
-          VERSION = '1.6.3'
-          p = Path('version.json')
-          v = json.loads(p.read_text(encoding='utf-8'))
-          v['version'] = VERSION
-          v['desktop']['version'] = VERSION
-          v['mobile']['version'] = VERSION
-          for feature in ['safe-lightweight-bookmark-panel', 'direct-bookmark-in-flow-switch']:
-              if feature not in v['features']:
-                  v['features'].append(feature)
-          p.write_text(json.dumps(v, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
           cpath = Path('src/core/flowlens-core.js')
           s = cpath.read_text(encoding='utf-8')
           old = '''  async function loadSavedPageInPlace(target) {
@@ -84,7 +73,7 @@ jobs:
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add version.json src/core/flowlens-core.js flowlens-desktop.user.js flowlens-mobile-all.user.js
+          git add src/core/flowlens-core.js flowlens-desktop.user.js flowlens-mobile-all.user.js
           git commit -m "Build FlowLens userscripts v${{ steps.version.outputs.version }} [skip release-build]" || exit 0
           git push
 
@@ -106,4 +95,3 @@ jobs:
         with:
           name: flowlens-release-v${{ steps.version.outputs.version }}
           path: dist/*
-# trigger direct bookmark open build
