@@ -1,0 +1,38 @@
+name: Bump v1.6.2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/bump-162.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump and build
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const v = JSON.parse(fs.readFileSync('version.json','utf8'));
+          v.version = '1.6.2';
+          v.desktop.version = '1.6.2';
+          v.mobile.version = '1.6.2';
+          if (!v.features.includes('safe-lightweight-bookmark-panel')) v.features.push('safe-lightweight-bookmark-panel');
+          fs.writeFileSync('version.json', JSON.stringify(v, null, 2) + '\n');
+          NODE
+          node scripts/build-userscripts.mjs
+          node --check flowlens-desktop.user.js
+          node --check flowlens-mobile-all.user.js
+      - name: Commit
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add version.json flowlens-desktop.user.js flowlens-mobile-all.user.js
+          git commit -m "Release FlowLens v1.6.2 safe bookmark panel" || exit 0
+          git push
