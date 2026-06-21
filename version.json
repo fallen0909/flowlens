@@ -1,12 +1,12 @@
 {
-  "version": "1.6.2",
+  "version": "1.6.4",
   "desktop": {
-    "version": "1.6.2",
+    "version": "1.6.4",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "flowlens-extension/manifest.json"
   },
   "mobile": {
-    "version": "1.6.2",
+    "version": "1.6.4",
     "entry": "flowlens-mobile-all.user.js",
     "loader": "build-time-single-file"
   },
@@ -20,6 +20,7 @@
     "unified-version-center",
     "version-display-sync",
     "page-bookmarks",
+    "page-bookmarks-auto-sync",
     "diagnostics-log-export",
     "settings-version-display",
     "native-media-filter",
@@ -28,6 +29,7 @@
     "lightbox-nearby-media-preload",
     "gallery-set-queue-navigation",
     "in-place-gallery-queue-switch",
+    "direct-bookmark-in-flow-switch",
     "article-content-image-collector",
     "single-current-media-favorite-download",
     "safe-lightweight-bookmark-panel"
