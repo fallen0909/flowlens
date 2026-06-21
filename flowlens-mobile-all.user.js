@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.6.0
+// @version      1.6.1
 // @description  完整单文件发布版：沉浸式网页图片与视频瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
@@ -18,7 +18,7 @@
 
 /* src/core/version.js */
 (() => {
-  const VERSION = "1.6.0";
+  const VERSION = "1.6.1";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
