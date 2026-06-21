@@ -1,0 +1,70 @@
+name: Build v1.6.4 sync direct
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/build-164-sync-direct.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch source and build userscripts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          VERSION = '1.6.4'
+          vpath = Path('version.json')
+          v = json.loads(vpath.read_text(encoding='utf-8'))
+          v['version'] = VERSION
+          v.setdefault('desktop', {})['version'] = VERSION
+          v.setdefault('mobile', {})['version'] = VERSION
+          feats = v.setdefault('features', [])
+          for f in ['page-bookmarks-auto-sync','direct-bookmark-in-flow-switch','safe-lightweight-bookmark-panel']:
+              if f not in feats:
+                  feats.append(f)
+          vpath.write_text(json.dumps(v, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          p = Path('src/core/flowlens-core.js')
+          s = p.read_text(encoding='utf-8')
+          old = '''  async function loadSavedPageInPlace(target) {
+    const targetUrl = normalizedPageUrl(target);
+    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
+
+    let html = "";'''
+          new = '''  async function loadSavedPageInPlace(target) {
+    const targetUrl = normalizedPageUrl(target);
+    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
+
+    if (isQueueCandidateUrl(targetUrl)) {
+      try {
+        const switched = await loadGalleryQueueTargetInPlace(targetUrl);
+        if (switched) return true;
+      } catch {
+        // Fall through to normal saved-page loading.
+      }
+    }
+
+    let html = "";'''
+          if new not in s:
+              if old not in s:
+                  raise SystemExit('loadSavedPageInPlace anchor not found')
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+          node scripts/build-userscripts.mjs
+          node --check flowlens-desktop.user.js
+          node --check flowlens-mobile-all.user.js
+      - name: Commit built userscripts
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add version.json src/core/flowlens-core.js src/patches/page-bookmarks.js flowlens-desktop.user.js flowlens-mobile-all.user.js
+          git commit -m "Build FlowLens v1.6.4 sync direct userscripts" || exit 0
+          git push
