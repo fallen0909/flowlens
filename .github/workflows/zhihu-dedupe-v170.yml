@@ -49,9 +49,6 @@ jobs:
     const media = node.querySelector?.("img,video");
     return mediaCandidateUrl(media);
   }
-  function tileForMedia(media) {
-    return media?.closest?.(".xiv-tile,.xiv-card,[data-xiv-media]") || null;
-  }
   function dedupeVisibleMedia() {
     const root = document.getElementById("xiv-root");
     if (!root) return;
@@ -122,3 +119,4 @@ jobs:
           git add flowlens-desktop.user.js flowlens-mobile-all.user.js version.json
           git commit -m "Release FlowLens v1.7.0 zhihu dedupe" || exit 0
           git push
+# trigger v1.7.0 dedupe
