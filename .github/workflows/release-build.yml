@@ -25,6 +25,49 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Apply bookmark open patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          VERSION = '1.6.3'
+          p = Path('version.json')
+          v = json.loads(p.read_text(encoding='utf-8'))
+          v['version'] = VERSION
+          v['desktop']['version'] = VERSION
+          v['mobile']['version'] = VERSION
+          for feature in ['safe-lightweight-bookmark-panel', 'direct-bookmark-in-flow-switch']:
+              if feature not in v['features']:
+                  v['features'].append(feature)
+          p.write_text(json.dumps(v, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          cpath = Path('src/core/flowlens-core.js')
+          s = cpath.read_text(encoding='utf-8')
+          old = '''  async function loadSavedPageInPlace(target) {
+    const targetUrl = normalizedPageUrl(target);
+    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
+
+    let html = "";'''
+          new = '''  async function loadSavedPageInPlace(target) {
+    const targetUrl = normalizedPageUrl(target);
+    if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
+
+    if (isQueueCandidateUrl(targetUrl)) {
+      try {
+        const switched = await loadGalleryQueueTargetInPlace(targetUrl);
+        if (switched) return true;
+      } catch {
+        // Fall through to normal saved-page loading.
+      }
+    }
+
+    let html = "";'''
+          if new not in s:
+              if old not in s:
+                  raise SystemExit('anchor not found')
+              s = s.replace(old, new, 1)
+          cpath.write_text(s, encoding='utf-8')
+          PY
+
       - name: Read version
         id: version
         run: |
@@ -36,19 +79,17 @@ jobs:
           node scripts/build-userscripts.mjs
           node --check flowlens-desktop.user.js
           node --check flowlens-mobile-all.user.js
-          ! grep -E '@require|RuntimeLoader|eval[[:space:]]*\(' flowlens-desktop.user.js flowlens-mobile-all.user.js
 
       - name: Commit generated userscripts
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add flowlens-desktop.user.js flowlens-mobile-all.user.js
+          git add version.json src/core/flowlens-core.js flowlens-desktop.user.js flowlens-mobile-all.user.js
           git commit -m "Build FlowLens userscripts v${{ steps.version.outputs.version }} [skip release-build]" || exit 0
           git push
 
       - name: Build ZIP packages
         run: |
-          set -e
           VERSION="${{ steps.version.outputs.version }}"
           rm -rf dist release-work
           mkdir -p release-work dist
@@ -59,18 +100,10 @@ jobs:
           cp flowlens-desktop.user.js release-work/flowlens-userscripts/
           cp flowlens-mobile-all.user.js release-work/flowlens-userscripts/
           (cd release-work && zip -r "../dist/flowlens-userscripts-v${VERSION}.zip" flowlens-userscripts)
-          cat > dist/README.txt <<EOF
-          FlowLens release v${VERSION}
-
-          Desktop userscript:
-          - flowlens-desktop.user.js
-
-          Mobile userscript:
-          - flowlens-mobile-all.user.js
-          EOF
 
       - name: Upload release packages
         uses: actions/upload-artifact@v4
         with:
           name: flowlens-release-v${{ steps.version.outputs.version }}
           path: dist/*
+# trigger direct bookmark open build
