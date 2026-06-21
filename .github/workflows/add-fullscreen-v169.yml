@@ -40,11 +40,8 @@ jobs:
       event.preventDefault();
       event.stopPropagation();
       try {
-        if (document.fullscreenElement) {
-          await document.exitFullscreen();
-        } else {
-          await (root.requestFullscreen?.() || document.documentElement.requestFullscreen?.());
-        }
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await (root.requestFullscreen?.() || document.documentElement.requestFullscreen?.());
       } catch {
         root.classList.toggle("fl-fake-fullscreen");
       }
@@ -75,8 +72,7 @@ jobs:
               s = s.replace('window.__flowLensRelease168Patch', 'window.__flowLensRelease169Patch')
               s = s.replace('"fast-photo-site-mode"', '"fast-photo-site-mode", "topbar-fullscreen-button"')
               if 'ensureFullscreenButton' not in s:
-                  marker = '  setVersion();'
-                  idx = s.rfind(marker)
+                  idx = s.rfind('  setVersion();')
                   if idx < 0:
                       raise SystemExit(f'marker not found in {file_name}')
                   s = s[:idx] + PATCH + s[idx:]
@@ -106,3 +102,4 @@ jobs:
           git add flowlens-desktop.user.js flowlens-mobile-all.user.js version.json
           git commit -m "Release FlowLens v1.6.9 fullscreen button" || exit 0
           git push
+# trigger v1.6.9
