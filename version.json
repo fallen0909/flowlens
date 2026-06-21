@@ -1,12 +1,12 @@
 {
-  "version": "1.7.0",
+  "version": "1.7.1",
   "desktop": {
-    "version": "1.7.0",
+    "version": "1.7.1",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "apps/extension/manifest.json"
   },
   "mobile": {
-    "version": "1.7.0",
+    "version": "1.7.1",
     "entry": "flowlens-mobile-all.user.js",
     "loader": "single-file-build"
   },
@@ -25,6 +25,7 @@
     "large-gallery-performance-mode",
     "fast-photo-site-mode",
     "topbar-fullscreen-button",
+    "fullscreen-toolbar-visibility-fix",
     "zhihu-media-dedupe",
     "event-driven-ui-patches",
     "token-free-bookmark-sync-code",

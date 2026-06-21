@@ -15,7 +15,7 @@
 
   const SETTINGS_KEY = "flowlens-settings-v2";
   const FILTER_KEY = "flowlens-media-filter-v1";
-  const KEEP_ACTIONS = new Set(["download", "auto", "prev-set", "next-set", "top", "settings", "close"]);
+  const KEEP_ACTIONS = new Set(["download", "auto", "full", "prev-set", "next-set", "top", "settings", "close"]);
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
   let mutationTimer = 0;
   let lightboxObserver = null;

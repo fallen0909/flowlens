@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 手机整合版
 // @namespace    local.flowlens.mobile.all
-// @version      1.7.0
+// @version      1.7.1
 // @description  完整单文件发布版：沉浸式网页图片与视频瀑布流。
 // @match        *://*/*
 // @run-at       document-idle
@@ -18,7 +18,7 @@
 
 /* src/core/version.js */
 (() => {
-  const VERSION = "1.7.0";
+  const VERSION = "1.7.1";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-20";
   const FEATURES = [
@@ -5820,7 +5820,7 @@
 
   const SETTINGS_KEY = "flowlens-settings-v2";
   const FILTER_KEY = "flowlens-media-filter-v1";
-  const KEEP_ACTIONS = new Set(["download", "auto", "prev-set", "next-set", "top", "settings", "close"]);
+  const KEEP_ACTIONS = new Set(["download", "auto", "full", "prev-set", "next-set", "top", "settings", "close"]);
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
   let mutationTimer = 0;
   let lightboxObserver = null;
