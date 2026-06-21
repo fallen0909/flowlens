@@ -73,3 +73,4 @@ jobs:
           git add version.json src/core/flowlens-core.js flowlens-desktop.user.js flowlens-mobile-all.user.js
           git commit -m "Release FlowLens v1.6.3 bookmark in-flow open" || exit 0
           git push
+# trigger v1.6.3 run
