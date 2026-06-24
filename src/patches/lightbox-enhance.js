@@ -8,6 +8,8 @@
   const STYLE_ID = "flowlens-lightbox-enhance-style";
   const SPEED_OPTIONS = [800, 1200, 1800, 2400, 3200];
   const DEFAULT_DELAY = 1200;
+  const VIDEO_STALL_LIMIT = 16000;
+  const FRAME_STALL_LIMIT = 18000;
   const ZOOM_MAP = { "1": 1.5, "2": 2, "3": 4, "0": 1 };
 
   let slideshowActive = false;
@@ -18,8 +20,8 @@
   let lightboxObserverTarget = null;
   let zoomFactor = 1;
   let zoomKey = "";
-  let frameEnded = false;
-  let frameUrl = "";
+  let frameState = { url: "", ended: false, lastSeen: 0, currentTime: 0, duration: 0 };
+  let videoState = { url: "", startedAt: 0, lastTime: 0, lastProgressAt: 0 };
   let drag = null;
 
   function root() { return document.getElementById("xiv-root"); }
@@ -54,9 +56,38 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #xiv-root .xiv-lightbox-slideshow[data-fl-enhanced="true"] { display: grid !important; }
-      #xiv-root .xiv-lightbox-slideshow[data-active="true"] { color: #111 !important; background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.96), rgba(255,255,255,.78)) !important; border-color: rgba(255,255,255,.72) !important; }
-      #xiv-lightbox[data-fl-shortcut-zoom="true"] { overflow: auto !important; align-items: flex-start !important; justify-content: flex-start !important; }
+      #xiv-root .xiv-lightbox-slideshow[data-fl-enhanced="true"] {
+        position: fixed !important;
+        right: 118px !important;
+        top: 18px !important;
+        z-index: 2147483647 !important;
+        width: 42px !important;
+        height: 42px !important;
+        border-radius: 999px !important;
+        border: 1px solid rgba(255,255,255,.26) !important;
+        background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72)) !important;
+        color: #fff !important;
+        place-items: center !important;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        padding: 0 !important;
+        box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18) !important;
+        backdrop-filter: blur(12px) !important;
+      }
+      #xiv-root .xiv-lightbox-slideshow[data-fl-hidden="true"] { display: none !important; }
+      #xiv-root .xiv-lightbox-slideshow[data-fl-enhanced="true"][data-fl-hidden="false"] { display: grid !important; }
+      #xiv-root .xiv-lightbox-slideshow[data-active="true"] {
+        color: #111 !important;
+        background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.96), rgba(255,255,255,.78)) !important;
+        border-color: rgba(255,255,255,.72) !important;
+      }
+      #xiv-root .xiv-lightbox-slideshow svg { width: 20px !important; height: 20px !important; display: block !important; }
+      #xiv-lightbox[data-fl-shortcut-zoom="true"] {
+        overflow: auto !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        scroll-behavior: auto !important;
+      }
       #xiv-lightbox[data-fl-shortcut-zoom="true"] img,
       #xiv-lightbox[data-fl-shortcut-zoom="true"] video,
       #xiv-lightbox[data-fl-shortcut-zoom="true"] iframe[data-media-url],
@@ -72,11 +103,20 @@
       #xiv-lightbox[data-fl-shortcut-zoom="true"][data-fl-dragging="true"] iframe[data-media-url],
       #xiv-lightbox[data-fl-shortcut-zoom="true"][data-fl-dragging="true"] .xiv-video-frame { cursor: grabbing !important; }
       #xiv-lightbox .fl-zoom-hint {
-        position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px) + 18px); transform: translateX(-50%);
-        z-index: 2147483647; padding: 8px 12px; border-radius: 999px;
-        color: #fff; background: rgba(0,0,0,.58); backdrop-filter: blur(10px);
+        position: fixed;
+        left: 50%;
+        bottom: max(20px, env(safe-area-inset-bottom, 0px) + 18px);
+        transform: translateX(-50%);
+        z-index: 2147483647;
+        padding: 8px 12px;
+        border-radius: 999px;
+        color: #fff;
+        background: rgba(0,0,0,.58);
+        backdrop-filter: blur(10px);
         font: 850 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        pointer-events: none; opacity: 0; transition: opacity .16s ease;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity .16s ease;
       }
       #xiv-lightbox .fl-zoom-hint[data-show="true"] { opacity: 1; }
     `;
@@ -109,11 +149,25 @@
     if (app) app.dataset.flLightbox = open ? "true" : "false";
     const btn = ensureButton();
     if (!btn) return;
+    btn.dataset.flHidden = open ? "false" : "true";
     btn.dataset.active = slideshowActive ? "true" : "false";
-    btn.style.display = open ? "grid" : "none";
+    if (open) btn.style.removeProperty("display");
+    else btn.style.setProperty("display", "none", "important");
     btn.title = slideshowActive ? "暂停大图自动切换" : `开始大图自动切换（${speedLabel(slideshowDelay())}）`;
     btn.setAttribute("aria-label", btn.title);
     btn.innerHTML = slideshowIcon();
+  }
+
+  function forceHideButton() {
+    stopSlideshow(false);
+    const app = root();
+    const btn = app?.querySelector(".xiv-lightbox-slideshow");
+    if (app) app.dataset.flLightbox = "false";
+    if (btn) {
+      btn.dataset.flHidden = "true";
+      btn.dataset.active = "false";
+      btn.style.setProperty("display", "none", "important");
+    }
   }
 
   function clearSlideshowTimer() {
@@ -125,23 +179,26 @@
     return lightbox()?.querySelector("img, video, iframe[data-media-url], .xiv-video-frame") || null;
   }
 
-  function currentVideo() {
-    return lightbox()?.querySelector("video") || null;
-  }
-
-  function currentFrame() {
-    return lightbox()?.querySelector("iframe[data-media-url], .xiv-video-frame") || null;
-  }
+  function currentVideo() { return lightbox()?.querySelector("video") || null; }
+  function currentFrame() { return lightbox()?.querySelector("iframe[data-media-url], .xiv-video-frame") || null; }
 
   function mediaIdentity(media = lightboxMedia()) {
     if (!media) return "";
-    return media.currentSrc || media.src || media.dataset?.mediaUrl || media.getAttribute?.("src") || media.getAttribute?.("srcdoc")?.slice(0, 80) || "";
+    return media.currentSrc || media.src || media.dataset?.mediaUrl || media.getAttribute?.("src") || media.getAttribute?.("srcdoc")?.slice(0, 100) || "";
   }
 
   function ensureVideoPlaying() {
     const video = currentVideo();
     if (!video) return false;
     if (!video.playsInline) video.playsInline = true;
+    const url = mediaIdentity(video);
+    const now = Date.now();
+    if (url && url !== videoState.url) videoState = { url, startedAt: now, lastTime: 0, lastProgressAt: now };
+    const current = Number(video.currentTime || 0);
+    if (Math.abs(current - videoState.lastTime) > 0.15) {
+      videoState.lastTime = current;
+      videoState.lastProgressAt = now;
+    }
     if (video.paused && !video.ended) {
       try {
         const promise = video.play();
@@ -162,24 +219,28 @@
       ensureVideoPlaying();
       const duration = Number(video.duration || 0);
       const current = Number(video.currentTime || 0);
+      const now = Date.now();
       if (video.ended) return false;
       if (Number.isFinite(duration) && duration > 0) return current < duration - 0.35;
-      return video.readyState < 2 || !video.paused;
+      if (now - videoState.lastProgressAt > VIDEO_STALL_LIMIT) return false;
+      return true;
     }
+
     const frame = currentFrame();
     if (frame) {
       const url = frame.dataset?.mediaUrl || mediaIdentity(frame);
-      if (url && url !== frameUrl) {
-        frameUrl = url;
-        frameEnded = false;
-      }
-      return lightbox()?.dataset.flVideoEnded !== "true" && !frameEnded;
+      const now = Date.now();
+      if (url && url !== frameState.url) frameState = { url, ended: false, lastSeen: now, currentTime: 0, duration: 0 };
+      if (lightbox()?.dataset.flVideoEnded === "true" || frameState.ended) return false;
+      if (frameState.lastSeen && now - frameState.lastSeen > FRAME_STALL_LIMIT) return false;
+      if (frameState.duration > 0 && frameState.currentTime >= frameState.duration - 0.35) return false;
+      return true;
     }
     return false;
   }
 
   function goNext() {
-    frameEnded = false;
+    frameState.ended = false;
     const api = coreApi();
     if (api?.showAdjacent?.(1)) return true;
     const box = lightbox();
@@ -202,7 +263,7 @@
   function slideshowTick() {
     if (!slideshowActive) return;
     if (!isOpen()) {
-      stopSlideshow(false);
+      forceHideButton();
       return;
     }
     if (videoStillRunning()) {
@@ -266,6 +327,7 @@
     delete media.dataset.flBaseHeight;
     delete box.dataset.flShortcutZoom;
     delete box.dataset.flZoomFactor;
+    delete box.dataset.flDragging;
     zoomKey = "";
   }
 
@@ -282,6 +344,24 @@
     }
   }
 
+  function centerZoomedMedia() {
+    const box = lightbox();
+    const media = lightboxMedia();
+    if (!box || !media || box.dataset.active !== "true" || box.dataset.flShortcutZoom !== "true") return;
+    const run = () => {
+      const mediaLeft = media.offsetLeft || 0;
+      const mediaTop = media.offsetTop || 0;
+      const mediaWidth = media.offsetWidth || media.getBoundingClientRect().width || 1;
+      const mediaHeight = media.offsetHeight || media.getBoundingClientRect().height || 1;
+      const left = Math.max(0, Math.round(mediaLeft + mediaWidth / 2 - box.clientWidth / 2));
+      const top = Math.max(0, Math.round(mediaTop + mediaHeight / 2 - box.clientHeight / 2));
+      box.scrollTo?.({ left, top, behavior: "auto" });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(run));
+    window.setTimeout(run, 80);
+    window.setTimeout(run, 220);
+  }
+
   function applyZoom(factor, notify = true) {
     const box = lightbox();
     const media = lightboxMedia();
@@ -290,13 +370,12 @@
     if (normalized === 1) {
       zoomFactor = 1;
       resetZoomStyles(media);
+      box.scrollTo?.({ left: 0, top: 0, behavior: "auto" });
       if (notify) showZoomHint("已恢复适应屏幕");
       return;
     }
     const key = mediaIdentity(media);
-    if (zoomKey && zoomKey !== key) {
-      resetZoomStyles(media);
-    }
+    if (zoomKey && zoomKey !== key) resetZoomStyles(media);
     zoomKey = key;
     zoomFactor = normalized;
     prepareBase(media);
@@ -309,11 +388,7 @@
     media.style.setProperty("margin", "40px", "important");
     box.dataset.flShortcutZoom = "true";
     box.dataset.flZoomFactor = String(normalized);
-    requestAnimationFrame(() => {
-      const left = Math.max(0, Math.round((box.scrollWidth - box.clientWidth) / 2));
-      const top = Math.max(0, Math.round((box.scrollHeight - box.clientHeight) / 2));
-      box.scrollTo?.({ left, top, behavior: "auto" });
-    });
+    centerZoomedMedia();
     if (notify) showZoomHint(`已放大 ${normalized}×`);
   }
 
@@ -321,6 +396,10 @@
     if (!isOpen()) return;
     const target = event.target;
     if (target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']")) return;
+    if (event.key === "Escape") {
+      window.setTimeout(forceHideButton, 80);
+      return;
+    }
     if (!(event.key in ZOOM_MAP) || event.ctrlKey || event.metaKey || event.altKey) return;
     event.preventDefault();
     event.stopPropagation();
@@ -336,12 +415,19 @@
     if (event.type === "click") toggleSlideshow();
   }
 
+  function handleCloseClick(event) {
+    if (event.target?.closest?.(".xiv-lightbox-close")) {
+      window.setTimeout(forceHideButton, 40);
+      window.setTimeout(forceHideButton, 180);
+    }
+  }
+
   function handlePointerDown(event) {
     const box = lightbox();
     if (!box || box.dataset.active !== "true" || box.dataset.flShortcutZoom !== "true") return;
     if (!event.target?.closest?.("#xiv-lightbox img, #xiv-lightbox video, #xiv-lightbox iframe")) return;
     if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow")) return;
-    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: box.scrollLeft, top: box.scrollTop, moved: false };
+    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: box.scrollLeft, top: box.scrollTop };
     box.dataset.flDragging = "true";
     event.target?.setPointerCapture?.(event.pointerId);
     event.preventDefault();
@@ -351,11 +437,8 @@
   function handlePointerMove(event) {
     const box = lightbox();
     if (!box || !drag || drag.pointerId !== event.pointerId) return;
-    const dx = event.clientX - drag.x;
-    const dy = event.clientY - drag.y;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
-    box.scrollLeft = drag.left - dx;
-    box.scrollTop = drag.top - dy;
+    box.scrollLeft = drag.left - (event.clientX - drag.x);
+    box.scrollTop = drag.top - (event.clientY - drag.y);
     event.preventDefault();
     event.stopPropagation();
   }
@@ -372,7 +455,7 @@
     if (!box || box === lightboxObserverTarget) return;
     lightboxObserver?.disconnect?.();
     lightboxObserverTarget = box;
-    lightboxObserver = new MutationObserver(() => scheduleRefresh(80));
+    lightboxObserver = new MutationObserver(() => scheduleRefresh(60));
     lightboxObserver.observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-fl-video-ended"] });
   }
 
@@ -380,13 +463,13 @@
     installStyle();
     watchLightbox();
     if (!isOpen()) {
-      stopSlideshow(false);
+      forceHideButton();
       zoomFactor = 1;
       zoomKey = "";
-    } else if (zoomFactor > 1) {
-      applyZoom(zoomFactor, false);
+    } else {
+      if (zoomFactor > 1) applyZoom(zoomFactor, false);
+      updateButton();
     }
-    updateButton();
   }
 
   function scheduleRefresh(delay = 120) {
@@ -398,18 +481,20 @@
     const message = event.data || {};
     if (message.type !== "XIV_VIDEO_TIME") return;
     const url = String(message.url || "");
-    if (url && url !== frameUrl) {
-      frameUrl = url;
-      frameEnded = false;
-    }
+    const now = Date.now();
+    if (url && url !== frameState.url) frameState = { url, ended: false, lastSeen: now, currentTime: 0, duration: 0 };
+    frameState.lastSeen = now;
+    frameState.currentTime = Number(message.currentTime || frameState.currentTime || 0);
+    frameState.duration = Number(message.duration || frameState.duration || 0);
     if (message.eventName === "ended") {
-      frameEnded = true;
+      frameState.ended = true;
       if (slideshowActive) scheduleSlideshow(250);
     }
   });
 
   document.addEventListener("pointerdown", handleButtonEvent, true);
   document.addEventListener("click", handleButtonEvent, true);
+  document.addEventListener("click", handleCloseClick, true);
   document.addEventListener("keydown", handleKeydown, true);
   document.addEventListener("pointerdown", handlePointerDown, true);
   document.addEventListener("pointermove", handlePointerMove, true);
@@ -421,10 +506,10 @@
   document.addEventListener("change", (event) => {
     if (event.target?.matches?.(".fl-slideshow-speed") && slideshowActive) scheduleSlideshow(slideshowDelay());
   }, true);
-  document.addEventListener("fullscreenchange", () => scheduleRefresh(80), true);
+  document.addEventListener("fullscreenchange", () => scheduleRefresh(60), true);
 
-  observer = new MutationObserver(() => scheduleRefresh(160));
-  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-fl-lightbox"] });
+  observer = new MutationObserver(() => scheduleRefresh(120));
+  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-fl-lightbox", "style"] });
   scheduleRefresh(0);
-  window.setTimeout(refresh, 600);
+  window.setTimeout(refresh, 500);
 })();
