@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens version center
 // @namespace    local.flowlens.version
-// @version      1.7.17
+// @version      1.7.18
 // @description  FlowLens runtime version center.
 // @match        *://*/*
 // @run-at       document-start
@@ -10,7 +10,7 @@
 // ==/UserScript==
 
 (() => {
-  const VERSION = "1.7.17";
+  const VERSION = "1.7.18";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-24";
   const FEATURES = [
