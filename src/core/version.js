@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         瀑光 FlowLens 版本中心
+// @name         FlowLens version center
 // @namespace    local.flowlens.version
-// @version      1.7.12
-// @description  FlowLens 统一运行时版本中心。
+// @version      1.7.14
+// @description  FlowLens runtime version center.
 // @match        *://*/*
 // @run-at       document-start
 // @noframes
@@ -10,20 +10,30 @@
 // ==/UserScript==
 
 (() => {
-  const VERSION = "1.7.12";
+  const VERSION = "1.7.14";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-24";
-  const FEATURES = ["build-time-single-file", "unified-version-center", "page-bookmarks", "item-gallery-pagination", "meitulu-item-pagination", "x810114-no-refresh-auto-open", "lightbox-dom-play-icon"];
+  const FEATURES = [
+    "build-time-single-file",
+    "unified-version-center",
+    "page-bookmarks",
+    "item-gallery-pagination",
+    "meitulu-item-pagination",
+    "x810114-no-refresh-auto-open",
+    "lightbox-toolbar-style-icons"
+  ];
+
   const previous = window.__FlowLensVersion && typeof window.__FlowLensVersion === "object" ? window.__FlowLensVersion : {};
   const info = Object.freeze({
     ...previous,
-    name: "瀑光 FlowLens",
+    name: "FlowLens",
     version: VERSION,
     channel: CHANNEL,
     releaseDate: RELEASE_DATE,
     features: Object.freeze([...(Array.isArray(previous.features) ? previous.features : []), ...FEATURES].filter((item, index, array) => item && array.indexOf(item) === index)),
     source: "src/core/version.js"
   });
+
   window.__FlowLensVersion = info;
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion || info;
