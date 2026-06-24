@@ -6,7 +6,7 @@
   const HOST_RE = /(^|\.)meitulu\.(?:me|cc|com|net|org)$/i;
   const ITEM_RE = /^\/item\/(\d+)(?:_(\d+))?\.html$/i;
   const IMAGE_RE = /\.(?:avif|gif|jpe?g|png|webp)(?:[?#]|$)/i;
-  const BAD_URL_RE = /(?:logo|icon|favicon|sprite|button|btn|banner|ads?|advert|avatar|qrcode|weixin|wechat|loading|placeholder)/i;
+  const BAD_URL_RE = /(?:^|[/?#&_.-])(?:logo|icon|favicon|sprite|button|btn|banner|ad|ads|advert|avatar|qrcode|weixin|wechat|loading|placeholder)(?:[/?#&_.=-]|$)/i;
   const BAD_CONTAINER_RE = /(?:recommend|related|rel-|sidebar|side-bar|footer|header|nav|menu|pager|pagebar|pagination|comment|share|tag|tags|广告|推薦|推荐|相關|相关|热门)/i;
   const MAX_PAGES = 120;
   const FETCH_CONCURRENCY = 2;
