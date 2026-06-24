@@ -1,1 +1,1 @@
-{"version":"1.7.17","desktop":{"version":"1.7.17","recommendedEntry":"flowlens-desktop.user.js","extensionEntry":"apps/extension/manifest.json"},"mobile":{"version":"1.7.17","entry":"flowlens-mobile-all.user.js","loader":"multi-file-require-loader"}}
+{"version":"1.7.18","desktop":{"version":"1.7.18","recommendedEntry":"flowlens-desktop.user.js","extensionEntry":"apps/extension/manifest.json"},"mobile":{"version":"1.7.18","entry":"flowlens-mobile-all.user.js","loader":"multi-file-require-loader"}}
