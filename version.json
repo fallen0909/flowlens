@@ -1,12 +1,12 @@
 {
-  "version": "1.7.5",
+  "version": "1.7.6",
   "desktop": {
-    "version": "1.7.5",
+    "version": "1.7.6",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "apps/extension/manifest.json"
   },
   "mobile": {
-    "version": "1.7.5",
+    "version": "1.7.6",
     "entry": "flowlens-mobile-all.user.js",
     "loader": "multi-file-require-loader"
   },
@@ -45,6 +45,7 @@
     "safe-lightweight-bookmark-panel",
     "item-gallery-pagination",
     "meitulu-item-pagination",
-    "loading-regression-hotfix"
+    "lightbox-enhanced-slideshow",
+    "lightbox-keyboard-zoom"
   ]
 }
