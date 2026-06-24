@@ -11,7 +11,6 @@
 
   function root() { return document.getElementById("xiv-root"); }
   function box() { return root()?.querySelector("#xiv-lightbox"); }
-  function isPlaying(btn) { return btn?.dataset.active === "true"; }
 
   function installStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -62,15 +61,7 @@
       #xiv-lightbox .xiv-lightbox-close { right: ${RIGHT}px !important; }
       #xiv-lightbox .xiv-lightbox-fav { right: ${RIGHT + SIZE + GAP}px !important; }
       #xiv-lightbox .xiv-lightbox-slideshow { right: ${RIGHT + (SIZE + GAP) * 2}px !important; }
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] {
-        background: rgba(255,255,255,.98) !important;
-        background-image: none !important;
-        color: #111 !important;
-        border-color: rgba(0,0,0,.18) !important;
-      }
       #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] {
-        background: rgba(255,255,255,.98) !important;
-        background-image: none !important;
         color: ${HEART_RED} !important;
         border-color: rgba(225,29,72,.28) !important;
       }
@@ -98,7 +89,6 @@
         filter: none !important;
         flex: 0 0 auto !important;
       }
-      #xiv-lightbox .xiv-lightbox-slideshow svg [fill],
       #xiv-lightbox .xiv-lightbox-slideshow svg path,
       #xiv-lightbox .xiv-lightbox-slideshow svg rect { fill: currentColor !important; stroke: none !important; }
       #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] svg,
@@ -109,36 +99,6 @@
       }
     `;
     document.documentElement.appendChild(style);
-  }
-
-  function forceButtonStyle(btn, right, color = "#111") {
-    if (!btn) return;
-    btn.style.setProperty("position", "fixed", "important");
-    btn.style.setProperty("top", "max(10px, calc(env(safe-area-inset-top, 0px) + 10px))", "important");
-    btn.style.setProperty("right", `${right}px`, "important");
-    btn.style.setProperty("width", `${SIZE}px`, "important");
-    btn.style.setProperty("height", `${SIZE}px`, "important");
-    btn.style.setProperty("min-width", `${SIZE}px`, "important");
-    btn.style.setProperty("min-height", `${SIZE}px`, "important");
-    btn.style.setProperty("border-radius", "999px", "important");
-    btn.style.setProperty("border", color === HEART_RED ? "1px solid rgba(225,29,72,.28)" : "1px solid rgba(0,0,0,.14)", "important");
-    btn.style.setProperty("background", "rgba(255,255,255,.96)", "important");
-    btn.style.setProperty("background-image", "none", "important");
-    btn.style.setProperty("color", color, "important");
-    btn.style.setProperty("box-shadow", "0 1px 4px rgba(0,0,0,.10)", "important");
-    btn.style.setProperty("backdrop-filter", "none", "important");
-    btn.style.setProperty("-webkit-backdrop-filter", "none", "important");
-    btn.style.setProperty("display", "inline-flex", "important");
-    btn.style.setProperty("align-items", "center", "important");
-    btn.style.setProperty("justify-content", "center", "important");
-    btn.style.setProperty("padding", "0", "important");
-    btn.style.setProperty("margin", "0", "important");
-    btn.style.setProperty("opacity", "1", "important");
-    btn.style.setProperty("visibility", "visible", "important");
-    btn.style.setProperty("transform", "none", "important");
-    btn.style.setProperty("filter", "none", "important");
-    btn.style.setProperty("overflow", "hidden", "important");
-    btn.style.setProperty("z-index", "2147483647", "important");
   }
 
   function hideLegacyDuplicates(lb) {
@@ -156,7 +116,6 @@
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("aria-hidden", "true");
-    svg.style.cssText = "display:block!important;width:24px!important;height:24px!important;color:currentColor!important;opacity:1!important;visibility:visible!important;";
     if (name === "pause") {
       [[7, 5], [13.2, 5]].forEach(([x, y]) => {
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -178,9 +137,9 @@
   }
 
   function ensureSlideshowButton(lb) {
-    const all = Array.from(lb.querySelectorAll(".xiv-lightbox-slideshow"));
-    let btn = all[0];
-    all.slice(1).forEach((dup) => dup.remove());
+    const buttons = Array.from(lb.querySelectorAll(".xiv-lightbox-slideshow"));
+    let btn = buttons[0];
+    buttons.slice(1).forEach((dup) => dup.remove());
     if (!btn) {
       btn = document.createElement("button");
       btn.type = "button";
@@ -195,13 +154,11 @@
 
   function drawButton(btn) {
     if (!btn) return;
-    const active = isPlaying(btn);
-    const wanted = active ? "pause" : "play";
-    if (btn.dataset.flUnifiedIcon !== wanted || !btn.querySelector("svg")) {
-      btn.dataset.flUnifiedIcon = wanted;
-      btn.textContent = "";
-      btn.appendChild(svgEl(wanted));
-    }
+    const wanted = btn.dataset.active === "true" ? "pause" : "play";
+    if (btn.dataset.flUnifiedIcon === wanted && btn.querySelector("svg")) return;
+    btn.dataset.flUnifiedIcon = wanted;
+    btn.textContent = "";
+    btn.appendChild(svgEl(wanted));
   }
 
   function scan() {
@@ -209,14 +166,7 @@
     const lb = box();
     hideLegacyDuplicates(lb);
     if (!lb || lb.dataset.active !== "true") return;
-    const close = lb.querySelector(".xiv-lightbox-close");
-    const fav = lb.querySelector(".xiv-lightbox-fav");
-    const play = ensureSlideshowButton(lb);
-    const favColor = fav?.dataset.favorited === "true" ? HEART_RED : "#111";
-    forceButtonStyle(close, RIGHT);
-    forceButtonStyle(fav, RIGHT + SIZE + GAP, favColor);
-    forceButtonStyle(play, RIGHT + (SIZE + GAP) * 2);
-    drawButton(play);
+    drawButton(ensureSlideshowButton(lb));
   }
 
   function schedule(delay = 30) {
@@ -227,7 +177,7 @@
   document.addEventListener("click", () => schedule(20), true);
   document.addEventListener("keydown", () => schedule(20), true);
   window.addEventListener("flowlens:slideshow-state", () => schedule(0));
-  const observer = new MutationObserver(() => schedule(20));
-  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-favorited", "class", "style"] });
+  const observer = new MutationObserver(() => schedule(60));
+  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-favorited"] });
   schedule(0);
 })();
