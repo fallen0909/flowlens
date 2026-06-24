@@ -3,11 +3,13 @@
   window.__flowLensLightboxIconsUnified = true;
 
   const STYLE_ID = "flowlens-lightbox-icons-unified-style";
+  const SIZE = 46;
+  const GAP = 8;
+  const RIGHT = 14;
   let timer = 0;
 
   function root() { return document.getElementById("xiv-root"); }
   function box() { return root()?.querySelector("#xiv-lightbox"); }
-  function open() { return box()?.dataset.active === "true"; }
   function isPlaying(btn) { return btn?.dataset.active === "true"; }
 
   function installStyle() {
@@ -19,18 +21,18 @@
       #xiv-lightbox .xiv-lightbox-fav,
       #xiv-lightbox .xiv-lightbox-close {
         position: fixed !important;
-        top: max(8px, env(safe-area-inset-top, 0px) + 8px) !important;
-        width: 38px !important;
-        height: 38px !important;
-        min-width: 38px !important;
-        min-height: 38px !important;
+        top: max(10px, env(safe-area-inset-top, 0px) + 10px) !important;
+        width: ${SIZE}px !important;
+        height: ${SIZE}px !important;
+        min-width: ${SIZE}px !important;
+        min-height: ${SIZE}px !important;
         border-radius: 999px !important;
-        border: 1px solid rgba(0,0,0,.12) !important;
-        background: rgba(255,255,255,.78) !important;
-        color: #151515 !important;
-        box-shadow: none !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
+        border: 1px solid rgba(0,0,0,.14) !important;
+        background: rgba(255,255,255,.94) !important;
+        color: #111 !important;
+        box-shadow: 0 1px 4px rgba(0,0,0,.10) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
         display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
@@ -43,18 +45,23 @@
         z-index: 2147483647 !important;
         transform: none !important;
         overflow: hidden !important;
+        text-indent: 0 !important;
       }
-      #xiv-lightbox .xiv-lightbox-close { right: 10px !important; }
-      #xiv-lightbox .xiv-lightbox-fav { right: 55px !important; }
-      #xiv-lightbox .xiv-lightbox-slideshow { right: 100px !important; }
+      #xiv-lightbox .xiv-lightbox-close { right: ${RIGHT}px !important; }
+      #xiv-lightbox .xiv-lightbox-fav { right: ${RIGHT + SIZE + GAP}px !important; }
+      #xiv-lightbox .xiv-lightbox-slideshow { right: ${RIGHT + (SIZE + GAP) * 2}px !important; }
       #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"],
       #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] {
-        background: rgba(255,255,255,.9) !important;
-        color: #151515 !important;
-        border-color: rgba(0,0,0,.16) !important;
+        background: rgba(255,255,255,.98) !important;
+        color: #111 !important;
+        border-color: rgba(0,0,0,.18) !important;
       }
       #xiv-lightbox .xiv-lightbox-slideshow::before,
-      #xiv-lightbox .xiv-lightbox-slideshow::after {
+      #xiv-lightbox .xiv-lightbox-slideshow::after,
+      #xiv-lightbox .xiv-lightbox-fav::before,
+      #xiv-lightbox .xiv-lightbox-fav::after,
+      #xiv-lightbox .xiv-lightbox-close::before,
+      #xiv-lightbox .xiv-lightbox-close::after {
         content: none !important;
         display: none !important;
       }
@@ -62,15 +69,14 @@
       #xiv-lightbox .xiv-lightbox-fav svg,
       #xiv-lightbox .xiv-lightbox-close svg {
         display: block !important;
-        width: 18px !important;
-        height: 18px !important;
-        min-width: 18px !important;
-        min-height: 18px !important;
+        width: 24px !important;
+        height: 24px !important;
+        min-width: 24px !important;
+        min-height: 24px !important;
         opacity: 1 !important;
         visibility: visible !important;
         color: currentColor !important;
         stroke: currentColor !important;
-        fill: none !important;
         filter: none !important;
         flex: 0 0 auto !important;
       }
@@ -81,11 +87,39 @@
     document.documentElement.appendChild(style);
   }
 
+  function forceButtonStyle(btn, right) {
+    if (!btn) return;
+    btn.style.setProperty("position", "fixed", "important");
+    btn.style.setProperty("top", "max(10px, calc(env(safe-area-inset-top, 0px) + 10px))", "important");
+    btn.style.setProperty("right", `${right}px`, "important");
+    btn.style.setProperty("width", `${SIZE}px`, "important");
+    btn.style.setProperty("height", `${SIZE}px`, "important");
+    btn.style.setProperty("min-width", `${SIZE}px`, "important");
+    btn.style.setProperty("min-height", `${SIZE}px`, "important");
+    btn.style.setProperty("border-radius", "999px", "important");
+    btn.style.setProperty("border", "1px solid rgba(0,0,0,.14)", "important");
+    btn.style.setProperty("background", "rgba(255,255,255,.94)", "important");
+    btn.style.setProperty("color", "#111", "important");
+    btn.style.setProperty("box-shadow", "0 1px 4px rgba(0,0,0,.10)", "important");
+    btn.style.setProperty("backdrop-filter", "none", "important");
+    btn.style.setProperty("-webkit-backdrop-filter", "none", "important");
+    btn.style.setProperty("display", "inline-flex", "important");
+    btn.style.setProperty("align-items", "center", "important");
+    btn.style.setProperty("justify-content", "center", "important");
+    btn.style.setProperty("padding", "0", "important");
+    btn.style.setProperty("margin", "0", "important");
+    btn.style.setProperty("opacity", "1", "important");
+    btn.style.setProperty("visibility", "visible", "important");
+    btn.style.setProperty("transform", "none", "important");
+    btn.style.setProperty("overflow", "hidden", "important");
+    btn.style.setProperty("z-index", "2147483647", "important");
+  }
+
   function svgEl(name) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("aria-hidden", "true");
-    svg.style.cssText = "display:block!important;width:18px!important;height:18px!important;color:currentColor!important;opacity:1!important;visibility:visible!important;";
+    svg.style.cssText = "display:block!important;width:24px!important;height:24px!important;color:currentColor!important;opacity:1!important;visibility:visible!important;";
     if (name === "pause") {
       [[7, 5], [13.2, 5]].forEach(([x, y]) => {
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -124,17 +158,24 @@
     if (!btn) return;
     const active = isPlaying(btn);
     const wanted = active ? "pause" : "play";
-    if (btn.dataset.flUnifiedIcon === wanted && btn.querySelector("svg")) return;
-    btn.dataset.flUnifiedIcon = wanted;
-    btn.textContent = "";
-    btn.appendChild(svgEl(wanted));
+    if (btn.dataset.flUnifiedIcon !== wanted || !btn.querySelector("svg")) {
+      btn.dataset.flUnifiedIcon = wanted;
+      btn.textContent = "";
+      btn.appendChild(svgEl(wanted));
+    }
   }
 
   function scan() {
     installStyle();
     const lb = box();
     if (!lb || lb.dataset.active !== "true") return;
-    drawButton(ensureSlideshowButton(lb));
+    const close = lb.querySelector(".xiv-lightbox-close");
+    const fav = lb.querySelector(".xiv-lightbox-fav");
+    const play = ensureSlideshowButton(lb);
+    forceButtonStyle(close, RIGHT);
+    forceButtonStyle(fav, RIGHT + SIZE + GAP);
+    forceButtonStyle(play, RIGHT + (SIZE + GAP) * 2);
+    drawButton(play);
   }
 
   function schedule(delay = 30) {
