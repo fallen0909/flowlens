@@ -8,7 +8,6 @@
   const STYLE_ID = "flowlens-lightbox-enhance-style";
   const SPEED_OPTIONS = [800, 1200, 1800, 2400, 3200];
   const DEFAULT_DELAY = 1200;
-  const VIDEO_STALL_MS = 12000;
   const ZOOM_MAP = { "1": 1.5, "2": 2, "3": 4, "0": 1 };
 
   let slideshowActive = false;
@@ -20,7 +19,6 @@
   let zoomFactor = 1;
   let zoomMediaKey = "";
   let drag = null;
-  let mediaState = { key: "", startedAt: 0, lastTime: 0, lastProgressAt: 0 };
 
   function root() { return document.getElementById("xiv-root"); }
   function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
@@ -72,14 +70,14 @@
         padding: 0 !important;
         box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18) !important;
         backdrop-filter: blur(12px) !important;
-        transition: transform .14s ease, background .14s ease, border-color .14s ease, color .14s ease !important;
+        font: 900 20px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        text-align: center !important;
       }
       #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] {
         color: #111 !important;
         background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.96), rgba(255,255,255,.78)) !important;
         border-color: rgba(255,255,255,.72) !important;
       }
-      #xiv-lightbox .xiv-lightbox-slideshow svg { width: 20px !important; height: 20px !important; display: block !important; }
       #xiv-lightbox[data-fl-shortcut-zoom="true"] {
         overflow: auto !important;
         align-items: flex-start !important;
@@ -121,12 +119,6 @@
     document.documentElement.appendChild(style);
   }
 
-  function slideshowIcon() {
-    return slideshowActive
-      ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.8" height="14" rx="1.2"/><rect x="13.2" y="5" width="3.8" height="14" rx="1.2"/></svg>'
-      : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.8v12.4c0 .8.9 1.3 1.6.9l9.2-6.2c.6-.4.6-1.4 0-1.8L9.6 4.9C8.9 4.5 8 5 8 5.8Z"/></svg>';
-  }
-
   function ensureButton() {
     const box = lightbox();
     if (!box || box.dataset.active !== "true") return null;
@@ -142,14 +134,13 @@
     btn.dataset.active = slideshowActive ? "true" : "false";
     btn.title = slideshowActive ? "暂停大图自动切换" : `开始大图自动切换（${speedLabel(slideshowDelay())}）`;
     btn.setAttribute("aria-label", btn.title);
-    btn.innerHTML = slideshowIcon();
+    btn.textContent = slideshowActive ? "Ⅱ" : "▶";
     return btn;
   }
 
-  function hideButton() {
+  function removeButton() {
     stopSlideshow(false);
-    const btn = lightbox()?.querySelector(".xiv-lightbox-slideshow");
-    if (btn) btn.remove();
+    lightbox()?.querySelector(".xiv-lightbox-slideshow")?.remove();
   }
 
   function mediaEl() { return lightbox()?.querySelector("img, video, iframe[data-media-url], .xiv-video-frame") || null; }
@@ -161,55 +152,38 @@
 
   function activeVideo() {
     const box = lightbox();
-    const video = box?.querySelector("video");
-    if (video) return video;
-    const frame = box?.querySelector("iframe[data-media-url], .xiv-video-frame");
-    return iframeVideo(frame);
+    return box?.querySelector("video") || iframeVideo(box?.querySelector("iframe[data-media-url], .xiv-video-frame"));
   }
 
-  function noteMediaProgress(el) {
-    const key = mediaKey(el) || "media";
-    const now = Date.now();
-    if (mediaState.key !== key) mediaState = { key, startedAt: now, lastTime: -1, lastProgressAt: now };
-    const current = Number(el?.currentTime || 0);
-    if (Math.abs(current - mediaState.lastTime) > 0.15) {
-      mediaState.lastTime = current;
-      mediaState.lastProgressAt = now;
-    }
-  }
-
-  function ensurePlaying(el) {
-    if (!el) return false;
-    noteMediaProgress(el);
-    if (!el.playsInline) el.playsInline = true;
-    if (!el.paused && !el.ended) return true;
+  function playVideo(video) {
+    if (!video) return false;
+    if (!video.playsInline) video.playsInline = true;
+    if (!video.paused && !video.ended) return true;
     try {
-      const promise = el.play?.();
+      const promise = video.play?.();
       promise?.catch?.(() => {
         try {
-          el.muted = true;
-          el.play?.()?.catch?.(() => {});
+          video.muted = true;
+          video.play?.()?.catch?.(() => {});
         } catch {}
       });
     } catch {}
     return true;
   }
 
-  function videoStillRunning() {
+  function videoRunning() {
     const video = activeVideo();
     if (!video) return false;
-    ensurePlaying(video);
+    playVideo(video);
     const duration = Number(video.duration || 0);
-    const current = Number(video.currentTime || 0);
     if (video.ended) return false;
-    if (Number.isFinite(duration) && duration > 0) return current < duration - 0.35;
-    if (Date.now() - mediaState.lastProgressAt > VIDEO_STALL_MS) return false;
+    if (Number.isFinite(duration) && duration > 0) return Number(video.currentTime || 0) < duration - 0.35;
     return true;
   }
 
   function goNext() {
-    const api = coreApi();
-    if (api?.showAdjacent?.(1)) return true;
+    resetZoom(false);
+    if (coreApi()?.showAdjacent?.(1)) return true;
     const arrow = lightbox()?.querySelector?.('.xiv-lightbox-arrow[data-side="right"]');
     if (arrow) {
       arrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
@@ -228,13 +202,12 @@
 
   function slideshowTick() {
     if (!slideshowActive) return;
-    if (!isOpen()) { hideButton(); return; }
-    if (videoStillRunning()) { scheduleSlideshow(650); return; }
+    if (!isOpen()) { removeButton(); return; }
+    if (videoRunning()) { scheduleSlideshow(650); return; }
     goNext();
     window.setTimeout(() => {
       const video = activeVideo();
-      if (video) ensurePlaying(video);
-      if (zoomFactor > 1) applyZoom(zoomFactor, false);
+      if (video) playVideo(video);
       ensureButton();
     }, 120);
     scheduleSlideshow(slideshowDelay());
@@ -244,7 +217,7 @@
     if (!isOpen()) return;
     slideshowActive = true;
     const video = activeVideo();
-    if (video) ensurePlaying(video);
+    if (video) playVideo(video);
     scheduleSlideshow(video ? 650 : slideshowDelay());
     ensureButton();
   }
@@ -253,7 +226,7 @@
     slideshowActive = false;
     clearTimeout(slideshowTimer);
     slideshowTimer = 0;
-    if (update) ensureButton();
+    if (update && isOpen()) ensureButton();
   }
 
   function toggleSlideshow() { slideshowActive ? stopSlideshow() : startSlideshow(); }
@@ -279,9 +252,14 @@
     hint.dataset.timer = String(window.setTimeout(() => { hint.dataset.show = "false"; }, 900));
   }
 
-  function resetZoom(el = mediaEl()) {
+  function clearMediaStyle(el) {
+    if (!el) return;
+    ["width", "height", "max-width", "max-height", "margin", "margin-left", "margin-top", "margin-right", "margin-bottom"].forEach((p) => el.style.removeProperty(p));
+  }
+
+  function resetZoom(notify = false) {
     const box = lightbox();
-    if (el) ["width", "height", "max-width", "max-height", "margin", "margin-left", "margin-top", "margin-right", "margin-bottom"].forEach((p) => el.style.removeProperty(p));
+    clearMediaStyle(mediaEl());
     if (box) {
       delete box.dataset.flShortcutZoom;
       delete box.dataset.flZoomFactor;
@@ -290,6 +268,7 @@
     }
     zoomFactor = 1;
     zoomMediaKey = "";
+    if (notify) showZoomHint("已恢复适应屏幕");
   }
 
   function baseSize(el) {
@@ -300,39 +279,19 @@
     };
   }
 
-  function centerZoomed(el, width, height, marginX, marginY) {
-    const box = lightbox();
-    if (!box) return;
-    const run = () => {
-      if (!box.isConnected || box.dataset.active !== "true" || box.dataset.flDragging === "true") return;
-      const left = Math.max(0, Math.round(marginX + width / 2 - box.clientWidth / 2));
-      const top = Math.max(0, Math.round(marginY + height / 2 - box.clientHeight / 2));
-      box.scrollTo?.({ left, top, behavior: "auto" });
-    };
-    requestAnimationFrame(() => requestAnimationFrame(run));
-    window.setTimeout(run, 80);
-    window.setTimeout(run, 240);
-  }
-
   function applyZoom(factor, notify = true) {
     const box = lightbox();
     const el = mediaEl();
     if (!box || box.dataset.active !== "true" || !el) return;
     const next = Number(factor) > 1 ? Number(factor) : 1;
-    if (next === 1) {
-      resetZoom(el);
-      if (notify) showZoomHint("已恢复适应屏幕");
-      return;
-    }
+    if (next === 1) { resetZoom(true); return; }
     if (el.tagName === "IMG" && !el.complete) {
       el.addEventListener("load", () => applyZoom(next, notify), { once: true });
       return;
     }
     const key = mediaKey(el);
-    if (zoomMediaKey !== key) {
-      ["width", "height", "max-width", "max-height", "margin", "margin-left", "margin-top", "margin-right", "margin-bottom"].forEach((p) => el.style.removeProperty(p));
-      zoomMediaKey = key;
-    }
+    if (zoomMediaKey && zoomMediaKey !== key) resetZoom(false);
+    zoomMediaKey = key;
     const size = baseSize(el);
     const width = Math.round(size.width * next);
     const height = Math.round(size.height * next);
@@ -346,7 +305,16 @@
     box.dataset.flShortcutZoom = "true";
     box.dataset.flZoomFactor = String(next);
     zoomFactor = next;
-    centerZoomed(el, width, height, marginX, marginY);
+    const center = () => {
+      if (!box.isConnected || box.dataset.active !== "true" || box.dataset.flDragging === "true") return;
+      box.scrollTo?.({
+        left: Math.max(0, Math.round(marginX + width / 2 - box.clientWidth / 2)),
+        top: Math.max(0, Math.round(marginY + height / 2 - box.clientHeight / 2)),
+        behavior: "auto"
+      });
+    };
+    requestAnimationFrame(center);
+    window.setTimeout(center, 120);
     if (notify) showZoomHint(`已放大 ${next}×`);
   }
 
@@ -358,17 +326,16 @@
       toggleSlideshow();
       return;
     }
-    if (event.target?.closest?.(".xiv-lightbox-close")) {
-      window.setTimeout(hideButton, 30);
-      window.setTimeout(hideButton, 180);
-    }
+    if (event.target?.closest?.(".xiv-lightbox-close")) window.setTimeout(removeButton, 40);
+    if (event.target?.closest?.(".xiv-lightbox-arrow")) window.setTimeout(() => resetZoom(false), 40);
   }
 
   function onKeydown(event) {
     if (!isOpen()) return;
     const target = event.target;
     if (target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']")) return;
-    if (event.key === "Escape") { window.setTimeout(hideButton, 50); return; }
+    if (event.key === "Escape") { window.setTimeout(removeButton, 40); return; }
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") window.setTimeout(() => resetZoom(false), 40);
     if (!(event.key in ZOOM_MAP) || event.ctrlKey || event.metaKey || event.altKey) return;
     event.preventDefault();
     event.stopPropagation();
@@ -409,21 +376,17 @@
     if (!box || box === lightboxObserverTarget) return;
     lightboxObserver?.disconnect?.();
     lightboxObserverTarget = box;
-    lightboxObserver = new MutationObserver(() => scheduleRefresh(40));
-    lightboxObserver.observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "style"] });
+    lightboxObserver = new MutationObserver(() => scheduleRefresh(50));
+    lightboxObserver.observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active"] });
   }
 
   function refresh() {
     installStyle();
     watchLightbox();
-    if (!isOpen()) {
-      hideButton();
-      zoomFactor = 1;
-      zoomMediaKey = "";
-      return;
-    }
+    if (!isOpen()) { removeButton(); resetZoom(false); return; }
+    const key = mediaKey();
+    if (zoomMediaKey && key && zoomMediaKey !== key) resetZoom(false);
     ensureButton();
-    if (zoomFactor > 1) applyZoom(zoomFactor, false);
   }
 
   function scheduleRefresh(delay = 80) {
@@ -433,18 +396,8 @@
 
   window.addEventListener("message", (event) => {
     const msg = event.data || {};
-    if (msg.type !== "XIV_VIDEO_TIME") return;
-    const key = String(msg.url || "iframe-video");
-    const now = Date.now();
-    if (mediaState.key !== key) mediaState = { key, startedAt: now, lastTime: -1, lastProgressAt: now };
-    const current = Number(msg.currentTime || 0);
-    if (Math.abs(current - mediaState.lastTime) > 0.15) {
-      mediaState.lastTime = current;
-      mediaState.lastProgressAt = now;
-    }
-    if (msg.eventName === "ended" && slideshowActive) scheduleSlideshow(250);
+    if (msg.type === "XIV_VIDEO_TIME" && msg.eventName === "ended" && slideshowActive) scheduleSlideshow(250);
   });
-
   document.addEventListener("click", onClick, true);
   document.addEventListener("keydown", onKeydown, true);
   document.addEventListener("pointerdown", onPointerDown, true);
@@ -454,10 +407,8 @@
   document.addEventListener("ended", (event) => {
     if (slideshowActive && event.target?.matches?.("#xiv-lightbox video")) scheduleSlideshow(250);
   }, true);
-  document.addEventListener("fullscreenchange", () => scheduleRefresh(40), true);
 
-  observer = new MutationObserver(() => scheduleRefresh(50));
-  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "style"] });
-  window.setInterval(() => { if (isOpen()) refresh(); }, 500);
+  observer = new MutationObserver(() => scheduleRefresh(80));
+  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active"] });
   scheduleRefresh(0);
 })();
