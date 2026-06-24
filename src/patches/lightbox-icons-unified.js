@@ -17,6 +17,15 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
+      #xiv-root > .xiv-lightbox-slideshow,
+      body > .xiv-lightbox-slideshow,
+      html > .xiv-lightbox-slideshow,
+      .xiv-lightbox-slideshow[data-fl-legacy-hidden="true"] {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
       #xiv-lightbox .xiv-lightbox-slideshow,
       #xiv-lightbox .xiv-lightbox-fav,
       #xiv-lightbox .xiv-lightbox-close {
@@ -28,7 +37,8 @@
         min-height: ${SIZE}px !important;
         border-radius: 999px !important;
         border: 1px solid rgba(0,0,0,.14) !important;
-        background: rgba(255,255,255,.94) !important;
+        background: rgba(255,255,255,.96) !important;
+        background-image: none !important;
         color: #111 !important;
         box-shadow: 0 1px 4px rgba(0,0,0,.10) !important;
         backdrop-filter: none !important;
@@ -46,6 +56,7 @@
         transform: none !important;
         overflow: hidden !important;
         text-indent: 0 !important;
+        filter: none !important;
       }
       #xiv-lightbox .xiv-lightbox-close { right: ${RIGHT}px !important; }
       #xiv-lightbox .xiv-lightbox-fav { right: ${RIGHT + SIZE + GAP}px !important; }
@@ -53,6 +64,7 @@
       #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"],
       #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] {
         background: rgba(255,255,255,.98) !important;
+        background-image: none !important;
         color: #111 !important;
         border-color: rgba(0,0,0,.18) !important;
       }
@@ -98,7 +110,8 @@
     btn.style.setProperty("min-height", `${SIZE}px`, "important");
     btn.style.setProperty("border-radius", "999px", "important");
     btn.style.setProperty("border", "1px solid rgba(0,0,0,.14)", "important");
-    btn.style.setProperty("background", "rgba(255,255,255,.94)", "important");
+    btn.style.setProperty("background", "rgba(255,255,255,.96)", "important");
+    btn.style.setProperty("background-image", "none", "important");
     btn.style.setProperty("color", "#111", "important");
     btn.style.setProperty("box-shadow", "0 1px 4px rgba(0,0,0,.10)", "important");
     btn.style.setProperty("backdrop-filter", "none", "important");
@@ -111,8 +124,20 @@
     btn.style.setProperty("opacity", "1", "important");
     btn.style.setProperty("visibility", "visible", "important");
     btn.style.setProperty("transform", "none", "important");
+    btn.style.setProperty("filter", "none", "important");
     btn.style.setProperty("overflow", "hidden", "important");
     btn.style.setProperty("z-index", "2147483647", "important");
+  }
+
+  function hideLegacyDuplicates(lb) {
+    document.querySelectorAll(".xiv-lightbox-slideshow").forEach((btn) => {
+      if (lb && lb.contains(btn)) return;
+      btn.dataset.flLegacyHidden = "true";
+      btn.style.setProperty("display", "none", "important");
+      btn.style.setProperty("visibility", "hidden", "important");
+      btn.style.setProperty("opacity", "0", "important");
+      btn.style.setProperty("pointer-events", "none", "important");
+    });
   }
 
   function svgEl(name) {
@@ -141,7 +166,9 @@
   }
 
   function ensureSlideshowButton(lb) {
-    let btn = lb.querySelector(".xiv-lightbox-slideshow");
+    const all = Array.from(lb.querySelectorAll(".xiv-lightbox-slideshow"));
+    let btn = all[0];
+    all.slice(1).forEach((dup) => dup.remove());
     if (!btn) {
       btn = document.createElement("button");
       btn.type = "button";
@@ -168,6 +195,7 @@
   function scan() {
     installStyle();
     const lb = box();
+    hideLegacyDuplicates(lb);
     if (!lb || lb.dataset.active !== "true") return;
     const close = lb.querySelector(".xiv-lightbox-close");
     const fav = lb.querySelector(".xiv-lightbox-fav");
