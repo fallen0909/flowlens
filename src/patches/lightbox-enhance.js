@@ -19,6 +19,7 @@
   let zoomFactor = 1;
   let zoomMediaKey = "";
   let drag = null;
+  let slideshowPointerHandledAt = 0;
 
   function root() { return document.getElementById("xiv-root"); }
   function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
@@ -52,59 +53,6 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #xiv-lightbox .xiv-lightbox-slideshow {
-        position: fixed !important;
-        right: 118px !important;
-        top: 18px !important;
-        z-index: 2147483647 !important;
-        width: 42px !important;
-        height: 42px !important;
-        border-radius: 999px !important;
-        border: 1px solid rgba(255,255,255,.26) !important;
-        background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72)) !important;
-        color: #fff !important;
-        display: grid !important;
-        place-items: center !important;
-        pointer-events: auto !important;
-        cursor: pointer !important;
-        padding: 0 !important;
-        box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18) !important;
-        backdrop-filter: blur(12px) !important;
-        overflow: hidden !important;
-        text-indent: 0 !important;
-        -webkit-text-fill-color: currentColor !important;
-      }
-      #xiv-lightbox .xiv-lightbox-slideshow::before,
-      #xiv-lightbox .xiv-lightbox-slideshow::after {
-        content: "" !important;
-        display: block !important;
-        box-sizing: border-box !important;
-      }
-      #xiv-lightbox .xiv-lightbox-slideshow:not([data-active="true"])::before {
-        width: 0 !important;
-        height: 0 !important;
-        border-top: 7px solid transparent !important;
-        border-bottom: 7px solid transparent !important;
-        border-left: 12px solid currentColor !important;
-        margin-left: 3px !important;
-      }
-      #xiv-lightbox .xiv-lightbox-slideshow:not([data-active="true"])::after { display: none !important; }
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] {
-        color: #111 !important;
-        background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.96), rgba(255,255,255,.78)) !important;
-        border-color: rgba(255,255,255,.72) !important;
-      }
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"]::before,
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"]::after {
-        position: absolute !important;
-        top: 13px !important;
-        width: 4px !important;
-        height: 16px !important;
-        border-radius: 2px !important;
-        background: currentColor !important;
-      }
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"]::before { left: 15px !important; }
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"]::after { right: 15px !important; }
       #xiv-lightbox[data-fl-shortcut-zoom="true"] {
         overflow: auto !important;
         align-items: flex-start !important;
@@ -161,7 +109,6 @@
     btn.dataset.active = slideshowActive ? "true" : "false";
     btn.title = slideshowActive ? "暂停大图自动切换" : `开始大图自动切换（${speedLabel(slideshowDelay())}）`;
     btn.setAttribute("aria-label", btn.title);
-    btn.textContent = "";
     return btn;
   }
 
@@ -225,6 +172,7 @@
     if (!slideshowActive) return;
     slideshowTimer = window.setTimeout(slideshowTick, Math.max(250, Number(wait) || DEFAULT_DELAY));
     ensureButton();
+    window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: slideshowActive } }));
   }
 
   function slideshowTick() {
@@ -236,6 +184,7 @@
       const video = activeVideo();
       if (video) playVideo(video);
       ensureButton();
+      window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: slideshowActive } }));
     }, 120);
     scheduleSlideshow(slideshowDelay());
   }
@@ -247,6 +196,7 @@
     if (video) playVideo(video);
     scheduleSlideshow(video ? 650 : slideshowDelay());
     ensureButton();
+    window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: true } }));
   }
 
   function stopSlideshow(update = true) {
@@ -254,6 +204,7 @@
     clearTimeout(slideshowTimer);
     slideshowTimer = 0;
     if (update && isOpen()) ensureButton();
+    window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: false } }));
   }
 
   function toggleSlideshow() { slideshowActive ? stopSlideshow() : startSlideshow(); }
@@ -345,12 +296,24 @@
     if (notify) showZoomHint(`已放大 ${next}×`);
   }
 
+  function claim(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+  }
+
+  function onSlideshowPointerDown(event) {
+    if (!event.target?.closest?.(".xiv-lightbox-slideshow")) return;
+    if (!isOpen()) return;
+    slideshowPointerHandledAt = Date.now();
+    claim(event);
+    toggleSlideshow();
+  }
+
   function onClick(event) {
     if (event.target?.closest?.(".xiv-lightbox-slideshow")) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      toggleSlideshow();
+      claim(event);
+      if (Date.now() - slideshowPointerHandledAt > 500) toggleSlideshow();
       return;
     }
     if (event.target?.closest?.(".xiv-lightbox-close")) window.setTimeout(removeButton, 40);
@@ -364,9 +327,7 @@
     if (event.key === "Escape") { window.setTimeout(removeButton, 40); return; }
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") window.setTimeout(() => resetZoom(false), 40);
     if (!(event.key in ZOOM_MAP) || event.ctrlKey || event.metaKey || event.altKey) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation?.();
+    claim(event);
     applyZoom(ZOOM_MAP[event.key]);
   }
 
@@ -378,8 +339,7 @@
     drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: box.scrollLeft, top: box.scrollTop };
     box.dataset.flDragging = "true";
     event.target?.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-    event.stopPropagation();
+    claim(event);
   }
 
   function onPointerMove(event) {
@@ -387,8 +347,7 @@
     if (!box || !drag || drag.pointerId !== event.pointerId) return;
     box.scrollLeft = drag.left - (event.clientX - drag.x);
     box.scrollTop = drag.top - (event.clientY - drag.y);
-    event.preventDefault();
-    event.stopPropagation();
+    claim(event);
   }
 
   function onPointerUp(event) {
@@ -425,6 +384,7 @@
     const msg = event.data || {};
     if (msg.type === "XIV_VIDEO_TIME" && msg.eventName === "ended" && slideshowActive) scheduleSlideshow(250);
   });
+  document.addEventListener("pointerdown", onSlideshowPointerDown, true);
   document.addEventListener("click", onClick, true);
   document.addEventListener("keydown", onKeydown, true);
   document.addEventListener("pointerdown", onPointerDown, true);
