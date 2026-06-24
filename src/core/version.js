@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         瀑光 FlowLens 版本中心
 // @namespace    local.flowlens.version
-// @version      1.7.7
+// @version      1.7.8
 // @description  FlowLens 统一运行时版本中心，供入口脚本、补丁和诊断日志读取同一份版本信息。
 // @match        *://*/*
 // @run-at       document-start
@@ -12,7 +12,7 @@
 (() => {
   const RAW_VERSION = "__FLOWLENS_BUILD_VERSION__";
   const RAW_CHANNEL = "__FLOWLENS_BUILD_CHANNEL__";
-  const VERSION = /^__FLOWLENS_/.test(RAW_VERSION) ? "1.7.7" : RAW_VERSION;
+  const VERSION = /^__FLOWLENS_/.test(RAW_VERSION) ? "1.7.8" : RAW_VERSION;
   const CHANNEL = /^__FLOWLENS_/.test(RAW_CHANNEL) ? "stable" : RAW_CHANNEL;
   const RELEASE_DATE = "2026-06-24";
   const FEATURES = [
@@ -25,7 +25,7 @@
     "x810114-no-refresh-auto-open",
     "lightbox-enhanced-slideshow",
     "lightbox-keyboard-zoom-centered",
-    "lightbox-button-sync"
+    "lightbox-button-sync-on-open"
   ];
 
   const previous = window.__FlowLensVersion && typeof window.__FlowLensVersion === "object"
