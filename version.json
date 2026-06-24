@@ -1,12 +1,12 @@
 {
-  "version": "1.7.3",
+  "version": "1.7.4",
   "desktop": {
-    "version": "1.7.3",
+    "version": "1.7.4",
     "recommendedEntry": "flowlens-desktop.user.js",
     "extensionEntry": "apps/extension/manifest.json"
   },
   "mobile": {
-    "version": "1.7.3",
+    "version": "1.7.4",
     "entry": "flowlens-mobile-all.user.js",
     "loader": "multi-file-require-loader"
   },
@@ -44,6 +44,8 @@
     "single-current-media-favorite-download",
     "safe-lightweight-bookmark-panel",
     "item-gallery-pagination",
-    "meitulu-item-pagination"
+    "meitulu-item-pagination",
+    "main-content-focus-filter",
+    "lightbox-slideshow-bridge"
   ]
 }
