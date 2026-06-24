@@ -70,14 +70,41 @@
         padding: 0 !important;
         box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18) !important;
         backdrop-filter: blur(12px) !important;
-        font: 900 20px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-        text-align: center !important;
+        overflow: hidden !important;
+        text-indent: 0 !important;
+        -webkit-text-fill-color: currentColor !important;
       }
+      #xiv-lightbox .xiv-lightbox-slideshow::before,
+      #xiv-lightbox .xiv-lightbox-slideshow::after {
+        content: "" !important;
+        display: block !important;
+        box-sizing: border-box !important;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow:not([data-active="true"])::before {
+        width: 0 !important;
+        height: 0 !important;
+        border-top: 7px solid transparent !important;
+        border-bottom: 7px solid transparent !important;
+        border-left: 12px solid currentColor !important;
+        margin-left: 3px !important;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow:not([data-active="true"])::after { display: none !important; }
       #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] {
         color: #111 !important;
         background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.96), rgba(255,255,255,.78)) !important;
         border-color: rgba(255,255,255,.72) !important;
       }
+      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"]::before,
+      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"]::after {
+        position: absolute !important;
+        top: 13px !important;
+        width: 4px !important;
+        height: 16px !important;
+        border-radius: 2px !important;
+        background: currentColor !important;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"]::before { left: 15px !important; }
+      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"]::after { right: 15px !important; }
       #xiv-lightbox[data-fl-shortcut-zoom="true"] {
         overflow: auto !important;
         align-items: flex-start !important;
@@ -134,7 +161,7 @@
     btn.dataset.active = slideshowActive ? "true" : "false";
     btn.title = slideshowActive ? "暂停大图自动切换" : `开始大图自动切换（${speedLabel(slideshowDelay())}）`;
     btn.setAttribute("aria-label", btn.title);
-    btn.textContent = slideshowActive ? "Ⅱ" : "▶";
+    btn.textContent = "";
     return btn;
   }
 
