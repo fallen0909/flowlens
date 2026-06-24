@@ -6,6 +6,7 @@
   const SIZE = 46;
   const GAP = 8;
   const RIGHT = 14;
+  const HEART_RED = "#e11d48";
   let timer = 0;
 
   function root() { return document.getElementById("xiv-root"); }
@@ -61,12 +62,17 @@
       #xiv-lightbox .xiv-lightbox-close { right: ${RIGHT}px !important; }
       #xiv-lightbox .xiv-lightbox-fav { right: ${RIGHT + SIZE + GAP}px !important; }
       #xiv-lightbox .xiv-lightbox-slideshow { right: ${RIGHT + (SIZE + GAP) * 2}px !important; }
-      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"],
-      #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] {
+      #xiv-lightbox .xiv-lightbox-slideshow[data-active="true"] {
         background: rgba(255,255,255,.98) !important;
         background-image: none !important;
         color: #111 !important;
         border-color: rgba(0,0,0,.18) !important;
+      }
+      #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] {
+        background: rgba(255,255,255,.98) !important;
+        background-image: none !important;
+        color: ${HEART_RED} !important;
+        border-color: rgba(225,29,72,.28) !important;
       }
       #xiv-lightbox .xiv-lightbox-slideshow::before,
       #xiv-lightbox .xiv-lightbox-slideshow::after,
@@ -95,11 +101,17 @@
       #xiv-lightbox .xiv-lightbox-slideshow svg [fill],
       #xiv-lightbox .xiv-lightbox-slideshow svg path,
       #xiv-lightbox .xiv-lightbox-slideshow svg rect { fill: currentColor !important; stroke: none !important; }
+      #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] svg,
+      #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] svg path {
+        color: ${HEART_RED} !important;
+        fill: ${HEART_RED} !important;
+        stroke: ${HEART_RED} !important;
+      }
     `;
     document.documentElement.appendChild(style);
   }
 
-  function forceButtonStyle(btn, right) {
+  function forceButtonStyle(btn, right, color = "#111") {
     if (!btn) return;
     btn.style.setProperty("position", "fixed", "important");
     btn.style.setProperty("top", "max(10px, calc(env(safe-area-inset-top, 0px) + 10px))", "important");
@@ -109,10 +121,10 @@
     btn.style.setProperty("min-width", `${SIZE}px`, "important");
     btn.style.setProperty("min-height", `${SIZE}px`, "important");
     btn.style.setProperty("border-radius", "999px", "important");
-    btn.style.setProperty("border", "1px solid rgba(0,0,0,.14)", "important");
+    btn.style.setProperty("border", color === HEART_RED ? "1px solid rgba(225,29,72,.28)" : "1px solid rgba(0,0,0,.14)", "important");
     btn.style.setProperty("background", "rgba(255,255,255,.96)", "important");
     btn.style.setProperty("background-image", "none", "important");
-    btn.style.setProperty("color", "#111", "important");
+    btn.style.setProperty("color", color, "important");
     btn.style.setProperty("box-shadow", "0 1px 4px rgba(0,0,0,.10)", "important");
     btn.style.setProperty("backdrop-filter", "none", "important");
     btn.style.setProperty("-webkit-backdrop-filter", "none", "important");
@@ -200,8 +212,9 @@
     const close = lb.querySelector(".xiv-lightbox-close");
     const fav = lb.querySelector(".xiv-lightbox-fav");
     const play = ensureSlideshowButton(lb);
+    const favColor = fav?.dataset.favorited === "true" ? HEART_RED : "#111";
     forceButtonStyle(close, RIGHT);
-    forceButtonStyle(fav, RIGHT + SIZE + GAP);
+    forceButtonStyle(fav, RIGHT + SIZE + GAP, favColor);
     forceButtonStyle(play, RIGHT + (SIZE + GAP) * 2);
     drawButton(play);
   }
@@ -213,6 +226,7 @@
 
   document.addEventListener("click", () => schedule(20), true);
   document.addEventListener("keydown", () => schedule(20), true);
+  window.addEventListener("flowlens:slideshow-state", () => schedule(0));
   const observer = new MutationObserver(() => schedule(20));
   if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-favorited", "class", "style"] });
   schedule(0);
