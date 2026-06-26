@@ -21,18 +21,13 @@
       #xiv-lightbox video.xiv-fl-smooth-media,
       #xiv-lightbox iframe.xiv-fl-smooth-media,
       #xiv-lightbox .xiv-video-frame.xiv-fl-smooth-media {
-        opacity: var(--fl-smooth-opacity, 1) !important;
-        transform: translate3d(0, 0, 0) scale(var(--fl-smooth-scale, 1)) !important;
-        transition:
-          opacity 190ms cubic-bezier(.2, .8, .2, 1),
-          transform 260ms cubic-bezier(.22, 1, .36, 1) !important;
-        will-change: opacity, transform !important;
+        opacity: 1 !important;
+        transform: translate3d(0, 0, 0) !important;
+        transition: none !important;
+        will-change: transform !important;
         backface-visibility: hidden !important;
         -webkit-backface-visibility: hidden !important;
         filter: none !important;
-      }
-      #xiv-lightbox img.xiv-fl-smooth-pending {
-        opacity: .92 !important;
       }
       #xiv-lightbox img.xiv-fl-smooth-decoded {
         image-rendering: auto;
@@ -119,22 +114,6 @@
   function markSmoothMedia(media) {
     if (!media || !media.classList) return;
     media.classList.add("xiv-fl-smooth-media");
-    media.style.setProperty("--fl-smooth-opacity", "1");
-    media.style.setProperty("--fl-smooth-scale", "1");
-  }
-
-  function animateMediaIn(media, subtle = true) {
-    if (!media || !media.isConnected || !media.classList) return;
-    markSmoothMedia(media);
-    media.style.setProperty("--fl-smooth-opacity", subtle ? ".86" : ".76");
-    media.style.setProperty("--fl-smooth-scale", subtle ? ".992" : ".985");
-    // Force the browser to commit the starting value before the transition.
-    void media.offsetWidth;
-    requestAnimationFrame(() => {
-      if (!media.isConnected) return;
-      media.style.setProperty("--fl-smooth-opacity", "1");
-      media.style.setProperty("--fl-smooth-scale", "1");
-    });
   }
 
   function shouldSmoothSwap(img, nextUrl) {
@@ -188,7 +167,6 @@
     const token = `${Date.now()}:${Math.random()}`;
     pendingTokens.set(img, token);
     markSmoothMedia(img);
-    img.classList.add("xiv-fl-smooth-pending");
 
     await warmImage(url, img.referrerPolicy || "");
     if (!img.isConnected || pendingTokens.get(img) !== token) return;
@@ -196,9 +174,8 @@
     const onReady = () => {
       if (pendingTokens.get(img) !== token) return;
       pendingTokens.delete(img);
-      img.classList.remove("xiv-fl-smooth-pending");
       img.classList.add("xiv-fl-smooth-decoded");
-      animateMediaIn(img, true);
+      markSmoothMedia(img);
       warmAdjacentFromLightbox();
     };
 
@@ -246,15 +223,7 @@
 
   function decorateLightboxMedia(root = activeLightbox()) {
     if (!root) return;
-    root.querySelectorAll("img, video, iframe, .xiv-video-frame").forEach((media) => {
-      markSmoothMedia(media);
-      if (media.tagName === "IMG") {
-        if (media.complete && media.currentSrc) animateMediaIn(media, false);
-        else media.addEventListener("load", () => animateMediaIn(media, false), { once: true });
-      } else {
-        animateMediaIn(media, false);
-      }
-    });
+    root.querySelectorAll("img, video, iframe, .xiv-video-frame").forEach(markSmoothMedia);
     warmAdjacentFromLightbox();
   }
 
