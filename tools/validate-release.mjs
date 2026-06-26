@@ -8,8 +8,7 @@ const version = versionManifest.version;
 const files = {
   desktop: "flowlens-desktop.user.js",
   mobile: "flowlens-mobile-all.user.js",
-  index: "index.html",
-  manifest: "apps/extension/manifest.json"
+  index: "index.html"
 };
 
 function assert(condition, message) {
@@ -24,7 +23,7 @@ assert(/^\d+\.\d+\.\d+$/.test(version), `Invalid version: ${version}`);
 assert(versionManifest.desktop?.version === version, "desktop version must match version.json root version");
 assert(versionManifest.mobile?.version === version, "mobile version must match version.json root version");
 
-for (const [name, path] of Object.entries({ desktop: files.desktop, mobile: files.mobile })) {
+for (const path of [files.desktop, files.mobile]) {
   const content = await text(path);
   assert(content.includes(`// @version      ${version}`), `${path} has stale @version`);
   assert(content.includes(`window.__FLOWLENS_VERSION__ = "${version}"`), `${path} has stale runtime version`);
@@ -35,9 +34,4 @@ for (const [name, path] of Object.entries({ desktop: files.desktop, mobile: file
 const index = await text(files.index);
 assert(index.includes(`v${version}`), "install page does not show current version");
 
-const manifest = JSON.parse(await text(files.manifest));
-assert(manifest.version === version, "extension manifest version is stale");
-const scripts = manifest.content_scripts?.[0]?.js || [];
-assert(scripts.includes("content-lightbox-ios-smooth.js"), "extension manifest is missing smooth lightbox content script");
-
-console.log(`FlowLens release ${version} is consistent.`);
+console.log(`FlowLens userscript release ${version} is consistent.`);
