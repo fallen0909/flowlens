@@ -26,6 +26,7 @@ jobs:
           node --check src/patches/lightbox-event-guard.js
           node --check src/patches/lightbox-ios-smooth.js
           node --check src/patches/lightbox-gallery-swipe.js
+          node --check src/patches/lightbox-toolbar-stable.js
           node --check apps/extension/content.js
           node --check apps/extension/background.js
           node --check apps/extension/options.js
