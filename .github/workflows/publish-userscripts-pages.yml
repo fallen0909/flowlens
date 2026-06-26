@@ -2,14 +2,6 @@ name: Publish FlowLens installation page
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
-    paths:
-      - 'apps/**'
-      - 'src/**'
-      - 'tools/**'
-      - 'version.json'
-      - '.github/workflows/publish-userscripts-pages.yml'
 
 permissions:
   contents: read
@@ -24,7 +16,6 @@ jobs:
   publish:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -36,8 +27,7 @@ jobs:
 
       - name: Prepare Pages files
         run: |
-          node tools/sync-extension-sources.mjs
-          node tools/build-userscripts.mjs
+          node tools/validate-release.mjs
           node --check flowlens-mobile-all.user.js
           rm -rf public
           mkdir -p public
@@ -54,5 +44,4 @@ jobs:
           path: public
 
       - name: Deploy to GitHub Pages
-        id: deployment
         uses: actions/deploy-pages@v4
