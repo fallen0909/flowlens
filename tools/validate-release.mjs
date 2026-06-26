@@ -27,7 +27,9 @@ for (const path of [files.desktop, files.mobile]) {
   const content = await text(path);
   assert(content.includes(`// @version      ${version}`), `${path} has stale @version`);
   assert(content.includes(`window.__FLOWLENS_VERSION__ = "${version}"`), `${path} has stale runtime version`);
+  assert(content.includes(`src/patches/lightbox-event-guard.js?v=${version}`), `${path} is missing lightbox event guard`);
   assert(content.includes(`src/patches/lightbox-ios-smooth.js?v=${version}`), `${path} is missing smooth lightbox patch`);
+  assert(content.includes(`src/patches/lightbox-gallery-swipe.js?v=${version}`), `${path} is missing gallery swipe patch`);
   assert(content.includes(`src/core/version.js?v=${version}`), `${path} has stale version center require`);
 }
 
