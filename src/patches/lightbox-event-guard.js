@@ -17,8 +17,8 @@
     return !!lb && !!event?.target && lb.contains(event.target);
   }
 
-  function isProtectedControl(target) {
-    return !!target?.closest?.(".xiv-lightbox-slideshow, .xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow");
+  function isSlideshowButton(target) {
+    return !!target?.closest?.(".xiv-lightbox-slideshow");
   }
 
   function claim(event) {
@@ -29,12 +29,12 @@
 
   function shouldBlockCoreLightboxClick(event) {
     if (!isLightboxEvent(event)) return false;
-    if (isProtectedControl(event.target)) return true;
+    if (isSlideshowButton(event.target)) return true;
     return Date.now() < Number(window.__flowLensBlockNextLightboxClickUntil || 0);
   }
 
   function shouldBlockCoreLightboxPointer(event) {
-    return isLightboxEvent(event) && isProtectedControl(event.target);
+    return isLightboxEvent(event) && isSlideshowButton(event.target);
   }
 
   function listenerName(listener) {
