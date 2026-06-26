@@ -52,7 +52,6 @@ function header({ name, namespace, description, output, additions = [] }) {
 // @grant        GM_download
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @connect      *
 // @downloadURL  ${baseUrl}/${output}
 // @updateURL    ${baseUrl}/${output}
 ${requires}
