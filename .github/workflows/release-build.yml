@@ -1,15 +1,6 @@
 name: Verify and package FlowLens
 
 on:
-  pull_request:
-  push:
-    branches: [master]
-    paths:
-      - 'apps/extension/**'
-      - 'src/**'
-      - 'tools/**'
-      - 'version.json'
-      - '.github/workflows/release-build.yml'
   workflow_dispatch:
 
 permissions:
@@ -25,18 +16,14 @@ jobs:
         with:
           node-version: 22
 
-      - name: Rebuild official release files
+      - name: Validate release files
         run: |
-          node tools/sync-extension-sources.mjs
-          node tools/build-userscripts.mjs
-
-      - name: Require committed release files
-        run: git diff --exit-code -- apps/extension flowlens-desktop.user.js flowlens-mobile-all.user.js
-
-      - name: Validate JavaScript and extension manifest
-        run: |
+          node tools/validate-release.mjs
           node --check flowlens-desktop.user.js
           node --check flowlens-mobile-all.user.js
+          node --check src/core/flowlens-core.js
+          node --check src/core/optimizer.js
+          node --check src/patches/lightbox-ios-smooth.js
           node --check apps/extension/content.js
           node --check apps/extension/background.js
           node --check apps/extension/options.js
