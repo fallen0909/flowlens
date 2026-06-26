@@ -11,6 +11,7 @@ const sourceMap = {
   "src/patches/product.js": "apps/extension/content-product.js",
   "src/patches/ui-cleanup.js": "apps/extension/content-ui-cleanup.js",
   "src/patches/lightbox-stable.js": "apps/extension/content-lightbox-stable.js",
+  "src/patches/lightbox-ios-smooth.js": "apps/extension/content-lightbox-ios-smooth.js",
   "src/patches/settings-compact.js": "apps/extension/content-settings-compact-v2.js",
   "src/patches/zhihu.js": "apps/extension/content-zhihu.js",
   "src/patches/topfix.js": "apps/extension/content-topfix.js",
