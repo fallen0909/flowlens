@@ -23,7 +23,9 @@ jobs:
           node --check flowlens-mobile-all.user.js
           node --check src/core/flowlens-core.js
           node --check src/core/optimizer.js
+          node --check src/patches/lightbox-event-guard.js
           node --check src/patches/lightbox-ios-smooth.js
+          node --check src/patches/lightbox-gallery-swipe.js
           node --check apps/extension/content.js
           node --check apps/extension/background.js
           node --check apps/extension/options.js
