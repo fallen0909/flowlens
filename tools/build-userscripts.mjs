@@ -19,6 +19,7 @@ const shared = [
   "src/patches/product.js",
   "src/patches/ui-cleanup.js",
   "src/patches/lightbox-stable.js",
+  "src/patches/lightbox-ios-smooth.js",
   "src/patches/settings-compact.js",
   "src/patches/zhihu.js",
   "src/patches/zhihu-dedupe.js",
