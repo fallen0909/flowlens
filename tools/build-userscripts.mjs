@@ -16,6 +16,7 @@ const shared = [
   "src/core/global-settings.js",
   "src/patches/x810114-safe-start.js",
   "src/patches/item-gallery.js",
+  "src/patches/lightbox-event-guard.js",
   "src/core/flowlens-core.js",
   "src/core/optimizer.js",
   "src/patches/product.js",
@@ -28,6 +29,7 @@ const shared = [
   "src/patches/media-sync.js",
   "src/patches/lightbox-enhance.js",
   "src/patches/lightbox-ios-smooth.js",
+  "src/patches/lightbox-gallery-swipe.js",
   "src/patches/lightbox-icon-dom-fix.js",
   "src/patches/lightbox-icons-unified.js",
   "src/patches/page-bookmarks.js"
