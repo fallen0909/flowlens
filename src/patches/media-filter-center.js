@@ -17,11 +17,8 @@
   let timer = 0;
 
   function readConfig() {
-    try {
-      return { ...defaultConfig, ...(JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}) };
-    } catch {
-      return { ...defaultConfig };
-    }
+    try { return { ...defaultConfig, ...(JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}) }; }
+    catch { return { ...defaultConfig }; }
   }
 
   function writeConfig(next) {
@@ -32,13 +29,8 @@
     return config;
   }
 
-  function splitLines(text) {
-    return String(text || "").split(/[\n,;]/).map((item) => item.trim()).filter(Boolean);
-  }
-
-  function clean(value) {
-    return String(value || "").replaceAll("\\/", "/").replace(/\\u002f/gi, "/").replaceAll("&amp;", "&");
-  }
+  function splitLines(text) { return String(text || "").split(/[\n,;]/).map((item) => item.trim()).filter(Boolean); }
+  function clean(value) { return String(value || "").replaceAll("\\/", "/").replace(/\\u002f/gi, "/").replaceAll("&amp;", "&"); }
 
   function urlInfo(value) {
     try {
@@ -52,9 +44,7 @@
 
   function currentAdapter() {
     const url = location.href;
-    return adapters.find((item) => {
-      try { return item.match?.(url); } catch { return false; }
-    }) || null;
+    return adapters.find((item) => { try { return item.match?.(url); } catch { return false; } }) || null;
   }
 
   function registerAdapter(adapter) {
@@ -71,8 +61,7 @@
     if (term) return `关键词：${term}`;
     const hostRule = splitLines(config.hosts).find((item) => info.host === item.toLowerCase() || info.host.endsWith(`.${item.toLowerCase()}`));
     if (hostRule) return `来源域名：${hostRule}`;
-    const adapter = currentAdapter();
-    const adapterReason = adapter?.reason?.(info, node, config);
+    const adapterReason = currentAdapter()?.reason?.(info, node, config);
     if (adapterReason) return adapterReason;
     if (config.smart && node) {
       const label = [node.getAttribute?.("alt"), node.getAttribute?.("title"), node.getAttribute?.("aria-label"), node.closest?.("a")?.textContent, node.textContent].join(" ");
@@ -96,15 +85,19 @@
 
   function logBlocked(url, reason) {
     if (!readConfig().diagnostics) return;
+    const latest = logs[0];
+    if (latest?.url === String(url || "").slice(0, 220) && latest?.reason === reason) return;
     logs.unshift({ url: String(url || "").slice(0, 220), reason, time: new Date().toLocaleTimeString() });
     logs.splice(MAX_LOG);
     refreshLog();
   }
 
-  function removeTile(tile, reason) {
+  function hideTile(tile, reason) {
     const url = tile?.dataset?.url || tile?.querySelector?.("img,video")?.dataset?.sourceUrl || "";
     logBlocked(url, reason);
-    tile?.remove?.();
+    tile.hidden = true;
+    tile.dataset.flFilteredOut = "true";
+    tile.dataset.flFilteredReason = reason;
   }
 
   function addTerm(value) {
@@ -135,9 +128,15 @@
       event.stopPropagation();
       const url = tile.dataset.url || tile.querySelector("img,video")?.src || "";
       addTerm(url);
-      removeTile(tile, "手动拉黑");
+      hideTile(tile, "手动拉黑");
+      finishApply();
     }, true);
     tile.appendChild(button);
+  }
+
+  function finishApply() {
+    window.__flowLensControl?.compactVisibleLabels?.();
+    window.dispatchEvent(new CustomEvent("flowlens:media-filter-applied"));
   }
 
   function applyFilters() {
@@ -145,9 +144,19 @@
     document.documentElement.dataset.flMediaFilter = config.enabled ? "true" : "false";
     document.querySelectorAll("#xiv-grid .xiv-tile").forEach((tile) => {
       decorateTile(tile);
-      if (!config.enabled) return;
+      if (!config.enabled) {
+        if (tile.dataset.flFilteredOut === "true") tile.hidden = false;
+        delete tile.dataset.flFilteredOut;
+        delete tile.dataset.flFilteredReason;
+        return;
+      }
       const reason = reasonFor(tile.dataset.url, tile) || nodeReason(tile);
-      if (reason) removeTile(tile, reason);
+      if (reason) hideTile(tile, reason);
+      else if (tile.dataset.flFilteredOut === "true") {
+        tile.hidden = false;
+        delete tile.dataset.flFilteredOut;
+        delete tile.dataset.flFilteredReason;
+      }
     });
     const lb = document.querySelector("#xiv-lightbox[data-active='true']");
     const url = currentLightboxUrl();
@@ -156,9 +165,10 @@
       logBlocked(url, reason);
       window.__flowLensControl.showAdjacent(1);
     }
+    finishApply();
   }
 
-  function scheduleApply(delay = 120) {
+  function scheduleApply(delay = 220) {
     clearTimeout(timer);
     timer = setTimeout(applyFilters, delay);
   }
@@ -235,9 +245,8 @@
       if (node.type === "checkbox") node.checked = !!config[key];
       else node.value = String(config[key] || "");
     });
-    const adapter = currentAdapter();
     const label = section.querySelector("[data-fl-mf-adapter]");
-    if (label) label.textContent = `当前站点适配器：${adapter?.name || "通用"}`;
+    if (label) label.textContent = `当前站点适配器：${currentAdapter()?.name || "通用"}`;
     refreshLog();
   }
 
@@ -262,8 +271,10 @@
   window.__flowLensMediaFilter = { readConfig, writeConfig, reasonFor, addTerm, registerAdapter, applyFilters };
   installStyle();
   const observer = new MutationObserver(() => { ensureUi(); scheduleApply(); });
-  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "srcset", "data-src", "data-original", "data-url", "style", "data-active"] });
-  document.addEventListener("click", () => scheduleApply(180), true);
+  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener("click", (event) => {
+    if (event.target?.closest?.(".fl-mf-section, .fl-mf-block")) scheduleApply(80);
+  }, true);
   ensureUi();
   scheduleApply(300);
 })();
