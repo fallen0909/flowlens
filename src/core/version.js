@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens version center
 // @namespace    local.flowlens.version
-// @version      1.7.26
+// @version      1.7.27
 // @description  FlowLens runtime version center.
 // @match        *://*/*
 // @run-at       document-start
@@ -10,7 +10,7 @@
 // ==/UserScript==
 
 (() => {
-  const VERSION = "1.7.26";
+  const VERSION = "1.7.27";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-26";
   const FEATURES = [
@@ -30,7 +30,6 @@
     "lightbox-stable-toolbar",
     "xchina-ad-filter",
     "media-filter-center",
-    "virtual-masonry",
     "visible-sequence-safe"
   ];
 
