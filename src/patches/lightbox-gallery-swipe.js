@@ -27,10 +27,11 @@
   function img() { return lb()?.querySelector?.(":scope > img") || null; }
   function control(t) { return !!t?.closest?.(".xiv-lightbox-slideshow,.xiv-lightbox-fav,.xiv-lightbox-close,.xiv-lightbox-arrow"); }
   function claim(e) { e?.preventDefault?.(); e?.stopPropagation?.(); e?.stopImmediatePropagation?.(); }
+  function blocked(tile) { try { return !!window.__flowLensMediaFilter?.reasonFor?.(tile?.dataset?.url || "", tile); } catch { return false; } }
 
   function tiles() {
     return [...document.querySelectorAll("#xiv-grid .xiv-tile")]
-      .filter((t) => !t.hidden && t.style.display !== "none")
+      .filter((t) => !t.hidden && t.style.display !== "none" && !blocked(t))
       .sort((a, b) => Number(a.dataset.index || 0) - Number(b.dataset.index || 0));
   }
 
@@ -39,7 +40,7 @@
     const current = Number(api()?.getLightboxIndex?.());
     if (!list.length || !Number.isFinite(current)) return "";
     let pos = list.findIndex((t) => Number(t.dataset.index || -1) === current);
-    if (pos < 0) pos = 0;
+    if (pos < 0) pos = dir >= 0 ? -1 : 0;
     return list[(pos + dir + list.length) % list.length]?.dataset.url || "";
   }
 
