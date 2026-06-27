@@ -21,6 +21,12 @@
     return !!target?.closest?.(".xiv-lightbox-slideshow");
   }
 
+  function arrowDirection(target) {
+    const arrow = target?.closest?.(".xiv-lightbox-arrow");
+    if (!arrow) return 0;
+    return arrow.dataset.side === "right" ? 1 : -1;
+  }
+
   function claim(event) {
     event.preventDefault?.();
     event.stopPropagation?.();
@@ -29,6 +35,11 @@
 
   function shouldBlockCoreLightboxClick(event) {
     if (!isLightboxEvent(event)) return false;
+    const direction = arrowDirection(event.target);
+    if (direction && typeof window.__flowLensVisibleSequenceJump === "function") {
+      window.__flowLensVisibleSequenceJump(direction);
+      return true;
+    }
     if (isSlideshowButton(event.target)) return true;
     return Date.now() < Number(window.__flowLensBlockNextLightboxClickUntil || 0);
   }
