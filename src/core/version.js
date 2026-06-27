@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens version center
 // @namespace    local.flowlens.version
-// @version      1.7.21
+// @version      1.7.22
 // @description  FlowLens runtime version center.
 // @match        *://*/*
 // @run-at       document-start
@@ -10,7 +10,7 @@
 // ==/UserScript==
 
 (() => {
-  const VERSION = "1.7.21";
+  const VERSION = "1.7.22";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-26";
   const FEATURES = [
@@ -27,7 +27,8 @@
     "lightbox-ios-smooth-swap",
     "lightbox-control-event-guard",
     "lightbox-gallery-swipe",
-    "lightbox-stable-toolbar"
+    "lightbox-stable-toolbar",
+    "xchina-ad-filter"
   ];
 
   const previous = window.__FlowLensVersion && typeof window.__FlowLensVersion === "object" ? window.__FlowLensVersion : {};
