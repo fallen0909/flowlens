@@ -4,7 +4,6 @@
 
   const nativeAdd = EventTarget.prototype.addEventListener;
   const wrapped = new WeakMap();
-  let labelTimer = 0;
   let opening = false;
 
   function box() {
@@ -61,7 +60,6 @@
   }
 
   function jump(delta) {
-    compactLabels();
     return openTile(relTile(delta));
   }
 
@@ -83,11 +81,6 @@
       const nextText = String(i + 1).padStart(2, "0");
       if (label && label.textContent !== nextText) label.textContent = nextText;
     });
-  }
-
-  function scheduleLabels(delay = 120) {
-    clearTimeout(labelTimer);
-    labelTimer = setTimeout(compactLabels, delay);
   }
 
   function claim(event) {
@@ -165,13 +158,16 @@
     if (!control || control.__flVisibleSequenceSafe) return;
     const original = control.showAdjacent?.bind(control);
     control.showAdjacent = (delta = 1) => jump(delta >= 0 ? 1 : -1) || original?.(delta);
+    control.compactVisibleLabels = compactLabels;
     control.__flVisibleSequenceSafe = true;
   }
 
-  const boot = new MutationObserver(() => {
-    patchControl();
-    scheduleLabels();
-  });
+  window.addEventListener("flowlens:media-filter-applied", compactLabels);
+  window.addEventListener("flowlens:gallery-items-rendered", compactLabels);
+  document.addEventListener("click", (event) => {
+    if (event.target?.closest?.("#xiv-root [data-xiv='filter'], #xiv-root .fl-mf-section")) setTimeout(compactLabels, 80);
+  }, true);
+  const boot = new MutationObserver(() => patchControl());
   if (document.documentElement) boot.observe(document.documentElement, { childList: true, subtree: true });
-  setInterval(() => { patchControl(); scheduleLabels(20); }, 1200);
+  setInterval(patchControl, 1500);
 })();
