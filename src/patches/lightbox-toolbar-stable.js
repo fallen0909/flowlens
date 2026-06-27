@@ -9,6 +9,7 @@
   const RIGHT = 14;
   const HEART_RED = "#e11d48";
   let timer = 0;
+  let lastPlaying = false;
 
   function lb() {
     const node = document.getElementById("xiv-lightbox");
@@ -29,6 +30,7 @@
       #xiv-lightbox > .xiv-lightbox-slideshow,
       #xiv-lightbox > .xiv-lightbox-fav,
       #xiv-lightbox > .xiv-lightbox-close {
+        display: none !important;
         opacity: 0 !important;
         visibility: hidden !important;
         pointer-events: none !important;
@@ -40,12 +42,17 @@
         top: max(10px, env(safe-area-inset-top, 0px) + 10px);
         right: ${RIGHT}px;
         z-index: 2147483647;
-        display: none;
+        display: flex;
         gap: ${GAP}px;
         align-items: center;
         pointer-events: auto;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateZ(0);
+        transition: none;
+        contain: layout paint;
       }
-      #${TOOLBAR_ID}[data-active="true"] { display: flex; }
+      #${TOOLBAR_ID}[data-active="true"] { opacity: 1; visibility: visible; }
       #${TOOLBAR_ID} button {
         width: ${SIZE}px;
         height: ${SIZE}px;
@@ -68,38 +75,12 @@
         transition: none;
         -webkit-tap-highlight-color: transparent;
       }
-      #${TOOLBAR_ID} button[data-role="fav"][data-favorited="true"] {
-        color: ${HEART_RED};
-        border-color: rgba(225,29,72,.28);
-      }
-      #${TOOLBAR_ID} svg {
-        display: block;
-        width: 24px;
-        height: 24px;
-        color: currentColor;
-        stroke: currentColor;
-      }
-      #${TOOLBAR_ID} svg path,
-      #${TOOLBAR_ID} svg rect {
-        fill: currentColor;
-      }
-      #${TOOLBAR_ID} button[data-role="fav"] svg path {
-        fill: none;
-        stroke: currentColor;
-        stroke-width: 2.6;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-      }
-      #${TOOLBAR_ID} button[data-role="fav"][data-favorited="true"] svg path {
-        fill: ${HEART_RED};
-        stroke: ${HEART_RED};
-      }
-      #${TOOLBAR_ID} button[data-role="close"] svg path {
-        fill: none;
-        stroke: currentColor;
-        stroke-width: 2.6;
-        stroke-linecap: round;
-      }
+      #${TOOLBAR_ID} button[data-role="fav"][data-favorited="true"] { color: ${HEART_RED}; border-color: rgba(225,29,72,.28); }
+      #${TOOLBAR_ID} svg { display: block; width: 24px; height: 24px; color: currentColor; stroke: currentColor; }
+      #${TOOLBAR_ID} svg path, #${TOOLBAR_ID} svg rect { fill: currentColor; }
+      #${TOOLBAR_ID} button[data-role="fav"] svg path { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+      #${TOOLBAR_ID} button[data-role="fav"][data-favorited="true"] svg path { fill: ${HEART_RED}; stroke: ${HEART_RED}; }
+      #${TOOLBAR_ID} button[data-role="close"] svg path { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; }
     `;
     document.documentElement.appendChild(style);
   }
@@ -141,10 +122,7 @@
     if (bar) return bar;
     bar = document.createElement("div");
     bar.id = TOOLBAR_ID;
-    const play = button("play", "自动切换", "play");
-    const fav = button("heart", "收藏", "fav");
-    const close = button("close", "关闭", "close");
-    bar.append(play, fav, close);
+    bar.append(button("play", "开始自动切换", "play"), button("heart", "收藏", "fav"), button("close", "关闭", "close"));
     document.documentElement.appendChild(bar);
     return bar;
   }
@@ -153,6 +131,7 @@
     const btn = document.createElement("button");
     btn.type = "button";
     btn.dataset.role = role;
+    btn.dataset.icon = icon;
     btn.title = title;
     btn.setAttribute("aria-label", title);
     btn.appendChild(svg(icon));
@@ -172,11 +151,8 @@
   function clickInternal(role) {
     const target = internalButton(role);
     if (!target) return;
-    if (role === "play") {
-      target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
-    } else {
-      target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-    }
+    if (role === "play") target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+    else target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
   }
 
   function onToolbarClick(event) {
@@ -184,14 +160,13 @@
     const role = event.currentTarget?.dataset?.role || "";
     if (!lb() || !role) return;
     clickInternal(role);
-    schedule(30);
+    schedule(120);
   }
 
   function setIcon(btn, name) {
     if (!btn || btn.dataset.icon === name) return;
     btn.dataset.icon = name;
-    btn.textContent = "";
-    btn.appendChild(svg(name));
+    btn.replaceChildren(svg(name));
   }
 
   function sync() {
@@ -205,15 +180,19 @@
     const play = bar.querySelector('[data-role="play"]');
     const fav = bar.querySelector('[data-role="fav"]');
     const close = bar.querySelector('[data-role="close"]');
-    const playing = playInternal?.dataset.active === "true";
-    setIcon(play, playing ? "pause" : "play");
-    play.title = playing ? "暂停自动切换" : "开始自动切换";
-    play.setAttribute("aria-label", play.title);
-    fav.dataset.favorited = favInternal?.dataset.favorited === "true" ? "true" : "false";
+    if (playInternal) lastPlaying = playInternal.dataset.active === "true";
+    setIcon(play, lastPlaying ? "pause" : "play");
+    const title = lastPlaying ? "暂停自动切换" : "开始自动切换";
+    if (play.title !== title) {
+      play.title = title;
+      play.setAttribute("aria-label", title);
+    }
+    const favState = favInternal?.dataset.favorited === "true" ? "true" : "false";
+    if (fav.dataset.favorited !== favState) fav.dataset.favorited = favState;
     close.title = "关闭";
   }
 
-  function schedule(delay = 40) {
+  function schedule(delay = 160) {
     clearTimeout(timer);
     timer = window.setTimeout(sync, delay);
   }
@@ -221,10 +200,10 @@
   installStyle();
   ensureToolbar();
   window.addEventListener("flowlens:slideshow-state", () => schedule(0));
-  document.addEventListener("click", () => schedule(20), true);
-  document.addEventListener("pointerup", () => schedule(20), true);
-  document.addEventListener("keydown", () => schedule(20), true);
-  const observer = new MutationObserver(() => schedule(60));
-  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-favorited", "data-role"] });
+  document.addEventListener("click", (event) => {
+    if (event.target?.closest?.(`#${TOOLBAR_ID}, .xiv-lightbox-fav`)) schedule(80);
+  }, true);
+  const observer = new MutationObserver(() => schedule(220));
+  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-favorited"] });
   schedule(0);
 })();
