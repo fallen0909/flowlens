@@ -36,6 +36,7 @@ const shared = [
   "src/patches/lightbox-icons-unified.js",
   "src/patches/lightbox-toolbar-stable.js",
   "src/patches/virtual-masonry.js",
+  "src/patches/filtered-sequence.js",
   "src/patches/page-bookmarks.js"
 ];
 
