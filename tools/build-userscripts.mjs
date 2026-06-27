@@ -16,6 +16,7 @@ const shared = [
   "src/core/global-settings.js",
   "src/patches/x810114-safe-start.js",
   "src/patches/item-gallery.js",
+  "src/patches/xchina-ad-filter.js",
   "src/patches/lightbox-event-guard.js",
   "src/core/flowlens-core.js",
   "src/core/optimizer.js",
