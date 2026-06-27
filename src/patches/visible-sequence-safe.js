@@ -65,6 +65,8 @@
     return openTile(relTile(delta));
   }
 
+  window.__flowLensVisibleSequenceJump = jump;
+
   function currentUrl() {
     const lb = box();
     if (!lb) return "";
@@ -75,9 +77,11 @@
   function compactLabels() {
     const list = visibleTiles();
     list.forEach((tile, i) => {
-      tile.dataset.flVisibleIndex = String(i);
+      const nextIndex = String(i);
+      if (tile.dataset.flVisibleIndex !== nextIndex) tile.dataset.flVisibleIndex = nextIndex;
       const label = [...tile.children].find((node) => node.tagName === "SPAN") || tile.querySelector("span");
-      if (label) label.textContent = String(i + 1).padStart(2, "0");
+      const nextText = String(i + 1).padStart(2, "0");
+      if (label && label.textContent !== nextText) label.textContent = nextText;
     });
   }
 
@@ -128,6 +132,10 @@
             return;
           }
           if (name === "onLightboxClick") {
+            if (event.target?.closest?.(".xiv-lightbox-slideshow")) {
+              claim(event);
+              return;
+            }
             const arrow = event.target?.closest?.(".xiv-lightbox-arrow");
             if (arrow) {
               claim(event);
