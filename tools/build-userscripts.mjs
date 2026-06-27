@@ -18,6 +18,7 @@ const shared = [
   "src/patches/item-gallery.js",
   "src/patches/xchina-ad-filter.js",
   "src/patches/media-filter-center.js",
+  "src/patches/visible-sequence-safe.js",
   "src/patches/lightbox-event-guard.js",
   "src/core/flowlens-core.js",
   "src/core/optimizer.js",
@@ -36,7 +37,6 @@ const shared = [
   "src/patches/lightbox-icons-unified.js",
   "src/patches/lightbox-toolbar-stable.js",
   "src/patches/virtual-masonry.js",
-  "src/patches/filtered-sequence.js",
   "src/patches/page-bookmarks.js"
 ];
 
