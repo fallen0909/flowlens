@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens version center
 // @namespace    local.flowlens.version
-// @version      1.7.27
+// @version      1.7.28
 // @description  FlowLens runtime version center.
 // @match        *://*/*
 // @run-at       document-start
@@ -10,7 +10,7 @@
 // ==/UserScript==
 
 (() => {
-  const VERSION = "1.7.27";
+  const VERSION = "1.7.28";
   const CHANNEL = "stable";
   const RELEASE_DATE = "2026-06-26";
   const FEATURES = [
@@ -20,8 +20,6 @@
     "item-gallery-pagination",
     "meitulu-item-pagination",
     "x810114-no-refresh-auto-open",
-    "lightbox-toolbar-style-icons",
-    "lightbox-hide-legacy-play-duplicate",
     "lightbox-pointer-slideshow-toggle",
     "lightbox-red-favorite",
     "lightbox-ios-smooth-swap",
