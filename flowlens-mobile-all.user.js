@@ -17,6 +17,7 @@
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/x810114-safe-start.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/item-gallery.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/xchina-ad-filter.js?v=1.7.23
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-filter-center.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-event-guard.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/flowlens-core.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/optimizer.js?v=1.7.23
@@ -34,6 +35,7 @@
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-icon-dom-fix.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-icons-unified.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-toolbar-stable.js?v=1.7.23
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/virtual-masonry.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/page-bookmarks.js?v=1.7.23
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/mobile/mobile-center.js?v=1.7.23
 // ==/UserScript==
