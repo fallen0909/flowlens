@@ -5,6 +5,8 @@
   const PORNPICS_GALLERY_RE = /\/((?:[a-z]{2}\/)?galleries\/[^/?#]+?-\d+\/?)(?:[?#].*)?$/i;
   const PORNPICS_QUEUE_CURRENT_KEY = "flowlens-pornpics-current-gallery";
   const PORNPICS_REFERRER_DONE_KEY = "flowlens-pornpics-referrer-scanned";
+  const PORNPICS_CATEGORY_URL_KEY = "flowlens-pornpics-category-url";
+  const PORNPICS_CATEGORY_QUEUE_PREFIX = "flowlens-pornpics-category-queue:";
   const SLIDESHOW_SELECTOR = [
     ".xiv-lightbox-slideshow",
     "[data-fl-lightbox-control='slideshow']",
@@ -26,6 +28,55 @@
     event.preventDefault?.();
     event.stopPropagation?.();
     event.stopImmediatePropagation?.();
+  }
+
+  function isPornpicsHost(url = location.href) {
+    try { return /(^|\.)pornpics\.com$/i.test(new URL(url, location.href).hostname); } catch { return false; }
+  }
+
+  function isPornpicsAssetUrl(value) {
+    try {
+      const parsed = new URL(String(value || ""), location.href);
+      return /pornpics/i.test(parsed.hostname) || (isPornpicsHost() && /\.(?:avif|gif|jpe?g|png|webp|mp4|webm|mov|m4v)(?:$|[?#])/i.test(parsed.href));
+    } catch {
+      return false;
+    }
+  }
+
+  function installPornpicsReferrerPatch() {
+    if (window.__flowLensPornpicsReferrerPatch) return;
+    window.__flowLensPornpicsReferrerPatch = true;
+    const imageSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    if (imageSrc?.set && imageSrc?.get) {
+      Object.defineProperty(HTMLImageElement.prototype, "src", {
+        configurable: true,
+        enumerable: imageSrc.enumerable,
+        get: imageSrc.get,
+        set(value) {
+          if (isPornpicsAssetUrl(value)) this.referrerPolicy = "no-referrer-when-downgrade";
+          return imageSrc.set.call(this, value);
+        }
+      });
+    }
+    const mediaSrc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "src");
+    if (mediaSrc?.set && mediaSrc?.get) {
+      Object.defineProperty(HTMLMediaElement.prototype, "src", {
+        configurable: true,
+        enumerable: mediaSrc.enumerable,
+        get: mediaSrc.get,
+        set(value) {
+          if (isPornpicsAssetUrl(value)) this.referrerPolicy = "no-referrer-when-downgrade";
+          return mediaSrc.set.call(this, value);
+        }
+      });
+    }
+    const nativeSetAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function patchedSetAttribute(name, value) {
+      if (/^(src|poster)$/i.test(String(name || "")) && isPornpicsAssetUrl(value) && "referrerPolicy" in this) {
+        this.referrerPolicy = "no-referrer-when-downgrade";
+      }
+      return nativeSetAttribute.call(this, name, value);
+    };
   }
 
   function blockNextLightboxClick(ms = 800) {
@@ -231,10 +282,6 @@
     return true;
   }
 
-  function isPornpicsHost(url = location.href) {
-    try { return /(^|\.)pornpics\.com$/i.test(new URL(url, location.href).hostname); } catch { return false; }
-  }
-
   function normalizedUrl(raw, base = location.href) {
     try {
       const parsed = new URL(raw, base);
@@ -255,20 +302,30 @@
     }
   }
 
+  function currentPornpicsCategoryUrl() {
+    const current = normalizedUrl(location.href);
+    if (!current || isPornpicsGalleryUrl(current) || !isPornpicsHost(current)) return "";
+    return current;
+  }
+
   function pornpicsStorageKey(url = location.href) {
     try { return `flowlens-gallery-queue:${new URL(url, location.href).origin}`; } catch { return "flowlens-gallery-queue"; }
   }
 
-  function readPornpicsQueue() {
+  function pornpicsCategoryQueueKey(categoryUrl) {
+    const normalized = normalizedUrl(categoryUrl || "");
+    if (!normalized) return "";
     try {
-      const data = JSON.parse(sessionStorage.getItem(pornpicsStorageKey()) || "[]");
-      return Array.isArray(data) ? data.map((url) => normalizedUrl(url)).filter(isPornpicsGalleryUrl) : [];
+      const parsed = new URL(normalized, location.href);
+      parsed.hash = "";
+      parsed.search = "";
+      return `${PORNPICS_CATEGORY_QUEUE_PREFIX}${parsed.origin}${parsed.pathname}`;
     } catch {
-      return [];
+      return "";
     }
   }
 
-  function writePornpicsQueue(queue) {
+  function uniqueGalleryQueue(queue) {
     const seen = new Set();
     const clean = [];
     queue.forEach((url) => {
@@ -279,44 +336,104 @@
       seen.add(key);
       clean.push(normalized);
     });
-    if (clean.length > 1) {
-      try { sessionStorage.setItem(pornpicsStorageKey(), JSON.stringify(clean.slice(0, 300))); } catch {}
+    return clean;
+  }
+
+  function readPornpicsQueue() {
+    try {
+      const data = JSON.parse(sessionStorage.getItem(pornpicsStorageKey()) || "[]");
+      return Array.isArray(data) ? uniqueGalleryQueue(data) : [];
+    } catch {
+      return [];
     }
+  }
+
+  function writePornpicsQueue(queue) {
+    const clean = uniqueGalleryQueue(queue);
+    if (clean.length > 1) {
+      try { sessionStorage.setItem(pornpicsStorageKey(), JSON.stringify(clean.slice(0, 500))); } catch {}
+    }
+    return clean;
+  }
+
+  function readCategoryQueue(categoryUrl = "") {
+    const key = pornpicsCategoryQueueKey(categoryUrl || sessionStorage.getItem(PORNPICS_CATEGORY_URL_KEY) || "");
+    if (!key) return [];
+    try {
+      const data = JSON.parse(sessionStorage.getItem(key) || "[]");
+      return Array.isArray(data) ? uniqueGalleryQueue(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeCategoryQueue(categoryUrl, queue) {
+    const key = pornpicsCategoryQueueKey(categoryUrl);
+    const clean = uniqueGalleryQueue(queue);
+    if (!key || clean.length < 2) return clean;
+    try {
+      sessionStorage.setItem(key, JSON.stringify(clean.slice(0, 500)));
+      sessionStorage.setItem(PORNPICS_CATEGORY_URL_KEY, normalizedUrl(categoryUrl));
+    } catch {}
     return clean;
   }
 
   function collectPornpicsQueueFromHtml(html, base) {
     const found = [];
-    const re = /(?:https?:)?\/\/(?:www\.)?pornpics\.com\/(?:[a-z]{2}\/)?galleries\/[^"'<>\s\\]+?-\d+\/?|["'\s(=](\/(?:[a-z]{2}\/)?galleries\/[^"'<>\s\\]+?-\d+\/?)|["'\s(=](\/(?:[a-z]{2}\/)?shorts\/[^"'<>\s\\]+?-\d+\/?)|(?:href|data-url|data-href)=['"]([^'"]+?)['"]/gi;
+    const linkRe = /<a\b[^>]*?href=["']([^"']+)["'][^>]*>/gi;
+    const urlRe = /(?:https?:)?\/\/(?:www\.)?pornpics\.com\/(?:[a-z]{2}\/)?galleries\/[^"'<>\s\\]+?-\d+\/?|["'\s(=](\/(?:[a-z]{2}\/)?galleries\/[^"'<>\s\\]+?-\d+\/?)|(?:data-url|data-href)=["']([^"']+)["']/gi;
     let match;
-    while ((match = re.exec(html))) {
-      const raw = match[1] || match[2] || match[3] || match[0].replace(/^["'\s(=]+/, "");
+    while ((match = linkRe.exec(html))) {
+      const url = normalizedUrl(match[1], base);
+      if (isPornpicsGalleryUrl(url)) found.push(url);
+    }
+    while ((match = urlRe.exec(html))) {
+      const raw = match[1] || match[2] || match[0].replace(/^["'\s(=]+/, "");
       const url = normalizedUrl(raw, base);
       if (isPornpicsGalleryUrl(url)) found.push(url);
     }
-    return found;
+    return uniqueGalleryQueue(found);
   }
 
   function collectPornpicsQueueFromDocument(doc = document, base = location.href) {
+    const roots = Array.from(doc.querySelectorAll?.("#main, main, .main, .content, .container, body") || []);
+    const scanRoots = roots.length ? roots : [doc.documentElement || doc.body];
     const found = [];
-    doc.querySelectorAll?.("a[href], [data-url], [data-href]").forEach((node) => {
-      ["href", "data-url", "data-href"].forEach((attr) => {
-        const value = node.getAttribute?.(attr);
-        const url = normalizedUrl(value || "", base);
-        if (isPornpicsGalleryUrl(url)) found.push(url);
+    scanRoots.forEach((scope) => {
+      scope?.querySelectorAll?.("a[href], [data-url], [data-href]").forEach((node) => {
+        ["href", "data-url", "data-href"].forEach((attr) => {
+          const value = node.getAttribute?.(attr);
+          const url = normalizedUrl(value || "", base);
+          if (isPornpicsGalleryUrl(url)) found.push(url);
+        });
       });
     });
     const html = doc.documentElement?.innerHTML || "";
     collectPornpicsQueueFromHtml(html, base).forEach((url) => found.push(url));
-    return found;
+    return uniqueGalleryQueue(found);
+  }
+
+  function rememberCurrentCategoryQueue() {
+    const category = currentPornpicsCategoryUrl();
+    if (!category) return [];
+    const queue = collectPornpicsQueueFromDocument(document, category);
+    if (queue.length > 1) {
+      writeCategoryQueue(category, queue);
+      writePornpicsQueue(queue);
+    }
+    return queue;
   }
 
   function mergePornpicsQueue(extra = []) {
     if (!isPornpicsHost()) return [];
     const current = normalizedUrl(sessionStorage.getItem(PORNPICS_QUEUE_CURRENT_KEY) || location.href);
+    const category = sessionStorage.getItem(PORNPICS_CATEGORY_URL_KEY) || "";
+    const categoryQueue = readCategoryQueue(category);
+    if (categoryQueue.length > 1) return writePornpicsQueue([...categoryQueue, current, ...extra]);
+    const visibleQueue = currentPornpicsCategoryUrl() ? rememberCurrentCategoryQueue() : [];
     return writePornpicsQueue([
       ...readPornpicsQueue(),
-      ...collectPornpicsQueueFromDocument(document, location.href),
+      ...visibleQueue,
       current,
       ...extra
     ]);
@@ -329,8 +446,14 @@
     return isPornpicsGalleryUrl(current) ? current : "";
   }
 
+  function activePornpicsQueue() {
+    const categoryQueue = readCategoryQueue();
+    if (categoryQueue.length > 1) return categoryQueue;
+    return mergePornpicsQueue();
+  }
+
   function pornpicsQueueTarget(delta) {
-    const queue = mergePornpicsQueue();
+    const queue = activePornpicsQueue();
     if (queue.length < 2) return "";
     const current = currentPornpicsGalleryUrl();
     let index = queue.findIndex((url) => url.toLowerCase() === current.toLowerCase());
@@ -356,7 +479,7 @@
 
   function syncPornpicsButtons() {
     if (!isPornpicsHost()) return;
-    const queue = mergePornpicsQueue();
+    const queue = activePornpicsQueue();
     if (queue.length < 2) return;
     const current = currentPornpicsGalleryUrl();
     const index = Math.max(0, queue.findIndex((url) => url.toLowerCase() === current.toLowerCase()));
@@ -378,6 +501,8 @@
     const current = normalizedUrl(location.href);
     if (isPornpicsGalleryUrl(current)) {
       try { sessionStorage.setItem(PORNPICS_QUEUE_CURRENT_KEY, current); } catch {}
+    } else {
+      rememberCurrentCategoryQueue();
     }
     const initial = mergePornpicsQueue();
     if (initial.length > 1) { schedulePornpicsSync(); return; }
@@ -395,7 +520,8 @@
       const html = await response.text();
       const queue = collectPornpicsQueueFromHtml(html, referrer);
       if (queue.length) {
-        mergePornpicsQueue(queue);
+        writeCategoryQueue(referrer, queue);
+        writePornpicsQueue(queue);
         schedulePornpicsSync(30);
       }
     } catch {
@@ -409,6 +535,11 @@
     if (!link) return;
     const target = normalizedUrl(link.getAttribute("href") || "", location.href);
     if (!isPornpicsGalleryUrl(target)) return;
+    const category = currentPornpicsCategoryUrl();
+    if (category) {
+      const queue = rememberCurrentCategoryQueue();
+      if (queue.length > 1) writeCategoryQueue(category, queue);
+    }
     try { sessionStorage.setItem(PORNPICS_QUEUE_CURRENT_KEY, target); } catch {}
     mergePornpicsQueue([target]);
   }
@@ -441,6 +572,7 @@
   window.__flowLensHandleLightboxZoomWheel = handleLightboxZoomWheel;
   window.__flowLensHandleGalleryQueueKeydown = handleGalleryQueueKeydown;
 
+  installPornpicsReferrerPatch();
   document.addEventListener("pointerdown", onSlideshowControlEvent, true);
   document.addEventListener("mousedown", onSlideshowControlEvent, true);
   document.addEventListener("touchstart", onSlideshowControlEvent, { capture: true, passive: false });
@@ -454,10 +586,14 @@
   });
   window.addEventListener("popstate", () => schedulePornpicsSync(120));
 
-  const observer = new MutationObserver(() => schedulePornpicsSync(160));
-  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "data-enabled", "href", "data-url", "data-href"] });
+  const observer = new MutationObserver(() => {
+    if (currentPornpicsCategoryUrl()) rememberCurrentCategoryQueue();
+    schedulePornpicsSync(160);
+  });
+  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "data-enabled", "href", "data-url", "data-href", "src", "poster"] });
 
   [0, 300, 900, 1800, 3200].forEach((delay) => window.setTimeout(() => {
+    if (currentPornpicsCategoryUrl()) rememberCurrentCategoryQueue();
     mergePornpicsQueue();
     schedulePornpicsSync(30);
   }, delay));
