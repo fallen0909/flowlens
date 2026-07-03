@@ -1,1 +1,12 @@
-{"version":"1.7.32","desktop":{"version":"1.7.32","recommendedEntry":"flowlens-desktop.user.js"},"mobile":{"version":"1.7.32","entry":"flowlens-mobile-all.user.js","loader":"multi-file-require-loader"}}
+{
+  "version": "1.7.33",
+  "desktop": {
+    "version": "1.7.33",
+    "recommendedEntry": "flowlens-desktop.user.js"
+  },
+  "mobile": {
+    "version": "1.7.33",
+    "entry": "flowlens-mobile-all.user.js",
+    "loader": "multi-file-require-loader"
+  }
+}
