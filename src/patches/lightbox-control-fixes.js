@@ -185,11 +185,12 @@
   function onSlideshowEvent(event) {
     if (!isOpen() || !slideshowButton(event.target)) return;
     claim(event);
-    if (event.type === "pointerdown") {
+    if (event.type === "pointerdown" || event.type === "touchstart") {
+      if (Date.now() - pointerDownAt > 500) toggle();
       pointerDownAt = Date.now();
       return;
     }
-    if (event.type === "click") toggle();
+    if (event.type === "click" && Date.now() - pointerDownAt > 600) toggle();
   }
 
   function mediaElement() {
@@ -268,8 +269,10 @@
   window.__flowLensHandleGalleryQueueKeydown = handleGalleryQueueKeydown;
 
   window.addEventListener("pointerdown", onSlideshowEvent, true);
+  window.addEventListener("touchstart", onSlideshowEvent, { capture: true, passive: false });
   window.addEventListener("click", onSlideshowEvent, true);
   document.addEventListener("pointerdown", onSlideshowEvent, true);
+  document.addEventListener("touchstart", onSlideshowEvent, { capture: true, passive: false });
   document.addEventListener("click", onSlideshowEvent, true);
   window.addEventListener("wheel", (event) => {
     if (handleLightboxZoomWheel(event)) claim(event);
