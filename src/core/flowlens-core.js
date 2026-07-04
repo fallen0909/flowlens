@@ -723,6 +723,61 @@
     return false;
   }
 
+  function collectX810114SidebarProfileQueue(doc = document) {
+    const found = [];
+    const seen = new Set();
+    const banned = /^(static|manifest|favicon|photo|api|tag|search|assets|img|images|css|js)$/i;
+
+    function add(name) {
+      if (!name || !/^[A-Za-z0-9_]{2,64}$/.test(name) || banned.test(name)) return;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      found.push(`https://x.810114.xyz/${name}`);
+    }
+
+    function namesFrom(text) {
+      return [...String(text || "").matchAll(/@\s*([A-Za-z0-9_]{2,64})/g)].map((match) => match[1]);
+    }
+
+    function scan(root) {
+      if (!root) return;
+      try {
+        const filter = doc.defaultView?.NodeFilter || window.NodeFilter;
+        const walker = doc.createTreeWalker(root, filter.SHOW_TEXT);
+        let node = null;
+        while ((node = walker.nextNode())) namesFrom(node.nodeValue).forEach(add);
+      } catch {
+        namesFrom(root.textContent || "").forEach(add);
+      }
+    }
+
+    const win = doc.defaultView || window;
+    const viewportWidth = Number(win?.innerWidth || 0);
+    const candidates = Array.from(doc.querySelectorAll?.("aside, section, div") || [])
+      .map((el) => {
+        const text = el.innerText || el.textContent || "";
+        const names = namesFrom(text);
+        if (names.length < 2) return null;
+        const cls = String(el.className || "");
+        let rect = { x: 0, y: 0, width: 0, height: 0 };
+        try { rect = el.getBoundingClientRect?.() || rect; } catch {}
+        const rightRail = viewportWidth ? rect.x > viewportWidth * 0.55 && rect.width > 120 : false;
+        const railClass = /(?:\bw-1\/4\b|border-l|right-0|max-w-sm|overflow-auto|bg-white)/i.test(cls);
+        const cardCount = Array.from(el.querySelectorAll?.("*") || [])
+          .filter((node) => namesFrom(node.innerText || node.textContent || "").length === 1 && /(?:hover:cursor-pointer|cursor-pointer|rounded|shadow|items-center|bg-gray)/i.test(String(node.className || "")))
+          .length;
+        const score = names.length * 10 + cardCount * 40 + (rightRail ? 1000 : 0) + (railClass ? 300 : 0) - Math.max(0, el.children.length - 80);
+        return { el, score, names };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+
+    const best = candidates[0]?.el || null;
+    if (best) scan(best);
+    return found;
+  }
+
   function collectGalleryQueueFromDocument(doc = document, base = location.href) {
     const queue = [];
     const seen = new Set();
@@ -734,6 +789,14 @@
       if (seen.has(key)) return;
       seen.add(key);
       queue.push(url);
+    }
+
+    if (/^https?:\/\/x\.810114\.xyz(?:\/|$)/i.test(base)) {
+      const sidebarQueue = collectX810114SidebarProfileQueue(doc);
+      if (sidebarQueue.length) {
+        sidebarQueue.forEach(remember);
+        return queue;
+      }
     }
 
     doc.querySelectorAll("a[href]").forEach((link) => remember(link.getAttribute("href")));
@@ -1013,6 +1076,9 @@
     if (queue.length < 2) return "";
     let index = state.galleryQueueIndex;
     if (index < 0) index = queue.findIndex((url) => samePageUrl(url, activeGalleryQueueUrl()));
+    if (index < 0 && isGenericX810114Page() && !isQueueCandidateUrl(activeGalleryQueueUrl())) {
+      return delta > 0 ? queue[0] : queue[queue.length - 1];
+    }
     if (index < 0) index = 0;
     const next = (index + delta + queue.length) % queue.length;
     const url = queue[next];
