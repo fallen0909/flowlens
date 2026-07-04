@@ -15,10 +15,7 @@
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/version.js?v=1.9.6
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/global-settings.js?v=1.9.6
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/flowlens-core.js?v=1.9.6
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/x810114-dynamic-queue.js?v=1.9.6
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/optimizer.js?v=1.9.6
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/dynamic-rail-queue.js?v=1.9.6
 // ==/UserScript==
 
-(() => {
-  window.__FLOWLENS_VERSION__ = "1.9.6";
-})();
+(() => { window.__FLOWLENS_VERSION__ = "1.9.6"; })();
