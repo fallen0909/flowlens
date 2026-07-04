@@ -5590,8 +5590,8 @@
       return;
     }
     if (!state.active) return;
-    const queuePrevKey = event.key === "," || event.key === "，" || event.code === "Comma";
-    const queueNextKey = event.key === "." || event.key === "。" || event.code === "Period";
+    const queuePrevKey = event.key === "ArrowLeft";
+    const queueNextKey = event.key === "ArrowRight";
     if (!isTyping && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && (queuePrevKey || queueNextKey)) {
       claimEvent(event);
       if (event.repeat) return;

@@ -119,6 +119,10 @@
             return;
           }
           if (name === "onLightboxWheel" && event.type === "wheel") {
+            if (box()?.dataset.zoom === "actual" && window.__flowLensHandleLightboxZoomWheel?.(event)) {
+              claim(event);
+              return;
+            }
             claim(event);
             const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
             if (Math.abs(delta) >= 4) jump(delta > 0 ? 1 : -1);

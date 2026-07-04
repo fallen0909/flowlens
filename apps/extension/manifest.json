@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "鐎戝厜 FlowLens",
-  "version": "1.7.2",
+  "version": "1.8.6",
   "description": "Collect page images and videos into a fullscreen waterfall viewer with original-size viewing, slideshow controls, and ZIP download.",
   "permissions": [
     "activeTab",
@@ -55,6 +55,7 @@
         "content-zhihu.js",
         "content-topfix.js",
         "content-media-sync.js",
+        "content-lightbox-control-fixes.js",
         "content-slideshow-native.js",
         "content-video-cover-strategy.js",
         "content-diagnostics-log.js"
