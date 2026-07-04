@@ -9,6 +9,7 @@
 
   let playing = false;
   let timer = 0;
+  let pointerDownAt = 0;
 
   function root() { return document.getElementById("xiv-root"); }
   function lightbox() { return document.getElementById("xiv-lightbox"); }
@@ -109,7 +110,7 @@
 
   function drawButton(button = lightbox()?.querySelector(".xiv-lightbox-slideshow")) {
     if (!button) return;
-    const title = playing ? "暂停大图自动切换" : "开始大图自动切换";
+    const title = playing ? "Pause slideshow" : "Start slideshow";
     const activeValue = playing ? "true" : "false";
     if (button.dataset.active !== activeValue) button.dataset.active = activeValue;
     if (button.title !== title) button.title = title;
@@ -184,7 +185,11 @@
   function onSlideshowEvent(event) {
     if (!isOpen() || !slideshowButton(event.target)) return;
     claim(event);
-    if (event.type === "click" || event.type === "pointerdown") toggle();
+    if (event.type === "pointerdown") {
+      pointerDownAt = Date.now();
+      return;
+    }
+    if (event.type === "click") toggle();
   }
 
   function mediaElement() {
@@ -262,6 +267,8 @@
   window.__flowLensHandleLightboxZoomWheel = handleLightboxZoomWheel;
   window.__flowLensHandleGalleryQueueKeydown = handleGalleryQueueKeydown;
 
+  window.addEventListener("pointerdown", onSlideshowEvent, true);
+  window.addEventListener("click", onSlideshowEvent, true);
   document.addEventListener("pointerdown", onSlideshowEvent, true);
   document.addEventListener("click", onSlideshowEvent, true);
   window.addEventListener("wheel", (event) => {

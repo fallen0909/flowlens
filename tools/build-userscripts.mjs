@@ -19,6 +19,7 @@ const shared = [
   "src/patches/xchina-ad-filter.js",
   "src/patches/media-filter-center.js",
   "src/patches/lightbox-control-fixes.js",
+  "src/patches/pornpics-queue-hotfix.js",
   "src/patches/visible-sequence-safe.js",
   "src/patches/lightbox-event-guard.js",
   "src/core/flowlens-core.js",

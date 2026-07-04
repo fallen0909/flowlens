@@ -80,6 +80,7 @@
     style.textContent = `
       #xiv-root .fl-page-bookmark-btn svg { width: 20px !important; height: 20px !important; display: block !important; }
       #xiv-root .fl-page-bookmark-btn span { display: none !important; }
+      #xiv-root #xiv-page-bookmarks-controls { display: none !important; visibility: hidden !important; pointer-events: none !important; }
       #xiv-root .fl-page-bookmark-btn[data-saved="true"] { color: #ffb648 !important; border-color: rgba(255,190,80,.56) !important; background: rgba(255,190,80,.22) !important; }
       #xiv-root .fl-page-bookmark-btn[data-saved="true"] svg { fill: currentColor !important; }
       #xiv-root .fl-page-bookmark-panel {
@@ -120,9 +121,14 @@
     document.documentElement.appendChild(style);
   }
 
+  function removeLegacyControls() {
+    document.querySelectorAll("#xiv-root #xiv-page-bookmarks-controls").forEach((node) => node.remove());
+  }
+
   function ensurePanel() {
     const app = root();
     if (!app) return null;
+    removeLegacyControls();
     let panel = app.querySelector(".fl-page-bookmark-panel");
     if (panel) return panel;
     panel = document.createElement("section");
@@ -226,6 +232,7 @@
 
   function installButtons() {
     injectStyle();
+    removeLegacyControls();
     ensurePanel();
     const bar = actions();
     if (!bar) return;
