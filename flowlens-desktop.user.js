@@ -14,6 +14,7 @@
 // @updateURL    https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop.user.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/version.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/global-settings.js?v=1.9.5
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/item-gallery.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-filter-center.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-control-fixes.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/visible-sequence-safe.js?v=1.9.5
