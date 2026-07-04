@@ -8,7 +8,8 @@ const version = versionManifest.version;
 const files = {
   desktop: "flowlens-desktop.user.js",
   mobile: "flowlens-mobile-all.user.js",
-  index: "index.html"
+  index: "index.html",
+  versionCenter: "src/core/version.js"
 };
 
 function assert(condition, message) {
@@ -35,5 +36,9 @@ for (const path of [files.desktop, files.mobile]) {
 
 const index = await text(files.index);
 assert(index.includes(`v${version}`), "install page does not show current version");
+
+const versionCenter = await text(files.versionCenter);
+assert(versionCenter.includes(`// @version      ${version}`), "version center has stale @version");
+assert(versionCenter.includes(`const VERSION = "${version}";`), "version center has stale runtime VERSION");
 
 console.log(`FlowLens userscript release ${version} is consistent.`);

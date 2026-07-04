@@ -10,6 +10,16 @@ if (manifest.desktop?.version !== version || manifest.mobile?.version !== versio
   throw new Error("version.json desktop/mobile versions must match the release version");
 }
 
+const versionCenterPath = resolve(root, "src/core/version.js");
+const versionCenter = await readFile(versionCenterPath, "utf8");
+await writeFile(
+  versionCenterPath,
+  versionCenter
+    .replace(/\/\/ @version\s+\d+\.\d+\.\d+/, `// @version      ${version}`)
+    .replace(/const VERSION = "\d+\.\d+\.\d+";/, `const VERSION = "${version}";`),
+  "utf8"
+);
+
 const baseUrl = "https://raw.githubusercontent.com/fallen0909/flowlens/master";
 const shared = [
   "src/core/version.js",
