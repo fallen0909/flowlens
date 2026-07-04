@@ -18,6 +18,11 @@
     return node?.dataset.active === "true" ? node : null;
   }
 
+  function activeRoot() {
+    const node = document.getElementById("xiv-root");
+    return node?.dataset.active === "true" ? node : null;
+  }
+
   function isLightboxEvent(event) {
     const lb = activeLightbox();
     return !!lb && !!event?.target && lb.contains(event.target);
@@ -25,6 +30,10 @@
 
   function isSlideshowButton(target) {
     return !!target?.closest?.(SLIDESHOW_CONTROL_SELECTOR);
+  }
+
+  function isTypingTarget(target) {
+    return !!target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']");
   }
 
   function arrowDirection(target) {
@@ -44,6 +53,27 @@
       Number(window.__flowLensBlockNextLightboxClickUntil || 0),
       Date.now() + ms
     );
+  }
+
+  function triggerQueueButton(delta) {
+    const app = activeRoot();
+    if (!app || activeLightbox()) return false;
+    const button = app.querySelector(delta > 0 ? '[data-xiv="next-set"]' : '[data-xiv="prev-set"]');
+    if (!button) return false;
+    if (button.disabled && button.dataset.enabled !== "true") return false;
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    return true;
+  }
+
+  function shouldBlockGlobalQueueKeydown(event) {
+    if (!activeRoot() || activeLightbox()) return false;
+    if (isTypingTarget(event.target) || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return false;
+    const oldPrev = event.key === "," || event.key === "，" || event.code === "Comma";
+    const oldNext = event.key === "." || event.key === "。" || event.code === "Period";
+    if (oldPrev || oldNext) return true;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return false;
+    triggerQueueButton(event.key === "ArrowRight" ? 1 : -1);
+    return true;
   }
 
   function shouldBlockCoreLightboxClick(event) {
@@ -77,6 +107,7 @@
   }
 
   function shouldBlockCoreKeydown(event) {
+    if (shouldBlockGlobalQueueKeydown(event)) return true;
     if (typeof window.__flowLensHandleGalleryQueueKeydown !== "function") return false;
     try {
       return window.__flowLensHandleGalleryQueueKeydown(event) === true;
