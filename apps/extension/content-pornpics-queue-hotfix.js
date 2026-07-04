@@ -182,6 +182,7 @@
       const ok = await coreApi().loadSavedPage(target);
       if (ok) {
         try { history.replaceState({ flowlensPornpicsInPlace: true }, "", target); } catch {}
+        window.dispatchEvent(new CustomEvent("flowlens:page-url-changed", { detail: { url: target } }));
         window.setTimeout(syncButtons, 120);
         return true;
       }

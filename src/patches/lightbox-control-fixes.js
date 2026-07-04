@@ -134,6 +134,16 @@
     return !(Number.isFinite(duration) && duration > 0 && Number(video.currentTime || 0) >= duration - 0.35);
   }
 
+  function clickFallbackNext() {
+    const box = lightbox();
+    const arrow = box?.querySelector?.('.xiv-lightbox-arrow[data-side="right"]');
+    if (arrow) {
+      arrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      return;
+    }
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true }));
+  }
+
   function nextItem() {
     if (!isOpen()) {
       stop();
@@ -147,8 +157,17 @@
       schedule(650);
       return;
     }
-    if (!coreApi()?.showAdjacent?.(1)) {
-      lightbox()?.querySelector?.('.xiv-lightbox-arrow[data-side="right"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    const beforeIndex = Number(coreApi()?.getLightboxIndex?.());
+    const usedCore = !!coreApi()?.showAdjacent?.(1);
+    window.setTimeout(() => {
+      if (!playing || !isOpen()) return;
+      const afterIndex = Number(coreApi()?.getLightboxIndex?.());
+      if (!usedCore || (Number.isFinite(beforeIndex) && Number.isFinite(afterIndex) && afterIndex === beforeIndex)) {
+        clickFallbackNext();
+      }
+    }, 90);
+    if (!usedCore) {
+      clickFallbackNext();
     }
     schedule();
   }
@@ -163,7 +182,7 @@
   function start() {
     if (!isOpen()) return;
     playing = true;
-    schedule(currentVideoStillPlaying() ? 650 : readDelay());
+    schedule(currentVideoStillPlaying() ? 650 : 260);
     drawButton();
   }
 

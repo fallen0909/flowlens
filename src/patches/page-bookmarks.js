@@ -166,12 +166,15 @@
   function syncButton() {
     const button = root()?.querySelector('[data-fl-page-bookmark="save"]');
     if (!button) return;
-    const saved = readItems().some((item) => normalizeUrl(item.url) === currentUrl());
+    const url = currentUrl();
+    const saved = readItems().some((item) => normalizeUrl(item.url) === url);
     button.dataset.saved = saved ? "true" : "false";
+    button.dataset.url = url;
     button.title = saved ? "取消收藏本页" : "收藏本页";
   }
 
   function toggleCurrentPage() {
+    syncButton();
     const url = currentUrl();
     const items = readItems();
     const existing = items.findIndex((item) => normalizeUrl(item.url) === url);
@@ -277,6 +280,17 @@
       openItem(index);
     }
   }, true);
+
+  window.addEventListener("flowlens:page-url-changed", () => {
+    window.setTimeout(() => {
+      syncButton();
+      renderPanel();
+    }, 30);
+  });
+  window.addEventListener("popstate", () => window.setTimeout(syncButton, 30));
+  window.addEventListener("storage", (event) => {
+    if (!event.key || event.key === KEY) syncButton();
+  });
 
   let timer = 0;
   function scheduleInstall() {

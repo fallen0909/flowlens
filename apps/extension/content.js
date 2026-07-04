@@ -1002,6 +1002,7 @@
     applyMediaFilter();
     updateCounter();
     updateStatus(`已切换到${state.galleryQueueIndex >= 0 ? `第 ${state.galleryQueueIndex + 1} 组` : "新套图"}`);
+    window.dispatchEvent(new CustomEvent("flowlens:page-url-changed", { detail: { url: state.galleryQueueCurrentUrl } }));
     if (state.stage) state.stage.scrollTo({ top: 0, behavior: "auto" });
     return state.images.length > 0;
   }
@@ -1061,6 +1062,7 @@
     applyMediaFilter();
     updateCounter();
     updateStatus(`已打开收藏页面，共 ${state.images.length} 项`);
+    window.dispatchEvent(new CustomEvent("flowlens:page-url-changed", { detail: { url: state.galleryQueueCurrentUrl } }));
     state.stage?.scrollTo({ top: 0, behavior: "auto" });
     return true;
   }
@@ -1109,6 +1111,7 @@
     applyMediaFilter();
     updateCounter();
     updateStatus(`已切换到${state.galleryQueueIndex >= 0 ? `第 ${state.galleryQueueIndex + 1} 组` : "新套图"}`);
+    window.dispatchEvent(new CustomEvent("flowlens:page-url-changed", { detail: { url: state.galleryQueueCurrentUrl } }));
     if (state.stage) state.stage.scrollTo({ top: 0, behavior: "auto" });
     return true;
   }
@@ -5678,6 +5681,9 @@
         if (state.lightbox?.dataset.active !== "true") return false;
         showAdjacentImage(delta >= 0 ? 1 : -1);
         return true;
+      },
+      currentPageBookmarkUrl() {
+        return normalizedPageUrl(state.galleryQueueCurrentUrl || location.href);
       },
       loadSavedPage(url) {
         return loadSavedPageInPlace(url);
