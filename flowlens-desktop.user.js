@@ -14,17 +14,22 @@
 // @updateURL    https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop.user.js
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/version.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/global-settings.js?v=1.9.5
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/x810114-safe-start.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/item-gallery.js?v=1.9.5
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/xchina-ad-filter.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-filter-center.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-control-fixes.js?v=1.9.5
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/pornpics-queue-hotfix.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/visible-sequence-safe.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-event-guard.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/flowlens-core.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/optimizer.js?v=1.9.5
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/product.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/fixes.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/ui-cleanup.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-stable.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/settings-compact.js?v=1.9.5
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/zhihu.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/topfix.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-sync.js?v=1.9.5
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-enhance.js?v=1.9.5
@@ -36,4 +41,6 @@
 // @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/page-bookmarks.js?v=1.9.5
 // ==/UserScript==
 
-(() => { window.__FLOWLENS_VERSION__ = "1.9.5"; })();
+(() => {
+  window.__FLOWLENS_VERSION__ = "1.9.5";
+})();
