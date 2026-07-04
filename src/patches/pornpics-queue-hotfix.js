@@ -7,9 +7,14 @@
   const GLOBAL_QUEUE_KEY = "flowlens-pornpics-last-queue-v2";
   const AUTO_OPEN_KEY = "flowlens-gallery-queue-auto-open";
   const QUEUE_PREFIX = "flowlens-pornpics-list-queue-v2:";
-  const GALLERY_PATH_RE = /^\/(?:[a-z]{2}\/)??galleries\/[^/?#]+-\d+\/?$/i;
+  const GALLERY_PATH_RE = /^\/(?:[a-z]{2}\/)?galleries\/[^/?#]+-\d+\/?$/i;
   let syncTimer = 0;
   let referrerSeeded = false;
+
+  function root() { return document.getElementById("xiv-root"); }
+  function lightbox() { return document.getElementById("xiv-lightbox"); }
+  function coreApi() { return window.__flowLensControl || null; }
+  function viewerOpen() { return root()?.dataset.active === "true"; }
 
   function isHost(url = location.href) {
     try { return /(^|\.)pornpics\.com$/i.test(new URL(url, location.href).hostname); } catch { return false; }
@@ -71,8 +76,8 @@
     const found = [];
     const roots = doc.querySelectorAll?.("main, #main, .main, .content, .container, body") || [];
     const scanRoots = roots.length ? Array.from(roots) : [doc.body || doc.documentElement];
-    scanRoots.forEach((root) => {
-      root?.querySelectorAll?.("a[href]").forEach((link) => {
+    scanRoots.forEach((scanRoot) => {
+      scanRoot?.querySelectorAll?.("a[href]").forEach((link) => {
         const url = normalizeUrl(link.getAttribute("href") || "", base);
         if (isGalleryUrl(url)) found.push(url);
       });
@@ -148,12 +153,25 @@
     syncTimer = window.setTimeout(syncButtons, delay);
   }
 
-  function openGallery(target) {
+  async function openGallery(target) {
     if (!target || !isGalleryUrl(target)) return false;
     try {
       sessionStorage.setItem(CURRENT_GALLERY_KEY, target);
       sessionStorage.setItem(AUTO_OPEN_KEY, target);
     } catch {}
+
+    if (viewerOpen() && typeof coreApi()?.loadSavedPage === "function") {
+      const wasLightboxOpen = lightbox()?.dataset.active === "true";
+      if (wasLightboxOpen) return false;
+      const ok = await coreApi().loadSavedPage(target);
+      if (ok) {
+        try { history.replaceState({ flowlensPornpicsInPlace: true }, "", target); } catch {}
+        window.setTimeout(syncButtons, 120);
+        return true;
+      }
+      return false;
+    }
+
     location.href = target;
     return true;
   }
@@ -177,7 +195,7 @@
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
-    openGallery(target);
+    void openGallery(target);
   }
 
   function isTypingTarget(target) {
@@ -187,16 +205,14 @@
   function onKeydown(event) {
     if (!isHost()) return;
     if (isTypingTarget(event.target) || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
-    const root = document.getElementById("xiv-root");
-    const lightbox = document.getElementById("xiv-lightbox");
-    if (!root || root.dataset.active !== "true" || lightbox?.dataset.active === "true") return;
+    if (!viewerOpen() || lightbox()?.dataset.active === "true") return;
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     const target = queueTarget(event.key === "ArrowRight" ? 1 : -1);
     if (!target) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
-    openGallery(target);
+    void openGallery(target);
   }
 
   async function seedFromReferrer() {
