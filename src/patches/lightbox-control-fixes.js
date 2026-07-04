@@ -72,11 +72,93 @@
     }
     const nativeSetAttribute = Element.prototype.setAttribute;
     Element.prototype.setAttribute = function patchedSetAttribute(name, value) {
-      if (/^(src|poster)$/i.test(String(name || "")) && isPornpicsAssetUrl(value) && "referrerPolicy" in this) {
+      if (/^(src|srcset|poster)$/i.test(String(name || "")) && isPornpicsAssetUrl(value) && "referrerPolicy" in this) {
         this.referrerPolicy = "no-referrer-when-downgrade";
       }
       return nativeSetAttribute.call(this, name, value);
     };
+  }
+
+  function installControlStyle() {
+    if (document.getElementById("flowlens-lightbox-control-fixes-style")) return;
+    const style = document.createElement("style");
+    style.id = "flowlens-lightbox-control-fixes-style";
+    style.textContent = `
+      #xiv-lightbox .xiv-lightbox-slideshow,
+      #xiv-lightbox .xiv-lightbox-fav,
+      #xiv-lightbox .xiv-lightbox-close {
+        position: fixed !important;
+        top: max(10px, env(safe-area-inset-top, 0px) + 10px) !important;
+        transform: none !important;
+        transition: none !important;
+        will-change: auto !important;
+      }
+      #xiv-lightbox .xiv-lightbox-arrow {
+        position: fixed !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        transition: none !important;
+        will-change: auto !important;
+      }
+      #xiv-lightbox[data-zoom="actual"] .xiv-lightbox-close,
+      #xiv-lightbox[data-zoom="actual"] .xiv-lightbox-fav,
+      #xiv-lightbox[data-zoom="actual"] .xiv-lightbox-slideshow,
+      #xiv-lightbox[data-fl-shortcut-zoom="true"] .xiv-lightbox-close,
+      #xiv-lightbox[data-fl-shortcut-zoom="true"] .xiv-lightbox-fav,
+      #xiv-lightbox[data-fl-shortcut-zoom="true"] .xiv-lightbox-slideshow {
+        position: fixed !important;
+        top: max(10px, env(safe-area-inset-top, 0px) + 10px) !important;
+      }
+      #xiv-lightbox[data-zoom="actual"] .xiv-lightbox-arrow,
+      #xiv-lightbox[data-fl-shortcut-zoom="true"] .xiv-lightbox-arrow {
+        position: fixed !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow svg {
+        display: block !important;
+        width: 24px !important;
+        height: 24px !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: none !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function slideshowIconMarkup(active = slideshowActive) {
+    if (active) {
+      return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="3.8" height="14" rx="1.2" fill="currentColor"></rect><rect x="13.2" y="5" width="3.8" height="14" rx="1.2" fill="currentColor"></rect></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.8v12.4c0 .8.9 1.3 1.6.9l9.2-6.2c.6-.4.6-1.4 0-1.8L9.6 4.9C8.9 4.5 8 5 8 5.8Z" fill="currentColor"></path></svg>';
+  }
+
+  function slideshowButtonMarkup() {
+    const active = slideshowActive ? "true" : "false";
+    const title = slideshowActive ? "暂停大图自动切换" : "开始大图自动切换";
+    return `<button class="xiv-lightbox-slideshow" type="button" data-active="${active}" data-fl-stable="true" title="${title}" aria-label="${title}">${slideshowIconMarkup(slideshowActive)}</button>`;
+  }
+
+  function installLightboxInnerHTMLPatch() {
+    if (window.__flowLensStableSlideshowInnerHTML) return;
+    const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+    if (!descriptor?.set || !descriptor?.get) return;
+    window.__flowLensStableSlideshowInnerHTML = true;
+    Object.defineProperty(Element.prototype, "innerHTML", {
+      configurable: true,
+      enumerable: descriptor.enumerable,
+      get: descriptor.get,
+      set(value) {
+        let next = value;
+        try {
+          if (this?.id === "xiv-lightbox" && typeof next === "string" && next.includes("xiv-lightbox-fav") && !next.includes("xiv-lightbox-slideshow")) {
+            next = next.replace(/<button\s+class="xiv-lightbox-fav"/i, `${slideshowButtonMarkup()}<button class="xiv-lightbox-fav"`);
+          }
+        } catch {}
+        return descriptor.set.call(this, next);
+      }
+    });
   }
 
   function blockNextLightboxClick(ms = 800) {
@@ -90,12 +172,21 @@
     return target?.closest?.(SLIDESHOW_SELECTOR) || null;
   }
 
+  function drawSlideshowButton(button, active = slideshowActive) {
+    if (!button) return;
+    const wanted = active ? "pause" : "play";
+    button.dataset.active = active ? "true" : "false";
+    button.dataset.flUnifiedIcon = wanted;
+    const title = active ? "暂停大图自动切换" : "开始大图自动切换";
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    if (button.dataset.flControlIcon === wanted && button.querySelector("svg")) return;
+    button.dataset.flControlIcon = wanted;
+    button.innerHTML = slideshowIconMarkup(active);
+  }
+
   function setSlideshowButtonState(active) {
-    document.querySelectorAll(".xiv-lightbox-slideshow").forEach((button) => {
-      button.dataset.active = active ? "true" : "false";
-      button.title = active ? "暂停大图自动切换" : "开始大图自动切换";
-      button.setAttribute("aria-label", button.title);
-    });
+    document.querySelectorAll(".xiv-lightbox-slideshow").forEach((button) => drawSlideshowButton(button, active));
     window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active, source: "control-fixes" } }));
   }
 
@@ -280,6 +371,10 @@
     window.setTimeout(recenter, 40);
     showZoomHint(`缩放 ${Math.round((nextWidth / baseWidth) * 100)}%`);
     return true;
+  }
+
+  function onWindowWheel(event) {
+    if (handleLightboxZoomWheel(event)) claim(event);
   }
 
   function normalizedUrl(raw, base = location.href) {
@@ -555,10 +650,32 @@
     void loadPornpicsGallery(target);
   }
 
+  function isTypingTarget(target) {
+    return !!target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']");
+  }
+
+  function handleImageStreamArrowKey(event) {
+    const app = root();
+    if (!app || app.dataset.active !== "true" || isLightboxOpen()) return false;
+    if (isTypingTarget(event.target) || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return false;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return false;
+    if (isPornpicsHost()) {
+      const targetUrl = pornpicsQueueTarget(event.key === "ArrowRight" ? 1 : -1);
+      if (!targetUrl) return false;
+      void loadPornpicsGallery(targetUrl);
+      return true;
+    }
+    const button = app.querySelector(event.key === "ArrowRight" ? '[data-xiv="next-set"]' : '[data-xiv="prev-set"]');
+    if (!button || button.disabled) return false;
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    return true;
+  }
+
   function handleGalleryQueueKeydown(event) {
+    if (handleImageStreamArrowKey(event)) return true;
     if (!isPornpicsHost()) return false;
     const target = event.target;
-    if (target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']")) return false;
+    if (isTypingTarget(target)) return false;
     if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return false;
     const isPrev = event.key === "," || event.key === "，" || event.code === "Comma";
     const isNext = event.key === "." || event.key === "。" || event.code === "Period";
@@ -569,10 +686,22 @@
     return true;
   }
 
+  function onWindowKeydown(event) {
+    if (handleGalleryQueueKeydown(event)) claim(event);
+  }
+
   window.__flowLensHandleLightboxZoomWheel = handleLightboxZoomWheel;
   window.__flowLensHandleGalleryQueueKeydown = handleGalleryQueueKeydown;
 
+  installControlStyle();
   installPornpicsReferrerPatch();
+  installLightboxInnerHTMLPatch();
+  window.addEventListener("pointerdown", onSlideshowControlEvent, true);
+  window.addEventListener("mousedown", onSlideshowControlEvent, true);
+  window.addEventListener("touchstart", onSlideshowControlEvent, { capture: true, passive: false });
+  window.addEventListener("click", onSlideshowControlEvent, true);
+  window.addEventListener("wheel", onWindowWheel, { capture: true, passive: false });
+  window.addEventListener("keydown", onWindowKeydown, true);
   document.addEventListener("pointerdown", onSlideshowControlEvent, true);
   document.addEventListener("mousedown", onSlideshowControlEvent, true);
   document.addEventListener("touchstart", onSlideshowControlEvent, { capture: true, passive: false });
@@ -587,12 +716,16 @@
   window.addEventListener("popstate", () => schedulePornpicsSync(120));
 
   const observer = new MutationObserver(() => {
+    installControlStyle();
+    document.querySelectorAll(".xiv-lightbox-slideshow").forEach((button) => drawSlideshowButton(button, slideshowActive));
     if (currentPornpicsCategoryUrl()) rememberCurrentCategoryQueue();
     schedulePornpicsSync(160);
   });
-  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "data-enabled", "href", "data-url", "data-href", "src", "poster"] });
+  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "data-enabled", "href", "data-url", "data-href", "src", "poster", "data-active"] });
 
   [0, 300, 900, 1800, 3200].forEach((delay) => window.setTimeout(() => {
+    installControlStyle();
+    document.querySelectorAll(".xiv-lightbox-slideshow").forEach((button) => drawSlideshowButton(button, slideshowActive));
     if (currentPornpicsCategoryUrl()) rememberCurrentCategoryQueue();
     mergePornpicsQueue();
     schedulePornpicsSync(30);
