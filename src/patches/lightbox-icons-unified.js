@@ -31,6 +31,10 @@
       #xiv-lightbox .xiv-lightbox-close {
         position: fixed !important;
         top: max(10px, env(safe-area-inset-top, 0px) + 10px) !important;
+        bottom: auto !important;
+        left: auto !important;
+        inset-block-end: auto !important;
+        inset-inline-start: auto !important;
         width: ${SIZE}px !important;
         height: ${SIZE}px !important;
         min-width: ${SIZE}px !important;
@@ -54,6 +58,13 @@
         cursor: pointer !important;
         z-index: 2147483647 !important;
         transform: none !important;
+        translate: none !important;
+        scale: none !important;
+        rotate: none !important;
+        transform-origin: center center !important;
+        contain: layout paint style !important;
+        transition: none !important;
+        will-change: auto !important;
         overflow: hidden !important;
         text-indent: 0 !important;
         filter: none !important;
@@ -61,6 +72,31 @@
       #xiv-lightbox .xiv-lightbox-close { right: ${RIGHT}px !important; }
       #xiv-lightbox .xiv-lightbox-fav { right: ${RIGHT + SIZE + GAP}px !important; }
       #xiv-lightbox .xiv-lightbox-slideshow { right: ${RIGHT + (SIZE + GAP) * 2}px !important; }
+      #xiv-lightbox .xiv-lightbox-arrow {
+        position: fixed !important;
+        top: 50dvh !important;
+        bottom: auto !important;
+        width: ${SIZE}px !important;
+        height: ${SIZE}px !important;
+        margin-top: -${SIZE / 2}px !important;
+        transform: none !important;
+        translate: none !important;
+        scale: none !important;
+        rotate: none !important;
+        transform-origin: center center !important;
+        contain: layout paint style !important;
+        transition: none !important;
+        will-change: auto !important;
+        z-index: 2147483647 !important;
+      }
+      #xiv-lightbox .xiv-lightbox-arrow[data-side="left"] {
+        left: max(${RIGHT}px, env(safe-area-inset-left, 0px) + ${RIGHT}px) !important;
+        right: auto !important;
+      }
+      #xiv-lightbox .xiv-lightbox-arrow[data-side="right"] {
+        right: max(${RIGHT}px, env(safe-area-inset-right, 0px) + ${RIGHT}px) !important;
+        left: auto !important;
+      }
       #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] {
         color: ${HEART_RED} !important;
         border-color: rgba(225,29,72,.28) !important;

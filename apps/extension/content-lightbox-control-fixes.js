@@ -43,18 +43,40 @@
       #xiv-lightbox .xiv-lightbox-close {
         position: fixed !important;
         top: max(10px, env(safe-area-inset-top, 0px) + 10px) !important;
+        bottom: auto !important;
+        left: auto !important;
         transform: none !important;
+        translate: none !important;
+        scale: none !important;
+        rotate: none !important;
+        transform-origin: center center !important;
+        contain: layout paint style !important;
         transition: none !important;
         will-change: auto !important;
         z-index: 2147483647 !important;
       }
       #xiv-lightbox .xiv-lightbox-arrow {
         position: fixed !important;
-        top: 50% !important;
-        transform: translateY(-50%) !important;
+        top: 50dvh !important;
+        bottom: auto !important;
+        margin-top: -23px !important;
+        transform: none !important;
+        translate: none !important;
+        scale: none !important;
+        rotate: none !important;
+        transform-origin: center center !important;
+        contain: layout paint style !important;
         transition: none !important;
         will-change: auto !important;
         z-index: 2147483647 !important;
+      }
+      #xiv-lightbox .xiv-lightbox-arrow[data-side="left"] {
+        left: max(14px, env(safe-area-inset-left, 0px) + 14px) !important;
+        right: auto !important;
+      }
+      #xiv-lightbox .xiv-lightbox-arrow[data-side="right"] {
+        right: max(14px, env(safe-area-inset-right, 0px) + 14px) !important;
+        left: auto !important;
       }
       #xiv-lightbox .xiv-lightbox-slideshow {
         right: 118px !important;

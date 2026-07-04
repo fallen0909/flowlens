@@ -1,4 +1,4 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         瀑光 FlowLens
 // @namespace    local.flowlens
 // @version      1.2.1
@@ -710,6 +710,13 @@
         const parts = path.split("/").filter(Boolean);
         return parts.length === 1 && /^[A-Za-z0-9_]{2,64}$/.test(parts[0]);
       }
+      if (parsed.origin === current.origin) {
+        if (path === "/" || /\.(?:css|js|json|xml|svg|ico|woff2?|ttf|map)(?:$|[?#])/i.test(path)) return false;
+        if (/\/(?:tag|tags|category|categories|search|login|register|about|contact|privacy|terms|page)(?:\/|$)/i.test(path)) return false;
+        if (/\.(?:html?|php|aspx?)$/i.test(path) || /\/(?:post|posts|article|articles|photo|photos|gallery|galleries|image|images|video|videos|jav|movie|movies)\//i.test(path)) return true;
+        const parts = path.split("/").filter(Boolean);
+        return parts.length >= 1 && parts.length <= 4 && /[A-Za-z0-9\u4e00-\u9fff]{3,}/.test(parts.at(-1) || "");
+      }
     } catch {
       return false;
     }
@@ -754,6 +761,30 @@
       if (!result.previous && /(?:上一|上组|prev|previous|left)/i.test(text)) result.previous = href;
       if (!result.next && /(?:下一|下组|next|right)/i.test(text)) result.next = href;
     });
+    return result;
+  }
+
+  function genericAdjacentLinksFromDocument(doc = document, base = location.href) {
+    const result = { previous: "", next: "" };
+    try {
+      const current = new URL(base, location.href);
+      doc.querySelectorAll?.("a[href]").forEach((link) => {
+        const href = normalizedPageUrl(absoluteUrl(link.getAttribute("href"), base));
+        if (!href || !isQueueCandidateUrl(href) || samePageUrl(href, base)) return;
+        const parsed = new URL(href, base);
+        if (parsed.origin !== current.origin) return;
+        const text = [
+          link.textContent,
+          link.getAttribute("title"),
+          link.getAttribute("aria-label"),
+          link.getAttribute("rel"),
+          link.className,
+          link.id
+        ].join(" ").replace(/\s+/g, " ");
+        if (!result.previous && /(?:上一|上组|上一篇|prev|previous|older|left|back)/i.test(text)) result.previous = href;
+        if (!result.next && /(?:下一|下组|下一篇|next|newer|right|forward)/i.test(text)) result.next = href;
+      });
+    } catch {}
     return result;
   }
 
@@ -886,8 +917,10 @@
       merged.push(clean);
     }
 
-    const adjacent = xchinaAdjacentLinksFromDocument(doc, base);
-    if (isXchinaPhotoUrl(current) && (adjacent.previous || adjacent.next)) {
+    const adjacent = isXchinaPhotoUrl(current)
+      ? xchinaAdjacentLinksFromDocument(doc, base)
+      : genericAdjacentLinksFromDocument(doc, base);
+    if (adjacent.previous || adjacent.next) {
       if (adjacent.previous) remember(adjacent.previous);
       if (isQueueCandidateUrl(current)) remember(current);
       if (adjacent.next) remember(adjacent.next);
@@ -921,8 +954,10 @@
       merged.push(clean);
     }
 
-    const adjacent = xchinaAdjacentLinksFromDocument(document, visibleBase);
-    if (isXchinaPhotoUrl(current) && (adjacent.previous || adjacent.next)) {
+    const adjacent = isXchinaPhotoUrl(current)
+      ? xchinaAdjacentLinksFromDocument(document, visibleBase)
+      : genericAdjacentLinksFromDocument(document, visibleBase);
+    if (adjacent.previous || adjacent.next) {
       if (adjacent.previous) remember(adjacent.previous);
       if (isQueueCandidateUrl(current)) remember(current);
       if (adjacent.next) remember(adjacent.next);
@@ -2087,7 +2122,15 @@
       added += collectPornpicsGalleryUrls(doc, base);
       renderImages();
       applyMediaFilter();
-      updateStatus(added ? `新增 ${added} 张` : "就绪");
+      updateStatus(added ? `Added ${added}` : "Ready");
+      return;
+    }
+    if (isXchinaPhotoUrl(base)) {
+      added += collectXchinaPhotoUrls(doc, base);
+      if (!added) added += collectFallbackImageUrls(doc, base);
+      renderImages();
+      applyMediaFilter();
+      updateStatus(added ? `Added ${added}` : "Ready");
       return;
     }
     if (isPhotoGalleryPage(base)) discoverPageLinksFromDocument(doc, base);
@@ -2151,7 +2194,7 @@
 
     renderImages();
     applyMediaFilter();
-    updateStatus(added ? `新增 ${added} 张` : "就绪");
+    updateStatus(added ? `Added ${added}` : "Ready");
   }
 
   function isGenericX810114Page() {
@@ -2328,6 +2371,67 @@
     }
 
     return [...new Set(candidates)];
+  }
+
+  function xchinaMainContainers(doc) {
+    const selectors = [
+      "#photo_body",
+      "#photoBox",
+      ".photoShow",
+      ".photo-show",
+      ".photo-content",
+      ".photo-content-box",
+      ".content_left",
+      ".main-content",
+      "article",
+      "main",
+      ".detail"
+    ].join(",");
+    const nodes = Array.from(doc.querySelectorAll?.(selectors) || [])
+      .filter((node) => !node.closest?.("header, footer, nav, aside, [class*='related' i], [class*='recommend' i], [class*='popular' i], [class*='sidebar' i], [class*='list' i]"));
+    return nodes.length ? nodes : [doc.body || doc.documentElement];
+  }
+
+  function collectXchinaPhotoUrls(doc, base) {
+    const album = siteAlbumIdFromUrl(base);
+    if (!album) return 0;
+    const urls = new Set();
+
+    function remember(raw, node = null) {
+      const url = siteAlbumImageUrlFromRaw(raw, base);
+      if (!url || !isMediaUrl(url) || isVideoUrl(url)) return;
+      const imageAlbum = siteAlbumIdFromUrl(url);
+      if (imageAlbum && imageAlbum !== album) return;
+      const directLink = node?.closest?.("a[href]");
+      const linkedPage = directLink ? absoluteUrl(directLink.getAttribute("href"), base) : "";
+      if (linkedPage && isQueueCandidateUrl(linkedPage) && !samePageUrl(linkedPage, base)) return;
+      if (BAD_IMAGE_RE.test(url) || isAdMedia(url, node) || isKnownXchinaPromoImage(url, node, base)) return;
+      urls.add(url);
+    }
+
+    for (const url of siteAlbumDirectImageCandidates(doc, base)) remember(url);
+    for (const container of xchinaMainContainers(doc)) {
+      container.querySelectorAll?.("img, source, a, meta, link").forEach((node) => {
+        ["src", "currentSrc", "href", "content", "poster", "data-src", "data-original", "data-url", "data-full", "data-large", "srcset", "data-srcset"].forEach((attr) => {
+          const value = attr === "currentSrc" ? node.currentSrc : node.getAttribute?.(attr);
+          if (!value) return;
+          if (attr === "srcset" || attr === "data-srcset") {
+            value.split(",").map((item) => item.trim().split(/\s+/)[0]).filter(Boolean).forEach((part) => remember(part, node));
+          } else {
+            remember(value, node);
+          }
+        });
+      });
+      container.querySelectorAll?.("[style]").forEach((node) => {
+        backgroundImageUrls(node.getAttribute("style"), base).forEach((url) => remember(url, node));
+      });
+    }
+
+    let added = 0;
+    for (const url of urls) {
+      if (addImage(url)) added += 1;
+    }
+    return added;
   }
 
   function normalizeX810114ImageUrl(url) {
@@ -3093,7 +3197,9 @@
           const album = siteAlbumIdFromUrl(base);
           const imageAlbum = siteAlbumIdFromUrl(url);
           if (album && imageAlbum && album !== imageAlbum) continue;
-          if (album && /(^|\.)upload\.xchina\.io\//i.test(url) && !imageAlbum) continue;
+          let host = "";
+          try { host = new URL(url, base).hostname; } catch {}
+          if (album && /(^|\.)upload\.xchina\.io$/i.test(host) && !imageAlbum) continue;
         }
         if (!isPhotoGalleryPage(base) && !isGenericX810114Page()) {
           const genericLikelyPhoto = /\/(upload|uploads|media|photos?|files?)\//i.test(url)
