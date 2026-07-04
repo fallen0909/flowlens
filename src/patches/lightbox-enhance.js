@@ -25,6 +25,10 @@
   function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
   function isOpen() { return lightbox()?.dataset.active === "true"; }
   function coreApi() { return window.__flowLensControl || null; }
+  function ownsSlideshow() {
+    if (!window.__flowLensSlideshowOwner) window.__flowLensSlideshowOwner = "lightbox-enhance";
+    return window.__flowLensSlideshowOwner === "lightbox-enhance";
+  }
 
   function readSettings() {
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; }
@@ -97,6 +101,7 @@
   function ensureButton() {
     const box = lightbox();
     if (!box || box.dataset.active !== "true") return null;
+    if (!ownsSlideshow()) return box.querySelector(".xiv-lightbox-slideshow");
     let btn = box.querySelector(".xiv-lightbox-slideshow");
     if (!btn) {
       btn = document.createElement("button");
@@ -113,6 +118,10 @@
   }
 
   function removeButton() {
+    if (!ownsSlideshow()) {
+      stopSlideshow(false);
+      return;
+    }
     stopSlideshow(false);
     lightbox()?.querySelector(".xiv-lightbox-slideshow")?.remove();
   }
@@ -168,6 +177,7 @@
   }
 
   function scheduleSlideshow(wait = slideshowDelay()) {
+    if (!ownsSlideshow()) return;
     clearTimeout(slideshowTimer);
     if (!slideshowActive) return;
     slideshowTimer = window.setTimeout(slideshowTick, Math.max(250, Number(wait) || DEFAULT_DELAY));
@@ -190,6 +200,7 @@
   }
 
   function startSlideshow() {
+    if (!ownsSlideshow()) return;
     if (!isOpen()) return;
     slideshowActive = true;
     const video = activeVideo();
@@ -305,6 +316,7 @@
   function onSlideshowPointerDown(event) {
     if (!event.target?.closest?.(".xiv-lightbox-slideshow")) return;
     if (!isOpen()) return;
+    if (!ownsSlideshow()) return;
     slideshowPointerHandledAt = Date.now();
     claim(event);
     toggleSlideshow();
@@ -312,6 +324,7 @@
 
   function onClick(event) {
     if (event.target?.closest?.(".xiv-lightbox-slideshow")) {
+      if (!ownsSlideshow()) return;
       claim(event);
       if (Date.now() - slideshowPointerHandledAt > 500) toggleSlideshow();
       return;

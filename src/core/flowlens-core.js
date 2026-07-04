@@ -159,7 +159,8 @@
     x810114ApiMode: false,
     galleryQueue: [],
     galleryQueueIndex: -1,
-    galleryQueueCurrentUrl: ""
+    galleryQueueCurrentUrl: "",
+    galleryQueueCurrentTitle: ""
   };
 
   function systemTheme() {
@@ -648,6 +649,31 @@
     return normalizedPageUrl(state.galleryQueueCurrentUrl || location.href);
   }
 
+  function cleanPageTitle(value, fallback = "") {
+    const text = String(value || "")
+      .replace(/\s+/g, " ")
+      .replace(/\s*[-_|–—]+\s*(?:xChina|PornPics|FlowLens|瀑光).*$/i, "")
+      .trim();
+    return text || fallback || "";
+  }
+
+  function pageTitleFromDocument(doc = document, fallbackUrl = location.href) {
+    const raw = doc.querySelector?.('meta[property="og:title"], meta[name="twitter:title"]')?.getAttribute?.("content")
+      || doc.querySelector?.("h1")?.textContent
+      || doc.title
+      || "";
+    return cleanPageTitle(raw, pageBookmarkHost(fallbackUrl) || fallbackUrl);
+  }
+
+  function isXchinaPhotoUrl(url = location.href) {
+    try {
+      const parsed = new URL(url, location.href);
+      return /(^|\.)xchina\.co$/i.test(parsed.hostname) && /^\/photo\/id-[A-Za-z0-9_-]+\.html$/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  }
+
   function isSelfieGalleryQueueUrl(url) {
     try {
       const parsed = new URL(url, location.href);
@@ -709,6 +735,26 @@
       collectX810114ProfileQueueFromText(doc).forEach(remember);
     }
     return queue;
+  }
+
+  function xchinaAdjacentLinksFromDocument(doc = document, base = location.href) {
+    if (!isXchinaPhotoUrl(base)) return { previous: "", next: "" };
+    const result = { previous: "", next: "" };
+    doc.querySelectorAll?.("a[href]").forEach((link) => {
+      const href = normalizedPageUrl(absoluteUrl(link.getAttribute("href"), base));
+      if (!href || !isQueueCandidateUrl(href)) return;
+      const text = [
+        link.textContent,
+        link.getAttribute("title"),
+        link.getAttribute("aria-label"),
+        link.getAttribute("rel"),
+        link.className,
+        link.id
+      ].join(" ");
+      if (!result.previous && /(?:上一|上组|prev|previous|left)/i.test(text)) result.previous = href;
+      if (!result.next && /(?:下一|下组|next|right)/i.test(text)) result.next = href;
+    });
+    return result;
   }
 
   function collectGalleryQueueUrlsFromHtml(doc = document, base = location.href) {
@@ -840,9 +886,18 @@
       merged.push(clean);
     }
 
-    stored.forEach(remember);
-    discovered.forEach(remember);
-    if (isQueueCandidateUrl(current)) remember(current);
+    const adjacent = xchinaAdjacentLinksFromDocument(doc, base);
+    if (isXchinaPhotoUrl(current) && (adjacent.previous || adjacent.next)) {
+      if (adjacent.previous) remember(adjacent.previous);
+      if (isQueueCandidateUrl(current)) remember(current);
+      if (adjacent.next) remember(adjacent.next);
+      discovered.forEach(remember);
+      stored.forEach(remember);
+    } else {
+      stored.forEach(remember);
+      discovered.forEach(remember);
+      if (isQueueCandidateUrl(current)) remember(current);
+    }
     state.galleryQueue = merged;
     state.galleryQueueIndex = merged.findIndex((url) => samePageUrl(url, current));
     if (merged.length > 1) writeStoredGalleryQueue(merged);
@@ -866,9 +921,18 @@
       merged.push(clean);
     }
 
-    discovered.forEach(remember);
-    stored.forEach(remember);
-    if (isQueueCandidateUrl(current)) remember(current);
+    const adjacent = xchinaAdjacentLinksFromDocument(document, visibleBase);
+    if (isXchinaPhotoUrl(current) && (adjacent.previous || adjacent.next)) {
+      if (adjacent.previous) remember(adjacent.previous);
+      if (isQueueCandidateUrl(current)) remember(current);
+      if (adjacent.next) remember(adjacent.next);
+      discovered.forEach(remember);
+      stored.forEach(remember);
+    } else {
+      discovered.forEach(remember);
+      stored.forEach(remember);
+      if (isQueueCandidateUrl(current)) remember(current);
+    }
     if (merged.length < 2) {
       // x.810114 renders the recommendation rail lazily. A second pass after
       // layout catches cards that appeared between the original refresh and tap.
@@ -934,6 +998,42 @@
     });
   }
 
+  function fetchSameOriginDocumentViaFrame(targetUrl, timeoutMs = 18000) {
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const frame = document.createElement("iframe");
+      frame.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;";
+
+      function finish(error, doc = null) {
+        if (done) return;
+        done = true;
+        clearTimeout(timeout);
+        try { frame.remove(); } catch {}
+        if (error) reject(error);
+        else resolve(doc);
+      }
+
+      const timeout = window.setTimeout(() => finish(new Error("frame timeout")), timeoutMs);
+      frame.addEventListener("load", () => {
+        window.setTimeout(() => {
+          try {
+            const doc = frame.contentDocument;
+            if (!doc?.documentElement || !doc.body) {
+              finish(new Error("frame returned an empty document"));
+              return;
+            }
+            finish(null, doc);
+          } catch (error) {
+            finish(error);
+          }
+        }, 280);
+      }, { once: true });
+      frame.addEventListener("error", () => finish(new Error("frame failed")), { once: true });
+      frame.src = targetUrl;
+      document.documentElement.appendChild(frame);
+    });
+  }
+
   async function loadGalleryQueueTargetInPlace(target) {
     const targetUrl = normalizedPageUrl(target);
     if (!targetUrl || !isQueueCandidateUrl(targetUrl)) return false;
@@ -950,6 +1050,24 @@
 
     const virtualSelfieNavigation = false;
     const previousQueueUrl = state.galleryQueueCurrentUrl;
+    const genericTarget = GENERIC_X810114_RE.test(targetUrl);
+    let targetDoc = null;
+    if (!genericTarget) {
+      let html = "";
+      try {
+        html = await fetchHtml(targetUrl, previousQueueUrl || location.href);
+        targetDoc = new DOMParser().parseFromString(html, "text/html");
+      } catch {
+        if (!isXchinaPhotoUrl(targetUrl)) return false;
+        try {
+          targetDoc = await fetchSameOriginDocumentViaFrame(targetUrl);
+        } catch {
+          return false;
+        }
+      }
+      if (!targetDoc?.documentElement) return false;
+      targetDoc.documentElement.dataset.xivBase = targetUrl;
+    }
     updateStatus("正在加载下一组");
     saveViewerPosition();
     closeLightbox(false);
@@ -974,22 +1092,14 @@
     state.suppressLightboxUntil = Date.now() + 600;
     state.fetchedPages.add(targetUrl);
     state.pageUrls.add(targetUrl);
+    state.galleryQueueCurrentTitle = targetDoc ? pageTitleFromDocument(targetDoc, targetUrl) : "";
 
-    if (isGenericX810114Page()) {
+    if (genericTarget) {
       await prepareGenericX810114Page();
       if (!state.x810114ApiMode) startGenericObserver();
     } else {
-      let html = "";
-      try {
-        html = await fetchHtml(targetUrl, previousQueueUrl || location.href);
-      } catch (error) {
-        if (virtualSelfieNavigation) state.galleryQueueCurrentUrl = previousQueueUrl;
-        throw error;
-      }
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      doc.documentElement.dataset.xivBase = targetUrl;
-      collectFromDocument(doc, targetUrl);
-      if (isPhotoGalleryPage()) {
+      collectFromDocument(targetDoc, targetUrl);
+      if (isPhotoGalleryPage(targetUrl)) {
         discoverNearbyPages();
         fetchRemainingPages(galleryFetchLimit());
       } else if (!virtualSelfieNavigation && !isPornpicsGalleryPage(targetUrl)) {
@@ -997,7 +1107,7 @@
       }
     }
 
-    refreshGalleryQueue(document, targetUrl);
+    refreshGalleryQueue(targetDoc || document, targetUrl);
     renderImages();
     applyMediaFilter();
     updateCounter();
@@ -1015,15 +1125,23 @@
     if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
 
     let html = "";
+    let doc = null;
     try {
       updateStatus("正在读取收藏页面");
       html = await fetchHtml(targetUrl, state.galleryQueueCurrentUrl || location.href);
+      doc = new DOMParser().parseFromString(html, "text/html");
     } catch {
+      if (isXchinaPhotoUrl(targetUrl)) {
+        try {
+          doc = await fetchSameOriginDocumentViaFrame(targetUrl);
+        } catch {}
+      }
+      if (!doc) {
       updateStatus("收藏页面读取失败，已保留当前图片流");
       return false;
+      }
     }
 
-    const doc = new DOMParser().parseFromString(html, "text/html");
     if (!doc?.documentElement) {
       updateStatus("收藏页面无法解析，已保留当前图片流");
       return false;
@@ -1042,6 +1160,7 @@
     state.suppressLightboxUntil = Date.now() + 600;
     state.fetchedPages.add(targetUrl);
     state.pageUrls.add(targetUrl);
+    state.galleryQueueCurrentTitle = pageTitleFromDocument(doc, targetUrl);
     doc.documentElement.dataset.xivBase = targetUrl;
     collectFromDocument(doc, targetUrl);
     refreshGalleryQueue(doc, targetUrl);
@@ -1091,6 +1210,7 @@
     state.suppressLightboxUntil = Date.now() + 600;
     state.fetchedPages.add(targetUrl);
     state.pageUrls.add(targetUrl);
+    state.galleryQueueCurrentTitle = pageTitleFromDocument(doc, targetUrl);
     collectFromDocument(doc, targetUrl);
     refreshGalleryQueue(doc, targetUrl);
 
@@ -1514,8 +1634,8 @@
     return isAdMediaUrl(url) || hasAdContainer(node) || isHiddenOrBlocked(node);
   }
 
-  function isPhotoGalleryPage() {
-    return galleryPrefixFromUrl(location.href) !== "";
+  function isPhotoGalleryPage(url = location.href) {
+    return galleryPrefixFromUrl(url) !== "";
   }
 
   function isKnownGalleryUrl(url = location.href) {
@@ -1633,6 +1753,13 @@
     try {
       const parsed = new URL(url, location.href);
       if (!/(^|\.)(?:img|upload)\.xchina\.io$/i.test(parsed.hostname)) return false;
+      const directLink = node?.closest?.("a[href]");
+      const linkedPage = directLink ? absoluteUrl(directLink.getAttribute("href"), contextBase) : "";
+      if (linkedPage && isQueueCandidateUrl(linkedPage) && !samePageUrl(linkedPage, contextBase)) return true;
+      const contextAlbum = siteAlbumIdFromUrl(contextBase);
+      const imageAlbum = siteAlbumIdFromUrl(parsed.href);
+      if (contextAlbum && imageAlbum && imageAlbum !== contextAlbum) return true;
+      if (contextAlbum && /(^|\.)upload\.xchina\.io$/i.test(parsed.hostname) && !imageAlbum) return true;
       if (/^6914a1e352a47\.webp$/i.test(parsed.pathname.split("/").pop() || "")) return true;
       const imageNo = siteAlbumPageNumberFromUrl(parsed.href);
       if (/id-6a33a26d508f4/i.test(contextBase) && imageNo === 5) return true;
@@ -1677,7 +1804,8 @@
     const bigNatural = !!(node && node.naturalWidth >= 480 && node.naturalHeight >= 480);
     const photoishName = /(?:\d{3,}|[_-]\d+)\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url);
     const photoishPath = /\/(upload|uploads|media|photos?|files?)\//i.test(url);
-    const genericPage = !isPhotoGalleryPage();
+    const contextBase = node?.ownerDocument?.documentElement?.dataset?.xivBase || state.collectionBase || location.href;
+    const genericPage = !isPhotoGalleryPage(contextBase);
     if (/\b(xchina|logo|icon|favicon|sprite|button|banner|advert|ads?)\b/i.test(new URL(url).pathname)) return false;
     if (genericPage) {
       if (node && node.naturalWidth && node.naturalHeight) {
@@ -1962,7 +2090,7 @@
       updateStatus(added ? `新增 ${added} 张` : "就绪");
       return;
     }
-    if (isPhotoGalleryPage()) discoverPageLinksFromDocument(doc, base);
+    if (isPhotoGalleryPage(base)) discoverPageLinksFromDocument(doc, base);
 
     doc.querySelectorAll("img").forEach((img) => {
       const url = imageCandidateFromImg(img, base);
@@ -1998,7 +2126,7 @@
         if (isGoodImage(imgUrl, img) && addImage(imgUrl, href)) added += 1;
       }
       if (!isZttaotuUrl(base) && isGoodImage(href) && addImage(href)) added += 1;
-      if (isPhotoGalleryPage() && sameGalleryPage(href)) state.pageUrls.add(href);
+      if (isPhotoGalleryPage(base) && sameGalleryPage(href, base)) state.pageUrls.add(href);
     });
 
     doc.querySelectorAll("[style]").forEach((el) => {
@@ -2017,7 +2145,7 @@
       added += collectFallbackImageUrls(doc, base);
     }
 
-    if (!isPhotoGalleryPage() || !added) {
+    if (!isPhotoGalleryPage(base) || !added) {
       added += collectVisibleLargeImages(doc, base);
     }
 
@@ -2960,8 +3088,14 @@
         const raw = unescapeEmbeddedUrl(match[2] || match[1] || match[0]);
         const url = absoluteUrl(raw, base);
         if (!url) continue;
-        if (BAD_IMAGE_RE.test(url) || isAdMedia(url) || isX810114Avatar(url) || (STATIC_ASSET_RE.test(url) && !isDiscuzAttachmentUrl(url))) continue;
-        if (!isPhotoGalleryPage() && !isGenericX810114Page()) {
+        if (BAD_IMAGE_RE.test(url) || isAdMedia(url) || isX810114Avatar(url) || isKnownXchinaPromoImage(url, null, base) || (STATIC_ASSET_RE.test(url) && !isDiscuzAttachmentUrl(url))) continue;
+        if (isXchinaPhotoUrl(base)) {
+          const album = siteAlbumIdFromUrl(base);
+          const imageAlbum = siteAlbumIdFromUrl(url);
+          if (album && imageAlbum && album !== imageAlbum) continue;
+          if (album && /(^|\.)upload\.xchina\.io\//i.test(url) && !imageAlbum) continue;
+        }
+        if (!isPhotoGalleryPage(base) && !isGenericX810114Page()) {
           const genericLikelyPhoto = /\/(upload|uploads|media|photos?|files?)\//i.test(url)
             || /(?:\d{3,}|[_-]\d+)\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url)
             || isDiscuzAttachmentUrl(url);
@@ -3159,10 +3293,10 @@
     return max;
   }
 
-  function sameGalleryPage(url) {
+  function sameGalleryPage(url, base = activeGalleryQueueUrl()) {
     if (!url) return false;
     try {
-      const currentPrefix = galleryPrefixFromUrl(location.href);
+      const currentPrefix = galleryPrefixFromUrl(base || location.href);
       const candidatePrefix = galleryPrefixFromUrl(url);
       return !!currentPrefix && currentPrefix === candidatePrefix && !!pageNumberFromUrl(url);
     } catch {
@@ -3220,7 +3354,7 @@
   }
 
   async function fetchRemainingPages(limit = GALLERY_FETCH_BATCH, force = false) {
-    if (!isPhotoGalleryPage()) {
+    if (!isPhotoGalleryPage(activeGalleryQueueUrl())) {
       updateStatus("当前页模式");
       return;
     }
@@ -4634,6 +4768,7 @@
 
     resetCollection();
     state.galleryQueueCurrentUrl = normalizedPageUrl(location.href);
+    state.galleryQueueCurrentTitle = pageTitleFromDocument(document, location.href);
     startViewerPositionRestore();
     closeHostPhotoViewer();
     state.active = true;
@@ -4689,6 +4824,7 @@
     stopHostOverlayGuard();
     state.active = false;
     state.galleryQueueCurrentUrl = "";
+    state.galleryQueueCurrentTitle = "";
     document.documentElement.classList.remove("xiv-active");
     state.root.dataset.active = "false";
     document.documentElement.style.overflow = "";
@@ -5684,6 +5820,9 @@
       },
       currentPageBookmarkUrl() {
         return normalizedPageUrl(state.galleryQueueCurrentUrl || location.href);
+      },
+      currentPageBookmarkTitle() {
+        return cleanPageTitle(state.galleryQueueCurrentTitle || document.title, pageBookmarkHost(state.galleryQueueCurrentUrl || location.href));
       },
       loadSavedPage(url) {
         return loadSavedPageInPlace(url);

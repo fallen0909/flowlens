@@ -2,6 +2,7 @@
   if (window.__flowLensLightboxControlFixes) return;
   window.__flowLensLightboxControlFixes = true;
   window.__flowLensSlideshowNativePatch = true;
+  window.__flowLensSlideshowOwner = "lightbox-control-fixes";
 
   const SETTINGS_KEY = "flowlens-settings-v2";
   const SPEED_OPTIONS = [800, 1200, 1800, 2400, 3200];

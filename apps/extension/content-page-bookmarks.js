@@ -28,6 +28,18 @@
     return normalizeUrl(window.__flowLensControl?.currentPageBookmarkUrl?.() || location.href);
   }
 
+  function currentTitle(url = currentUrl()) {
+    const title = window.__flowLensControl?.currentPageBookmarkTitle?.()
+      || document.querySelector('meta[property="og:title"], meta[name="twitter:title"]')?.getAttribute?.("content")
+      || document.querySelector("h1")?.textContent
+      || document.title
+      || "";
+    return String(title || hostOf(url) || url)
+      .replace(/\s+/g, " ")
+      .replace(/\s*[-_|–—]+\s*(?:xChina|PornPics|FlowLens|瀑光).*$/i, "")
+      .trim();
+  }
+
   function status(text) {
     const node = document.getElementById("xiv-status");
     if (node) node.textContent = text;
@@ -186,7 +198,7 @@
       const now = new Date().toISOString();
       writeItems([{
         url,
-        title: (document.title || hostOf(url) || url).replace(/\s+/g, " ").trim(),
+        title: currentTitle(url),
         host: hostOf(url),
         cover: coverOfCurrentPage(),
         mediaCount: document.querySelectorAll("#xiv-root .xiv-tile").length || 0,
