@@ -18,6 +18,7 @@ const sourceMap = {
   "src/patches/media-sync.js": "apps/extension/content-media-sync.js",
   "src/patches/lightbox-control-fixes.js": "apps/extension/content-lightbox-control-fixes.js",
   "src/patches/slideshow-native.js": "apps/extension/content-slideshow-native.js",
+  "src/patches/page-bookmarks.js": "apps/extension/content-page-bookmarks.js",
   "src/patches/diagnostics-log.js": "apps/extension/content-diagnostics-log.js"
 };
 

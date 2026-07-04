@@ -5590,18 +5590,18 @@
       return;
     }
     if (!state.active) return;
+    if (state.lightbox?.dataset.active === "true" && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      claimEvent(event);
+      if (event.repeat) return;
+      showAdjacentImage(event.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
     const queuePrevKey = event.key === "ArrowLeft";
     const queueNextKey = event.key === "ArrowRight";
     if (!isTyping && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && (queuePrevKey || queueNextKey)) {
       claimEvent(event);
       if (event.repeat) return;
       navigateGalleryQueue(queueNextKey ? 1 : -1);
-      return;
-    }
-    if (state.lightbox?.dataset.active === "true" && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
-      claimEvent(event);
-      if (event.repeat) return;
-      showAdjacentImage(event.key === "ArrowRight" ? 1 : -1);
       return;
     }
     if (event.key === "Escape") {
