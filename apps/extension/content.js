@@ -649,6 +649,16 @@
     return normalizedPageUrl(state.galleryQueueCurrentUrl || location.href);
   }
 
+  function galleryQueueIndexForUrl(queue, url) {
+    const clean = normalizedPageUrl(url);
+    if (!clean) return -1;
+    const lower = clean.toLowerCase();
+    return queue.findIndex((item) => {
+      const candidate = normalizedPageUrl(item);
+      return samePageUrl(candidate, clean) || candidate.toLowerCase() === lower;
+    });
+  }
+
   function cleanPageTitle(value, fallback = "") {
     const text = String(value || "")
       .replace(/\s+/g, " ")
@@ -669,6 +679,14 @@
     try {
       const parsed = new URL(url, location.href);
       return /(^|\.)xchina\.co$/i.test(parsed.hostname) && /^\/photo\/id-[A-Za-z0-9_-]+\.html$/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  function isX810114Url(url = location.href) {
+    try {
+      return new URL(url, location.href).hostname === "x.810114.xyz";
     } catch {
       return false;
     }
@@ -967,7 +985,7 @@
   function refreshGalleryQueue(doc = document, base = location.href) {
     const stored = readStoredGalleryQueue();
     const discovered = collectGalleryQueueFromDocument(doc, base);
-    const current = activeGalleryQueueUrl();
+    const current = isX810114Url(base) ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
     const merged = [];
     const seen = new Set();
 
@@ -978,6 +996,19 @@
       if (seen.has(key)) return;
       seen.add(key);
       merged.push(clean);
+    }
+
+    if (isX810114Url(base) || isX810114Url(current)) {
+      const primary = discovered.length > stored.length ? discovered : stored;
+      const secondary = primary === discovered ? stored : discovered;
+      primary.forEach(remember);
+      secondary.forEach(remember);
+      if (isQueueCandidateUrl(current)) remember(current);
+      state.galleryQueue = merged;
+      state.galleryQueueIndex = galleryQueueIndexForUrl(merged, current);
+      if (merged.length > 1) writeStoredGalleryQueue(merged);
+      syncGalleryQueueButtons();
+      return;
     }
 
     const adjacent = isXchinaPhotoUrl(current)
@@ -995,14 +1026,14 @@
       if (isQueueCandidateUrl(current)) remember(current);
     }
     state.galleryQueue = merged;
-    state.galleryQueueIndex = merged.findIndex((url) => samePageUrl(url, current));
+    state.galleryQueueIndex = galleryQueueIndexForUrl(merged, current);
     if (merged.length > 1) writeStoredGalleryQueue(merged);
     syncGalleryQueueButtons();
   }
 
   function rebuildGalleryQueueFromVisiblePage() {
-    const current = activeGalleryQueueUrl();
     const visibleBase = state.collectionBase || location.href;
+    const current = isX810114Url(visibleBase) ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
     const discovered = collectGalleryQueueFromDocument(document, visibleBase);
     const stored = readStoredGalleryQueue();
     const merged = [];
@@ -1015,6 +1046,23 @@
       if (seen.has(key)) return;
       seen.add(key);
       merged.push(clean);
+    }
+
+    if (isX810114Url(visibleBase) || isX810114Url(current)) {
+      const primary = discovered.length > stored.length ? discovered : stored;
+      const secondary = primary === discovered ? stored : discovered;
+      primary.forEach(remember);
+      secondary.forEach(remember);
+      if (isQueueCandidateUrl(current)) remember(current);
+      if (merged.length < 2) {
+        window.setTimeout(() => refreshGalleryQueue(), 120);
+        return false;
+      }
+      state.galleryQueue = merged;
+      state.galleryQueueIndex = galleryQueueIndexForUrl(merged, current);
+      writeStoredGalleryQueue(merged);
+      syncGalleryQueueButtons();
+      return true;
     }
 
     const adjacent = isXchinaPhotoUrl(current)
@@ -1040,7 +1088,7 @@
       return false;
     }
     state.galleryQueue = merged;
-    state.galleryQueueIndex = merged.findIndex((url) => samePageUrl(url, current));
+    state.galleryQueueIndex = galleryQueueIndexForUrl(merged, current);
     writeStoredGalleryQueue(merged);
     syncGalleryQueueButtons();
     return true;
@@ -1074,15 +1122,33 @@
     if (state.galleryQueue.length < 2) rebuildGalleryQueueFromVisiblePage();
     const queue = state.galleryQueue;
     if (queue.length < 2) return "";
-    let index = state.galleryQueueIndex;
-    if (index < 0) index = queue.findIndex((url) => samePageUrl(url, activeGalleryQueueUrl()));
-    if (index < 0 && isGenericX810114Page() && !isQueueCandidateUrl(activeGalleryQueueUrl())) {
+    const activeUrl = isGenericX810114Page() ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
+    const computedIndex = galleryQueueIndexForUrl(queue, activeUrl);
+    let index = computedIndex >= 0 ? computedIndex : state.galleryQueueIndex;
+    if (computedIndex >= 0) state.galleryQueueIndex = computedIndex;
+    if (index < 0 && isGenericX810114Page() && !isQueueCandidateUrl(activeUrl)) {
       return delta > 0 ? queue[0] : queue[queue.length - 1];
     }
     if (index < 0) index = 0;
     const next = (index + delta + queue.length) % queue.length;
     const url = queue[next];
-    return samePageUrl(url, activeGalleryQueueUrl()) ? "" : url;
+    return samePageUrl(url, activeUrl) ? "" : url;
+  }
+
+  function x810114QueueTarget(delta) {
+    if (!isGenericX810114Page()) return "";
+    const stored = readStoredGalleryQueue();
+    const discovered = collectGalleryQueueFromDocument(document, location.href);
+    const queue = (discovered.length > stored.length ? discovered : stored)
+      .map(normalizedPageUrl)
+      .filter(isQueueCandidateUrl);
+    if (queue.length < 2) return "";
+    const activeUrl = normalizedPageUrl(location.href);
+    let index = galleryQueueIndexForUrl(queue, activeUrl);
+    if (index < 0 && !isQueueCandidateUrl(activeUrl)) return delta > 0 ? queue[0] : queue[queue.length - 1];
+    if (index < 0) index = 0;
+    const next = (index + delta + queue.length) % queue.length;
+    return samePageUrl(queue[next], activeUrl) ? "" : queue[next];
   }
 
   function syncGalleryQueueButtons() {
@@ -1402,7 +1468,7 @@
   async function navigateGalleryQueue(delta) {
     refreshGalleryQueue();
     rebuildGalleryQueueFromVisiblePage();
-    const target = galleryQueueTarget(delta);
+    const target = x810114QueueTarget(delta) || galleryQueueTarget(delta);
     if (!target) {
       updateStatus("没有可切换的套图");
       return;
