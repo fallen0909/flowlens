@@ -9,6 +9,7 @@ const sourceMap = {
   "src/core/optimizer.js": "apps/extension/content-patch.js",
   "src/patches/fixes.js": "apps/extension/content-fixes.js",
   "src/patches/product.js": "apps/extension/content-product.js",
+  "src/patches/site-adapter-center.js": "apps/extension/content-site-adapter-center.js",
   "src/patches/ui-cleanup.js": "apps/extension/content-ui-cleanup.js",
   "src/patches/lightbox-stable.js": "apps/extension/content-lightbox-stable.js",
   "src/patches/lightbox-ios-smooth.js": "apps/extension/content-lightbox-ios-smooth.js",

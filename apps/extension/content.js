@@ -151,6 +151,11 @@
     restorePosition: null,
     restoreStartedAt: 0,
     restoreTimer: 0,
+    positionSaveTimer: 0,
+    renderQueue: [],
+    renderFrame: 0,
+    renderBatchSize: 14,
+    renderStartedAt: 0,
     galleryFailureCount: 0,
     rejectedCount: 0,
     collectedCount: 0,
@@ -318,6 +323,7 @@
     #xiv-stage {
       position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
       overflow-anchor: none;
+      scroll-behavior: smooth; -webkit-overflow-scrolling: touch;
       scrollbar-width: thin; scrollbar-color: #777 #111; padding: 54px 12px 18px;
       box-sizing: border-box;
     }
@@ -332,14 +338,14 @@
       position: relative; display: block; width: 100%; margin: 0;
       border: 0; border-radius: 7px; overflow: hidden;
       background: #171717; padding: 0; cursor: zoom-in; box-shadow: 0 1px 0 rgba(255,255,255,.08);
-      min-height: 96px;
+      min-height: 96px; contain: layout paint style; content-visibility: auto; contain-intrinsic-size: 260px 360px;
     }
     #xiv-root[data-theme="light"] .xiv-tile {
       background: #fff; box-shadow: 0 1px 14px rgba(0,0,0,.13);
     }
     .xiv-tile img, .xiv-tile video {
       display: block !important; width: 100%; height: auto; min-height: 96px; max-height: 82vh; object-fit: contain; background: #111; pointer-events: none;
-      overflow-anchor: none;
+      overflow-anchor: none; transform: translateZ(0); backface-visibility: hidden;
     }
     .xiv-video-placeholder {
       display: grid; place-items: center; width: 100%; min-height: 132px;
@@ -2422,6 +2428,10 @@
     state.videoPreviewObserver = null;
     state.videoPreviewQueue = [];
     state.videoPreviewLoading = 0;
+    cancelAnimationFrame(state.renderFrame);
+    state.renderFrame = 0;
+    state.renderQueue = [];
+    state.renderStartedAt = 0;
     state.imageKeys.clear();
     state.renderedKeys.clear();
     state.masonryColumns = [];
@@ -2830,6 +2840,9 @@
       if (!isLoadedPhotoLike(img)) rejectImage(url);
       rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
       if (img.naturalWidth > 0 && img.naturalHeight > 0) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+      const tile = img.closest?.(".xiv-tile");
+      if (tile) tile.dataset.estimatedHeight = "";
+      scheduleMasonryLayout();
     }, { once: true });
     img.addEventListener("error", () => {
       setTimeout(() => {
@@ -2883,6 +2896,9 @@
     img.addEventListener("load", () => {
       rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
       if (img.naturalWidth > 0 && img.naturalHeight > 0) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+      const tile = img.closest?.(".xiv-tile");
+      if (tile) tile.dataset.estimatedHeight = "";
+      scheduleMasonryLayout();
     }, { once: true });
     img.addEventListener("error", () => {
       if (img.dataset.fallbackTried === "true") {
@@ -4106,6 +4122,10 @@
     window.addEventListener("keydown", onKeydown, true);
     window.addEventListener("keyup", onKeyRelease, true);
     window.addEventListener("keypress", onKeyRelease, true);
+    window.addEventListener("beforeunload", saveViewerPosition);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") saveViewerPosition();
+    });
     watchSystemTheme();
     syncSettingsPanel();
     void syncPageBookmarkControls();
@@ -4129,27 +4149,56 @@
 
   function renderImages() {
     if (!state.grid) return;
-    const fragment = document.createDocumentFragment();
+    let queued = 0;
     for (let i = 0; i < state.images.length; i += 1) {
       const url = state.images[i];
       const key = keyForUrl(url);
       if (state.renderedKeys.has(key)) continue;
       state.renderedKeys.add(key);
+      state.renderQueue.push({ url, index: i, key });
+      queued += 1;
+    }
+    if (queued) scheduleRenderQueue();
+    syncTileIndexes();
+    updateCounter();
+    scheduleRestoreViewerPosition();
+  }
+
+  function scheduleRenderQueue() {
+    if (state.renderFrame || !state.renderQueue.length) return;
+    state.renderFrame = requestAnimationFrame(processRenderQueue);
+  }
+
+  function processRenderQueue() {
+    state.renderFrame = 0;
+    if (!state.grid || !state.renderQueue.length) return;
+    const fragment = document.createDocumentFragment();
+    const start = performance.now();
+    let created = 0;
+    const maxBatch = state.renderStartedAt ? state.renderBatchSize : Math.max(10, Math.min(24, state.renderBatchSize + 6));
+    if (!state.renderStartedAt) state.renderStartedAt = Date.now();
+
+    while (state.renderQueue.length && created < maxBatch && performance.now() - start < 8) {
+      const item = state.renderQueue.shift();
+      const index = Math.max(0, Math.min(state.images.length - 1, item.index));
+      const url = state.images[index] || item.url;
+      const key = keyForUrl(url) || item.key;
       const tile = document.createElement("div");
       tile.className = "xiv-tile";
       tile.tabIndex = 0;
       tile.role = "button";
-      tile.dataset.index = String(i);
+      tile.dataset.index = String(index);
       tile.dataset.url = url;
       tile.dataset.urlKey = key;
+      tile.hidden = !mediaMatchesFilter(url);
       const media = isVideoUrl(url)
-        ? createVideoPreviewElement(url, i)
-        : createImageElement(url, i);
+        ? createVideoPreviewElement(url, index)
+        : createImageElement(url, index);
       if (media.tagName === "VIDEO") {
         media.controls = false;
       }
       const label = document.createElement("span");
-      label.textContent = String(i + 1).padStart(2, "0");
+      label.textContent = String(index + 1).padStart(2, "0");
       tile.append(media, label);
       if (isVideoUrl(url)) {
         const mark = document.createElement("i");
@@ -4170,17 +4219,18 @@
         if (dx > 8 || dy > 8) return;
         if (!state.autoScroll && Date.now() - state.lastStageScrollAt < 120 && (dx > 2 || dy > 2)) return;
         state.lightboxGestureToken = Date.now();
-        openLightbox(Number(tile.dataset.index || i));
+        openLightbox(Number(tile.dataset.index || index));
       });
       tile.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           claimEvent(event);
           if (Date.now() < state.suppressLightboxUntil) return;
           state.lightboxGestureToken = Date.now();
-          openLightbox(Number(tile.dataset.index || i));
+          openLightbox(Number(tile.dataset.index || index));
         }
       });
       fragment.appendChild(tile);
+      created += 1;
     }
     if (fragment.childNodes.length) {
       ensureMasonryColumns();
@@ -4190,6 +4240,12 @@
     syncTileIndexes();
     updateCounter();
     scheduleRestoreViewerPosition();
+    if (state.renderQueue.length) {
+      scheduleRenderQueue();
+    } else {
+      state.renderStartedAt = 0;
+      window.dispatchEvent(new CustomEvent("flowlens:gallery-items-rendered"));
+    }
   }
 
   function ensureImageLoadObserver() {
@@ -4266,6 +4322,7 @@
   function rebuildMasonry() {
     if (!state.grid) return;
     const tiles = allTiles();
+    tiles.forEach((tile) => { tile.dataset.estimatedHeight = ""; });
     state.grid.replaceChildren();
     state.masonryColumns = [];
     ensureMasonryColumns();
@@ -4315,8 +4372,14 @@
   }
 
   function estimatedTileHeight(tile, column) {
+    const cached = Number(tile.dataset.estimatedHeight || 0);
+    if (cached > 20) return cached;
     const rect = tile.getBoundingClientRect?.();
-    if (rect?.height > 20) return rect.height + masonryGap();
+    if (rect?.height > 20) {
+      const measured = rect.height + masonryGap();
+      tile.dataset.estimatedHeight = String(Math.round(measured));
+      return measured;
+    }
 
     const url = tile.dataset.url || "";
     const media = tile.querySelector("img, video");
@@ -4331,7 +4394,9 @@
       || ratioFromSize(sizeFromUrl(media?.currentSrc || media?.src || ""))
       || 0.72;
     const columnWidth = column?.clientWidth || tile.clientWidth || Math.max(160, Math.floor((state.stage?.clientWidth || window.innerWidth || 1000) / Math.max(1, state.columns)));
-    return Math.max(80, columnWidth / ratio) + masonryGap();
+    const estimated = Math.max(80, columnWidth / ratio) + masonryGap();
+    tile.dataset.estimatedHeight = String(Math.round(estimated));
+    return estimated;
   }
 
   function ratioFromSize(size) {
@@ -4358,6 +4423,7 @@
     if (useSimpleGridLayout()) return;
     withStageScrollPreserved(() => {
       const tiles = allTiles();
+      tiles.forEach((tile) => { tile.dataset.estimatedHeight = ""; });
       state.grid.replaceChildren();
       state.masonryColumns = [];
       ensureMasonryColumns();
@@ -4382,7 +4448,9 @@
   function scheduleMasonryLayout() {
     if (!state.active) return;
     clearTimeout(state.masonryLayoutTimer);
-    state.masonryLayoutTimer = setTimeout(layoutMasonry, 120);
+    const scrolling = Date.now() - state.lastStageScrollAt < 220;
+    const delay = state.renderQueue.length ? 360 : scrolling ? 280 : 160;
+    state.masonryLayoutTimer = setTimeout(layoutMasonry, delay);
   }
 
   function onStageCaptureClick(event) {
@@ -4434,6 +4502,10 @@
       url: state.images[index] || tile?.dataset.url || "",
       index: Number.isFinite(index) ? index : 0,
       scrollTop: Math.max(0, Math.round(state.stage?.scrollTop || 0)),
+      mediaFilter: state.mediaFilter,
+      lightboxOpen,
+      lightboxIndex: state.index,
+      lightboxUrl: lightboxOpen ? state.images[state.index] || "" : "",
       time: Date.now()
     };
   }
@@ -4447,6 +4519,12 @@
     }
   }
 
+  function scheduleViewerPositionSave() {
+    if (!state.active) return;
+    clearTimeout(state.positionSaveTimer);
+    state.positionSaveTimer = window.setTimeout(saveViewerPosition, 450);
+  }
+
   function loadViewerPosition() {
     try {
       const raw = localStorage.getItem(positionStorageKey());
@@ -4456,7 +4534,11 @@
       return {
         url: String(data.url || ""),
         index: Math.max(0, Number(data.index || 0)),
-        scrollTop: Math.max(0, Number(data.scrollTop || 0))
+        scrollTop: Math.max(0, Number(data.scrollTop || 0)),
+        mediaFilter: ["all", "image", "video"].includes(data.mediaFilter) ? data.mediaFilter : "all",
+        lightboxOpen: data.lightboxOpen === true,
+        lightboxIndex: Math.max(0, Number(data.lightboxIndex || data.index || 0)),
+        lightboxUrl: String(data.lightboxUrl || "")
       };
     } catch {
       return null;
@@ -4466,6 +4548,7 @@
   function startViewerPositionRestore() {
     state.restorePosition = loadViewerPosition();
     state.restoreStartedAt = Date.now();
+    if (state.restorePosition?.mediaFilter) setMediaFilter(state.restorePosition.mediaFilter);
     scheduleRestoreViewerPosition();
   }
 
@@ -4486,6 +4569,7 @@
     if (tile) {
       tile.scrollIntoView({ block: "start", inline: "nearest" });
       state.stage.scrollTop = Math.max(0, state.stage.scrollTop - 54);
+      if (saved.lightboxOpen) restoreLightboxFromPosition(saved);
       state.restorePosition = null;
       return;
     }
@@ -4500,7 +4584,20 @@
     }
 
     state.stage.scrollTop = Math.min(saved.scrollTop, Math.max(0, state.stage.scrollHeight - state.stage.clientHeight));
+    if (saved.lightboxOpen) restoreLightboxFromPosition(saved);
     state.restorePosition = null;
+  }
+
+  function restoreLightboxFromPosition(saved) {
+    if (!saved?.lightboxOpen || state.lightbox?.dataset.active === "true" || !state.images.length) return;
+    const key = saved.lightboxUrl ? keyForUrl(saved.lightboxUrl) : "";
+    let index = key ? state.images.findIndex((url) => keyForUrl(url) === key) : -1;
+    if (index < 0) index = Math.min(Math.max(0, saved.lightboxIndex || saved.index || 0), state.images.length - 1);
+    if (index < 0 || !state.images[index]) return;
+    window.setTimeout(() => {
+      if (!state.active || state.lightbox?.dataset.active === "true") return;
+      openLightbox(index);
+    }, 120);
   }
 
   function updateCounter() {
@@ -5140,6 +5237,7 @@
     state.autoScroll = false;
     cancelAnimationFrame(state.autoScrollFrame);
     clearTimeout(state.restoreTimer);
+    clearTimeout(state.positionSaveTimer);
     state.restorePosition = null;
     stopGenericObserver();
     stopHostOverlayGuard();
@@ -6114,6 +6212,7 @@
   function onScroll() {
     if (!state.stage) return;
     state.lastStageScrollAt = Date.now();
+    scheduleViewerPositionSave();
     pumpVideoPreviewQueue();
     const nearBottom = state.stage.scrollTop + state.stage.clientHeight > state.stage.scrollHeight - 1800;
     if (nearBottom) fetchRemainingPages();
@@ -6147,6 +6246,65 @@
       },
       loadSavedPage(url) {
         return loadSavedPageInPlace(url);
+      },
+      getSessionSnapshot() {
+        return currentViewerPosition();
+      },
+      getAdapterStatus() {
+        return siteAdapterStatus();
+      }
+    };
+  }
+
+  function siteAdapterStatus() {
+    const adapters = [];
+    if (isGenericX810114Page()) adapters.push("x.810114 通用页");
+    if (isX810114ProfilePage()) adapters.push("x.810114 主页队列");
+    if (isXchinaPhotoUrl(state.galleryQueueCurrentUrl || location.href)) adapters.push("xchina 图库");
+    if (isPhotoGalleryPage(state.galleryQueueCurrentUrl || location.href)) adapters.push("分页图库");
+    if (isPornpicsGalleryPage(state.galleryQueueCurrentUrl || location.href)) adapters.push("PornPics 图集");
+    if (isCloudDriveFilesPage(state.galleryQueueCurrentUrl || location.href)) adapters.push("115/CloudDrive 文件页");
+    if (isBuonduaPage(state.galleryQueueCurrentUrl || location.href)) adapters.push("Buondua 文章");
+    if (isZttaotuUrl(state.galleryQueueCurrentUrl || location.href)) adapters.push("ZTTaoTu 专题");
+    if (window.__flowLensMediaFilter?.readConfig?.().enabled) adapters.push("广告识别中心");
+    if (window.__flowLensVirtualMasonry) adapters.push("虚拟瀑布流");
+
+    const sourceUrl = state.galleryQueueCurrentUrl || location.href;
+    const strategy = isGenericX810114Page()
+      ? (state.x810114ApiMode ? "API 采集 + 动态观察" : "页面采集 + 动态观察")
+      : isPhotoGalleryPage(sourceUrl)
+        ? "分页发现 + 后台补齐"
+        : "当前页面扫描 + 动态观察";
+
+    return {
+      site: (() => { try { return new URL(sourceUrl).hostname; } catch { return location.hostname; } })(),
+      url: sourceUrl,
+      adapters: adapters.length ? adapters : ["通用媒体扫描"],
+      strategy,
+      media: {
+        total: state.images.length,
+        visible: filteredImages().length,
+        expected: state.expectedImages || 0,
+        rejected: state.rejectedCount,
+        collected: state.collectedCount,
+        rendered: state.renderedKeys.size,
+        queuedRender: state.renderQueue.length
+      },
+      pages: {
+        known: state.pageUrls.size,
+        fetched: state.fetchedPages.size,
+        failures: state.galleryFailureCount,
+        fetching: state.fetching
+      },
+      queue: {
+        index: state.galleryQueueIndex,
+        total: state.galleryQueue.length,
+        title: state.galleryQueueCurrentTitle || document.title || ""
+      },
+      settings: {
+        filter: state.mediaFilter,
+        columns: state.columns,
+        videoPreview: state.settings?.videoPreview !== false
       }
     };
   }
