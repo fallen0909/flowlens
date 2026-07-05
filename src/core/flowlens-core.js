@@ -805,6 +805,7 @@
     function remember(raw) {
       const url = normalizedPageUrl(absoluteUrl(raw, base));
       if (!url || !isQueueCandidateUrl(url)) return;
+      if (isPhotoGalleryPage(base) && sameGalleryPage(url, base)) return;
       const key = url.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
@@ -1278,7 +1279,7 @@
         html = await fetchHtml(targetUrl, previousQueueUrl || location.href);
         targetDoc = new DOMParser().parseFromString(html, "text/html");
       } catch {
-        if (!isXchinaPhotoUrl(targetUrl)) return false;
+        if (!isKnownGalleryUrl(targetUrl)) return false;
         try {
           targetDoc = await fetchSameOriginDocumentViaFrame(targetUrl);
         } catch {
@@ -3501,7 +3502,7 @@
     const discoveryWindow = galleryDiscoveryWindow(base);
 
     function rememberPage(url) {
-      if (!sameGalleryPage(url)) return false;
+      if (!sameGalleryPage(url, base)) return false;
       const parsed = new URL(url);
       const pageNumber = pageNumberFromUrl(parsed.href);
       if (pageNumber) pageNums.add(pageNumber);
@@ -3546,8 +3547,9 @@
   }
 
   function galleryFetchLimit() {
-    if (isKnownGalleryUrl()) return SITE_ALBUM_FETCH_BATCH;
-    return isZttaotuUrl() ? Math.max(GALLERY_FETCH_BATCH, state.pageUrls.size) : GALLERY_FETCH_BATCH;
+    const current = activeGalleryQueueUrl();
+    if (isKnownGalleryUrl(current)) return SITE_ALBUM_FETCH_BATCH;
+    return isZttaotuUrl(current) ? Math.max(GALLERY_FETCH_BATCH, state.pageUrls.size) : GALLERY_FETCH_BATCH;
   }
 
   function pagerNumberFromNode(node) {
@@ -3655,7 +3657,8 @@
   }
 
   async function fetchRemainingPages(limit = GALLERY_FETCH_BATCH, force = false) {
-    if (!isPhotoGalleryPage(activeGalleryQueueUrl())) {
+    const activeUrl = activeGalleryQueueUrl();
+    if (!isPhotoGalleryPage(activeUrl)) {
       updateStatus("当前页模式");
       return;
     }
@@ -3663,18 +3666,49 @@
     const now = Date.now();
     if (!force && now - state.lastGalleryFetchAt < 900) return;
     state.lastGalleryFetchAt = now;
-    const maxBatch = isKnownGalleryUrl()
+    const maxBatch = isKnownGalleryUrl(activeUrl)
       ? SITE_ALBUM_FETCH_BATCH
-      : isZttaotuUrl() ? Math.max(GALLERY_FETCH_BATCH, state.pageUrls.size) : GALLERY_FETCH_BATCH;
+      : isZttaotuUrl(activeUrl) ? Math.max(GALLERY_FETCH_BATCH, state.pageUrls.size) : GALLERY_FETCH_BATCH;
     limit = Math.max(1, Math.min(maxBatch, limit));
     state.fetching = true;
+
+    async function fetchPageDoc(url) {
+      let lastError = "";
+      try {
+        const res = await fetch(url, { credentials: "include", cache: "no-store", referrer: activeUrl });
+        if (!res.ok) {
+          lastError = `HTTP ${res.status}`;
+        } else {
+          const html = await res.text();
+          if (/正在进行安全验证|cloudflare|cf-browser-verification|Just a moment/i.test(html)) {
+            lastError = "security page";
+          } else {
+            const doc = new DOMParser().parseFromString(html, "text/html");
+            doc.documentElement.dataset.xivBase = url;
+            return doc;
+          }
+        }
+      } catch (error) {
+        lastError = String(error?.message || error);
+      }
+      if (isKnownGalleryUrl(url)) {
+        try {
+          const doc = await fetchSameOriginDocumentViaFrame(url, 22000);
+          doc.documentElement.dataset.xivBase = url;
+          return doc;
+        } catch (error) {
+          lastError = `${lastError || "fetch failed"}; frame ${String(error?.message || error)}`;
+        }
+      }
+      throw new Error(lastError || "fetch failed");
+    }
 
     try {
       let loaded = 0;
       let claimed = 0;
       const nextPage = () => {
         if (claimed >= limit) return "";
-        const url = sortedPageUrls().find((candidate) => !state.fetchedPages.has(candidate) && candidate !== location.href);
+        const url = sortedPageUrls().find((candidate) => !state.fetchedPages.has(candidate) && !samePageUrl(candidate, activeUrl));
         if (!url) return "";
         state.fetchedPages.add(url);
         claimed += 1;
@@ -3686,37 +3720,23 @@
           if (!url) break;
           updateStatus(`加载分页 ${loaded + 1}/${state.pageUrls.size}`);
           try {
-            const res = await fetch(url, { credentials: "include" });
-            if (!res.ok) {
-              state.galleryFailureCount += 1;
-              debugLog("分页加载失败", { url, status: res.status, statusText: res.statusText });
-              updateStatus(`分页失败 ${res.status}：${pageNumberFromUrl(url) || "?"}`);
-            } else {
-              const html = await res.text();
-              if (/正在进行安全验证|cloudflare|cf-browser-verification|Just a moment/i.test(html)) {
-                state.galleryFailureCount += 1;
-                debugLog("分页触发安全验证", { url });
-                updateStatus(`分页触发安全验证：${pageNumberFromUrl(url) || "?"}`);
-              } else {
-                const doc = new DOMParser().parseFromString(html, "text/html");
-                collectFromDocument(doc, url);
-              }
-            }
+            const doc = await fetchPageDoc(url);
+            collectFromDocument(doc, url);
           } catch (error) {
             state.galleryFailureCount += 1;
             debugLog("分页加载异常", { url, error: String(error?.message || error) });
             updateStatus(`分页异常：${String(error?.message || error).slice(0, 36)}`);
           } finally {
             loaded += 1;
-            if (isKnownGalleryUrl()) await sleep(160);
+            if (isKnownGalleryUrl(activeUrl)) await sleep(160);
           }
         }
       };
-      const workers = Math.min(isKnownGalleryUrl() ? 2 : 2, Math.max(1, limit));
+      const workers = Math.min(2, Math.max(1, limit));
       await Promise.all(Array.from({ length: workers }, worker));
     } finally {
       state.fetching = false;
-      const hasMore = sortedPageUrls().some((url) => !state.fetchedPages.has(url) && url !== location.href);
+      const hasMore = sortedPageUrls().some((url) => !state.fetchedPages.has(url) && !samePageUrl(url, activeUrl));
       if (hasMore && state.active) {
         updateStatus(state.galleryFailureCount
           ? `已收集 ${state.images.length} 张，失败 ${state.galleryFailureCount} 页`
@@ -6009,12 +6029,12 @@
   }
 
   function discoverNearbyPages() {
-    if (isZttaotuUrl()) return;
-    if (isKnownGalleryUrl()) return;
-    const prefix = galleryPrefixFromUrl(location.href);
-    const n = pageNumberFromUrl(location.href);
+    const activeUrl = activeGalleryQueueUrl();
+    if (isZttaotuUrl(activeUrl)) return;
+    const prefix = galleryPrefixFromUrl(activeUrl);
+    const n = pageNumberFromUrl(activeUrl);
     if (!prefix || !n) return;
-    const discoveryWindow = galleryDiscoveryWindow(location.href);
+    const discoveryWindow = galleryDiscoveryWindow(activeUrl);
     for (let i = Math.max(1, n - discoveryWindow); i <= n + discoveryWindow; i += 1) {
       const url = galleryPageUrlFromPrefix(prefix, i);
       if (url) state.pageUrls.add(url);
