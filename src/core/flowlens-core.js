@@ -160,7 +160,9 @@
     galleryQueue: [],
     galleryQueueIndex: -1,
     galleryQueueCurrentUrl: "",
-    galleryQueueCurrentTitle: ""
+    galleryQueueCurrentTitle: "",
+    x810114RecentQueue: [],
+    x810114ActiveSidebarQueue: []
   };
 
   function systemTheme() {
@@ -999,6 +1001,11 @@
     }
 
     if (isX810114Url(base) || isX810114Url(current)) {
+      const sidebar = collectX810114SidebarProfileQueue(doc).map(normalizedPageUrl).filter(isQueueCandidateUrl);
+      const docBase = normalizedPageUrl(doc?.documentElement?.dataset?.xivBase || base);
+      if (sidebar.length && samePageUrl(docBase, activeGalleryQueueUrl())) {
+        state.x810114ActiveSidebarQueue = sidebar;
+      }
       const primary = discovered.length > stored.length ? discovered : stored;
       const secondary = primary === discovered ? stored : discovered;
       primary.forEach(remember);
@@ -1049,6 +1056,11 @@
     }
 
     if (isX810114Url(visibleBase) || isX810114Url(current)) {
+      const sidebar = collectX810114SidebarProfileQueue(document).map(normalizedPageUrl).filter(isQueueCandidateUrl);
+      const docBase = normalizedPageUrl(document.documentElement?.dataset?.xivBase || location.href);
+      if (sidebar.length && samePageUrl(docBase, activeGalleryQueueUrl())) {
+        state.x810114ActiveSidebarQueue = sidebar;
+      }
       const primary = discovered.length > stored.length ? discovered : stored;
       const secondary = primary === discovered ? stored : discovered;
       primary.forEach(remember);
@@ -1137,18 +1149,58 @@
 
   function x810114QueueTarget(delta) {
     if (!isGenericX810114Page()) return "";
+    const sidebar = state.x810114ActiveSidebarQueue?.length
+      ? state.x810114ActiveSidebarQueue
+      : collectX810114SidebarProfileQueue(document);
     const stored = readStoredGalleryQueue();
-    const discovered = collectGalleryQueueFromDocument(document, location.href);
-    const queue = (discovered.length > stored.length ? discovered : stored)
+    const queue = (sidebar.length ? sidebar : stored)
       .map(normalizedPageUrl)
       .filter(isQueueCandidateUrl);
-    if (queue.length < 2) return "";
-    const activeUrl = normalizedPageUrl(location.href);
+    if (!queue.length) return "";
+    const activeUrl = activeGalleryQueueUrl();
     let index = galleryQueueIndexForUrl(queue, activeUrl);
-    if (index < 0 && !isQueueCandidateUrl(activeUrl)) return delta > 0 ? queue[0] : queue[queue.length - 1];
-    if (index < 0) index = 0;
-    const next = (index + delta + queue.length) % queue.length;
-    return samePageUrl(queue[next], activeUrl) ? "" : queue[next];
+    const recent = new Set((state.x810114RecentQueue || []).map((url) => normalizedPageUrl(url).toLowerCase()).filter(Boolean));
+    const direction = delta >= 0 ? 1 : -1;
+
+    function usable(url) {
+      return url && !samePageUrl(url, activeUrl);
+    }
+
+    if (index >= 0) {
+      for (let step = 1; step <= queue.length; step += 1) {
+        const candidate = queue[(index + step * direction + queue.length) % queue.length];
+        if (usable(candidate) && !recent.has(candidate.toLowerCase())) return candidate;
+      }
+      for (let step = 1; step <= queue.length; step += 1) {
+        const candidate = queue[(index + step * direction + queue.length) % queue.length];
+        if (usable(candidate)) return candidate;
+      }
+      return "";
+    }
+
+    const ordered = direction > 0 ? queue : queue.slice().reverse();
+    return ordered.find((candidate) => usable(candidate) && !recent.has(candidate.toLowerCase()))
+      || ordered.find(usable)
+      || "";
+  }
+
+  function rememberX810114QueueVisit(target) {
+    if (!isGenericX810114Page()) return;
+    const visits = [
+      ...(state.x810114RecentQueue || []),
+      activeGalleryQueueUrl(),
+      normalizedPageUrl(target)
+    ].filter(isQueueCandidateUrl);
+    const deduped = [];
+    const seen = new Set();
+    for (let i = visits.length - 1; i >= 0; i -= 1) {
+      const url = visits[i];
+      const key = url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.unshift(url);
+    }
+    state.x810114RecentQueue = deduped.slice(-12);
   }
 
   function syncGalleryQueueButtons() {
@@ -1219,6 +1271,7 @@
     const previousQueueUrl = state.galleryQueueCurrentUrl;
     const genericTarget = GENERIC_X810114_RE.test(targetUrl);
     let targetDoc = null;
+    let queueDoc = null;
     if (!genericTarget) {
       let html = "";
       try {
@@ -1234,6 +1287,15 @@
       }
       if (!targetDoc?.documentElement) return false;
       targetDoc.documentElement.dataset.xivBase = targetUrl;
+      queueDoc = targetDoc;
+    } else {
+      try {
+        const html = await fetchHtml(targetUrl, previousQueueUrl || location.href);
+        queueDoc = new DOMParser().parseFromString(html, "text/html");
+        queueDoc.documentElement.dataset.xivBase = targetUrl;
+      } catch {
+        queueDoc = null;
+      }
     }
     updateStatus("正在加载下一组");
     saveViewerPosition();
@@ -1274,7 +1336,7 @@
       }
     }
 
-    refreshGalleryQueue(targetDoc || document, targetUrl);
+    refreshGalleryQueue(queueDoc || targetDoc || document, targetUrl);
     renderImages();
     applyMediaFilter();
     updateCounter();
@@ -1473,6 +1535,7 @@
       updateStatus("没有可切换的套图");
       return;
     }
+    rememberX810114QueueVisit(target);
     const selfieTarget = isSelfieGalleryQueueUrl(target);
     if (!selfieTarget) {
       try {
