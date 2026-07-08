@@ -151,6 +151,7 @@
     restorePosition: null,
     restoreStartedAt: 0,
     restoreTimer: 0,
+    restoringPosition: false,
     positionSaveTimer: 0,
     renderQueue: [],
     renderFrame: 0,
@@ -323,7 +324,7 @@
     #xiv-stage {
       position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
       overflow-anchor: none;
-      scroll-behavior: smooth; -webkit-overflow-scrolling: touch;
+      scroll-behavior: auto; -webkit-overflow-scrolling: touch;
       scrollbar-width: thin; scrollbar-color: #777 #111; padding: 54px 12px 18px;
       box-sizing: border-box;
     }
@@ -4105,6 +4106,9 @@
       control.addEventListener("change", onSettingsControlChange);
     });
     state.stage.addEventListener("scroll", onScroll, { passive: true });
+    state.stage.addEventListener("wheel", cancelViewerPositionRestoreForUser, { passive: true });
+    state.stage.addEventListener("touchstart", cancelViewerPositionRestoreForUser, { passive: true });
+    state.stage.addEventListener("pointerdown", cancelViewerPositionRestoreForUser, { passive: true });
     state.stage.addEventListener("click", onStageCaptureClick, true);
     state.stage.addEventListener("pointerdown", onStagePointerDown);
     state.stage.addEventListener("pointermove", onStagePointerMove);
@@ -4558,6 +4562,13 @@
     state.restoreTimer = window.setTimeout(restoreViewerPosition, 90);
   }
 
+  function cancelViewerPositionRestoreForUser(event = null) {
+    if (!state.restorePosition || state.restoringPosition) return;
+    if (event && event.isTrusted === false) return;
+    clearTimeout(state.restoreTimer);
+    state.restorePosition = null;
+  }
+
   function restoreViewerPosition() {
     const saved = state.restorePosition;
     if (!state.active || !saved || !state.stage) return;
@@ -4567,8 +4578,10 @@
       : allTiles().find((item) => Number(item.dataset.index || 0) === saved.index);
 
     if (tile) {
-      tile.scrollIntoView({ block: "start", inline: "nearest" });
+      state.restoringPosition = true;
+      tile.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
       state.stage.scrollTop = Math.max(0, state.stage.scrollTop - 54);
+      requestAnimationFrame(() => { state.restoringPosition = false; });
       if (saved.lightboxOpen) restoreLightboxFromPosition(saved);
       state.restorePosition = null;
       return;
@@ -4583,7 +4596,9 @@
       return;
     }
 
+    state.restoringPosition = true;
     state.stage.scrollTop = Math.min(saved.scrollTop, Math.max(0, state.stage.scrollHeight - state.stage.clientHeight));
+    requestAnimationFrame(() => { state.restoringPosition = false; });
     if (saved.lightboxOpen) restoreLightboxFromPosition(saved);
     state.restorePosition = null;
   }
@@ -6148,6 +6163,9 @@
       return;
     }
     if (!state.active) return;
+    if (!isTyping && ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+      cancelViewerPositionRestoreForUser(event);
+    }
     if (state.lightbox?.dataset.active === "true" && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       claimEvent(event);
       if (event.repeat) return;

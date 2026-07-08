@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "瀑光 FlowLens",
-  "version": "1.9.8",
+  "version": "1.9.9",
   "description": "Collect page images and videos into a fullscreen waterfall viewer with original-size viewing, slideshow controls, and ZIP download.",
   "permissions": [
     "activeTab",
