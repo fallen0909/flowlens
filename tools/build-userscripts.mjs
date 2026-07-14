@@ -72,6 +72,9 @@ function header({ name, namespace, description, output, additions = [] }) {
 // @grant        GM_download
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_openInTab
+// @connect      localhost
+// @connect      127.0.0.1
 // @downloadURL  ${baseUrl}/${output}
 // @updateURL    ${baseUrl}/${output}
 ${requires}

@@ -1,1 +1,1 @@
-{"version":"2.0.2","desktop":{"version":"2.0.2","recommendedEntry":"flowlens-desktop.user.js"},"mobile":{"version":"2.0.2","entry":"flowlens-mobile-all.user.js","loader":"multi-file-require-loader"}}
+{"version":"2.0.3","desktop":{"version":"2.0.3","recommendedEntry":"flowlens-desktop.user.js"},"mobile":{"version":"2.0.3","entry":"flowlens-mobile-all.user.js","loader":"multi-file-require-loader"}}

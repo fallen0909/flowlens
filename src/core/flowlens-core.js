@@ -8,6 +8,9 @@
 // @noframes
 // @grant        GM_xmlhttpRequest
 // @grant        GM_download
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_openInTab
 // @connect      *
 // ==/UserScript==
 
@@ -575,6 +578,30 @@
     .xiv-link-bridge-status { padding: 0 12px 9px; border-bottom: 1px solid rgba(127,127,127,.14); color: rgba(127,127,127,.8); font: 700 11px/1.3 system-ui, sans-serif; }
     .xiv-link-bridge-status[data-ready="true"] { color: #2d9b67; }
     .xiv-link-bridge-status[data-error="true"] { color: #d45555; }
+    .xiv-cd2-settings {
+      margin-top: 12px; padding: 12px; border: 1px solid rgba(127,127,127,.2); border-radius: 14px;
+      background: linear-gradient(145deg, rgba(49,91,216,.09), rgba(127,127,127,.04));
+    }
+    .xiv-cd2-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .xiv-cd2-settings-head strong { font: 900 13px/1.2 system-ui, sans-serif; }
+    .xiv-cd2-settings-head span { color: #6388ff; font: 850 10px/1 system-ui, sans-serif; letter-spacing: .04em; }
+    #xiv-root[data-theme="light"] .xiv-cd2-settings-head span { color: #315bd8; }
+    .xiv-cd2-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .xiv-cd2-field { display: grid; gap: 5px; min-width: 0; color: rgba(127,127,127,.92); font: 750 10px/1.2 system-ui, sans-serif; }
+    .xiv-cd2-field[data-wide="true"] { grid-column: 1 / -1; }
+    .xiv-cd2-field input {
+      box-sizing: border-box; width: 100%; height: 36px; padding: 0 10px; border: 1px solid rgba(127,127,127,.24);
+      border-radius: 9px; outline: none; background: rgba(15,16,19,.46); color: inherit; font: 700 11px/1 ui-monospace, Consolas, monospace;
+    }
+    #xiv-root[data-theme="light"] .xiv-cd2-field input { background: rgba(255,255,255,.82); }
+    .xiv-cd2-field input:focus { border-color: #5275df; box-shadow: 0 0 0 3px rgba(49,91,216,.13); }
+    .xiv-cd2-controls { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .xiv-cd2-controls button { min-height: 32px; padding: 0 11px; border: 0; border-radius: 9px; background: rgba(127,127,127,.14); color: inherit; cursor: pointer; font: 850 11px/1 system-ui, sans-serif; }
+    .xiv-cd2-controls [data-cd2-action="save"] { background: #315bd8; color: #fff; }
+    .xiv-cd2-settings-status { min-height: 15px; margin-top: 8px; color: rgba(127,127,127,.78); font: 700 10px/1.45 system-ui, sans-serif; }
+    .xiv-cd2-settings-status[data-state="ready"] { color: #2d9b67; }
+    .xiv-cd2-settings-status[data-state="error"] { color: #d45555; }
+    @media (max-width: 520px) { .xiv-cd2-grid { grid-template-columns: 1fr; } .xiv-cd2-field[data-wide="true"] { grid-column: auto; } }
     .xiv-link-list { max-height: min(58vh, 470px); overflow: auto; padding: 7px; overscroll-behavior: contain; }
     .xiv-link-row { display: grid; grid-template-columns: 48px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 58px; padding: 7px 8px; border-radius: 11px; }
     .xiv-link-row:hover { background: rgba(127,127,127,.09); }
@@ -1518,8 +1545,17 @@
     }
   }
 
-  let cd2RequestSequence = 0;
-  const cd2PendingRequests = new Map();
+  const CD2_CONFIG_KEY = "flowlens-cd2-direct-v1";
+  const CD2_SERVICE = "clouddrive.CloudDriveFileSrv";
+  const CD2_DEFAULT_CONFIG = Object.freeze({
+    baseUrl: "http://localhost:19798",
+    cloudPath: "/115/云下载/临时播放",
+    apiToken: "",
+    maxWaitMinutes: 30
+  });
+  const cd2TextEncoder = new TextEncoder();
+  const cd2TextDecoder = new TextDecoder();
+  let cd2SessionConfig = { ...CD2_DEFAULT_CONFIG };
 
   function setCd2BridgeStatus(text, stateName = "") {
     const node = state.linkGrabberPanel?.querySelector?.(".xiv-link-bridge-status");
@@ -1529,54 +1565,514 @@
     node.dataset.error = stateName === "error" ? "true" : "false";
   }
 
-  function requestCd2Action(action, links = [], timeoutMs = 90000) {
-    const requestId = `flowlens-cd2-${Date.now()}-${++cd2RequestSequence}`;
-    return new Promise((resolve) => {
-      const timer = window.setTimeout(() => {
-        cd2PendingRequests.delete(requestId);
-        resolve({ ok: false, error: "未检测到“115 Magnet Play”扩展，请先在该扩展中启用当前站点。" });
-      }, timeoutMs);
-      cd2PendingRequests.set(requestId, { resolve, timer });
-      window.postMessage({ source: "flowlens", type: "cd2-magnet-request", requestId, action, links }, "*");
+  function cd2Concat(...parts) {
+    const length = parts.reduce((total, part) => total + part.length, 0);
+    const output = new Uint8Array(length);
+    let offset = 0;
+    parts.forEach((part) => { output.set(part, offset); offset += part.length; });
+    return output;
+  }
+
+  function cd2Varint(value) {
+    let next = BigInt(value);
+    const bytes = [];
+    while (next >= 0x80n) {
+      bytes.push(Number((next & 0x7fn) | 0x80n));
+      next >>= 7n;
+    }
+    bytes.push(Number(next));
+    return Uint8Array.from(bytes);
+  }
+
+  function cd2StringField(number, value) {
+    const data = cd2TextEncoder.encode(String(value));
+    return cd2Concat(cd2Varint((number << 3) | 2), cd2Varint(data.length), data);
+  }
+
+  function cd2VarintField(number, value) {
+    return cd2Concat(cd2Varint(number << 3), cd2Varint(value));
+  }
+
+  function cd2Message(fields) {
+    return cd2Concat(...fields.filter(Boolean));
+  }
+
+  function cd2ReadVarint(bytes, cursor) {
+    let value = 0n;
+    let shift = 0n;
+    while (cursor.index < bytes.length) {
+      const byte = bytes[cursor.index++];
+      value |= BigInt(byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) return value;
+      shift += 7n;
+    }
+    throw new Error("CloudDrive2 返回了损坏的数据。");
+  }
+
+  function cd2ParseProto(bytes) {
+    const fields = new Map();
+    const cursor = { index: 0 };
+    const remember = (field, entry) => {
+      if (!fields.has(field)) fields.set(field, []);
+      fields.get(field).push(entry);
+    };
+    while (cursor.index < bytes.length) {
+      const tag = Number(cd2ReadVarint(bytes, cursor));
+      const field = tag >> 3;
+      const wire = tag & 7;
+      if (wire === 0) {
+        remember(field, { wire, varint: cd2ReadVarint(bytes, cursor) });
+      } else if (wire === 2) {
+        const length = Number(cd2ReadVarint(bytes, cursor));
+        const data = bytes.slice(cursor.index, cursor.index + length);
+        cursor.index += length;
+        remember(field, { wire, bytes: data, string: cd2TextDecoder.decode(data) });
+      } else if (wire === 1) {
+        cursor.index += 8;
+      } else if (wire === 5) {
+        cursor.index += 4;
+      } else {
+        throw new Error(`CloudDrive2 返回了不支持的字段类型 ${wire}。`);
+      }
+    }
+    return fields;
+  }
+
+  function cd2ParseFrames(value) {
+    const bytes = value instanceof Uint8Array ? value : new Uint8Array(value || 0);
+    const messages = [];
+    const trailers = {};
+    let offset = 0;
+    while (offset + 5 <= bytes.length) {
+      const flags = bytes[offset];
+      const length = new DataView(bytes.buffer, bytes.byteOffset + offset + 1, 4).getUint32(0, false);
+      const start = offset + 5;
+      const end = start + length;
+      if (end > bytes.length) break;
+      const data = bytes.slice(start, end);
+      if ((flags & 0x80) === 0x80) {
+        cd2TextDecoder.decode(data).split(/\r?\n/).forEach((line) => {
+          const index = line.indexOf(":");
+          if (index < 1) return;
+          const key = line.slice(0, index).toLowerCase();
+          const raw = line.slice(index + 1).trim();
+          try { trailers[key] = decodeURIComponent(raw); } catch { trailers[key] = raw; }
+        });
+      } else {
+        messages.push(data);
+      }
+      offset = end;
+    }
+    return { messages, trailers };
+  }
+
+  function normalizeCd2Config(value = {}) {
+    const baseUrl = String(value.baseUrl || CD2_DEFAULT_CONFIG.baseUrl).trim().replace(/\/+$/, "");
+    const rawPath = String(value.cloudPath || CD2_DEFAULT_CONFIG.cloudPath).trim().replace(/\\/g, "/");
+    const cloudPath = `${rawPath.startsWith("/") ? "" : "/"}${rawPath}`.replace(/\/+$/, "") || "/";
+    return {
+      baseUrl,
+      cloudPath,
+      apiToken: String(value.apiToken || "").trim().replace(/^Bearer\s+/i, ""),
+      maxWaitMinutes: Math.min(180, Math.max(1, Number(value.maxWaitMinutes) || CD2_DEFAULT_CONFIG.maxWaitMinutes))
+    };
+  }
+
+  async function readCd2Config() {
+    let stored = null;
+    try {
+      if (typeof GM_getValue === "function") stored = await GM_getValue(CD2_CONFIG_KEY, null);
+    } catch {}
+    if (!stored) {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          const result = await chrome.storage.local.get(CD2_CONFIG_KEY);
+          stored = result?.[CD2_CONFIG_KEY];
+        }
+      } catch {}
+    }
+    if (typeof stored === "string") {
+      try { stored = JSON.parse(stored); } catch { stored = null; }
+    }
+    cd2SessionConfig = normalizeCd2Config(stored || cd2SessionConfig);
+    return { ...cd2SessionConfig };
+  }
+
+  async function writeCd2Config(value) {
+    cd2SessionConfig = normalizeCd2Config(value);
+    let stored = false;
+    try {
+      if (typeof GM_setValue === "function") {
+        await GM_setValue(CD2_CONFIG_KEY, JSON.stringify(cd2SessionConfig));
+        stored = true;
+      }
+    } catch {}
+    if (!stored) {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          await chrome.storage.local.set({ [CD2_CONFIG_KEY]: cd2SessionConfig });
+          stored = true;
+        }
+      } catch {}
+    }
+    return { ...cd2SessionConfig };
+  }
+
+  function cd2RequestArrayBuffer(url, headers, body) {
+    if (typeof GM_xmlhttpRequest === "function") {
+      return new Promise((resolve, reject) => {
+        GM_xmlhttpRequest({
+          method: "POST",
+          url,
+          headers,
+          data: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+          responseType: "arraybuffer",
+          timeout: 30000,
+          onload: (response) => resolve({
+            status: response.status,
+            body: response.response || new ArrayBuffer(0),
+            responseHeaders: String(response.responseHeaders || "")
+          }),
+          ontimeout: () => reject(new Error("连接 CloudDrive2 超时。")),
+          onerror: () => reject(new Error("无法连接 CloudDrive2，请确认服务已启动。"))
+        });
+      });
+    }
+    return fetch(url, { method: "POST", headers, body }).then(async (response) => {
+      const responseHeaders = [...response.headers.entries()].map(([key, value]) => `${key}: ${value}`).join("\n");
+      return { status: response.status, body: await response.arrayBuffer(), responseHeaders };
     });
   }
 
-  function onCd2BridgeMessage(event) {
-    if (event.source !== window) return;
-    const message = event.data || {};
-    if (message.source !== "cd2-magnet-play" || message.type !== "cd2-magnet-response") return;
-    const pending = cd2PendingRequests.get(message.requestId);
-    if (!pending) return;
-    window.clearTimeout(pending.timer);
-    cd2PendingRequests.delete(message.requestId);
-    pending.resolve(message.response || { ok: false, error: "磁力播放扩展没有返回结果。" });
+  function cd2ResponseHeader(headers, name) {
+    const match = String(headers || "").match(new RegExp(`^${name}:\\s*(.+)$`, "im"));
+    return match?.[1]?.trim() || "";
+  }
+
+  async function cd2Grpc(method, payload, config, { stream = false } = {}) {
+    if (!/^https?:\/\//i.test(config.baseUrl)) throw new Error("CloudDrive2 地址必须以 http:// 或 https:// 开头。");
+    if (!config.apiToken) throw new Error("请先在瀑光设置里填写 CloudDrive2 API Token。");
+    const frame = new Uint8Array(payload.length + 5);
+    new DataView(frame.buffer).setUint32(1, payload.length, false);
+    frame.set(payload, 5);
+    const headers = {
+      "content-type": "application/grpc-web+proto",
+      "x-grpc-web": "1",
+      authorization: `Bearer ${config.apiToken}`
+    };
+    const response = await cd2RequestArrayBuffer(`${config.baseUrl}/${CD2_SERVICE}/${method}`, headers, frame);
+    const parsed = cd2ParseFrames(response.body);
+    const grpcStatus = parsed.trailers["grpc-status"] || cd2ResponseHeader(response.responseHeaders, "grpc-status");
+    if (response.status < 200 || response.status >= 300 || (grpcStatus && grpcStatus !== "0")) {
+      const rawMessage = parsed.trailers["grpc-message"] || cd2ResponseHeader(response.responseHeaders, "grpc-message");
+      let message = rawMessage;
+      try { message = decodeURIComponent(rawMessage); } catch {}
+      message ||= `${method} 请求失败（HTTP ${response.status} / gRPC ${grpcStatus || "未知"}）`;
+      if (grpcStatus === "16") throw new Error("CloudDrive2 API Token 无效或已过期。");
+      throw new Error(message);
+    }
+    return stream ? parsed.messages : (parsed.messages[0] || new Uint8Array());
+  }
+
+  function parseCd2File(bytes) {
+    const fields = cd2ParseProto(bytes);
+    const text = (field) => fields.get(field)?.[0]?.string || "";
+    const number = (field) => Number(fields.get(field)?.[0]?.varint || 0n);
+    return {
+      id: text(1),
+      name: text(2),
+      fullPathName: text(3),
+      size: number(4),
+      fileType: number(5),
+      isDirectory: number(30) === 1 || number(5) === 0
+    };
+  }
+
+  function parseCd2FileReplies(messages) {
+    const files = [];
+    messages.forEach((message) => {
+      const fields = cd2ParseProto(message);
+      (fields.get(1) || []).forEach((entry) => {
+        if (entry.bytes) files.push(parseCd2File(entry.bytes));
+      });
+    });
+    return files.filter((file) => file.fullPathName || file.name);
+  }
+
+  async function getCd2SubFiles(config, path, forceRefresh = false) {
+    const payload = cd2Message([cd2StringField(1, path), forceRefresh ? cd2VarintField(2, 1) : null]);
+    return parseCd2FileReplies(await cd2Grpc("GetSubFiles", payload, config, { stream: true }));
+  }
+
+  async function searchCd2Files(config, searchFor) {
+    const payload = cd2Message([
+      cd2StringField(1, config.cloudPath),
+      cd2StringField(2, searchFor),
+      cd2VarintField(4, 1)
+    ]);
+    return parseCd2FileReplies(await cd2Grpc("GetSearchResults", payload, config, { stream: true }));
+  }
+
+  function parseCd2FileOperation(bytes) {
+    const fields = cd2ParseProto(bytes);
+    return {
+      success: Number(fields.get(1)?.[0]?.varint || 0n) === 1,
+      error: fields.get(2)?.[0]?.string || ""
+    };
+  }
+
+  function parseCd2Offline(bytes) {
+    const fields = cd2ParseProto(bytes);
+    const text = (field) => fields.get(field)?.[0]?.string || "";
+    const number = (field) => Number(fields.get(field)?.[0]?.varint || 0n);
+    return { name: text(1), size: number(2), url: text(3), status: number(4), infoHash: text(5), fileId: text(6), parentId: text(8) };
+  }
+
+  async function listCd2Offline(config) {
+    const response = await cd2Grpc("ListOfflineFilesByPath", cd2StringField(1, config.cloudPath), config);
+    const fields = cd2ParseProto(response);
+    return (fields.get(1) || []).map((entry) => parseCd2Offline(entry.bytes)).filter(Boolean);
+  }
+
+  function downloadLinkHash(link) {
+    if (/^magnet:/i.test(link)) {
+      try { return new URL(link).searchParams.get("xt")?.replace(/^urn:btih:/i, "") || ""; } catch { return ""; }
+    }
+    return String(link).split("|")[4] || "";
+  }
+
+  function downloadLinkName(link) {
+    if (/^magnet:/i.test(link)) {
+      try { return new URL(link).searchParams.get("dn") || ""; } catch { return ""; }
+    }
+    const raw = String(link).split("|")[2] || "";
+    try { return decodeURIComponent(raw); } catch { return raw; }
+  }
+
+  async function ensureCd2Folder(config) {
+    const parts = config.cloudPath.split("/").filter(Boolean);
+    if (parts.length < 2) return;
+    let parent = `/${parts[0]}`;
+    for (let index = 1; index < parts.length; index += 1) {
+      const name = parts[index];
+      try {
+        await cd2Grpc("FindFileByPath", cd2Message([cd2StringField(1, parent), cd2StringField(2, name)]), config);
+      } catch (error) {
+        if (/token|鉴权|连接|超时/i.test(String(error?.message || error))) throw error;
+        const result = await cd2Grpc("CreateFolder", cd2Message([cd2StringField(1, parent), cd2StringField(2, name)]), config);
+        const outer = cd2ParseProto(result);
+        const operation = outer.get(2)?.[0]?.bytes ? parseCd2FileOperation(outer.get(2)[0].bytes) : { success: true };
+        if (!operation.success && !/exist|存在/i.test(operation.error)) throw new Error(operation.error || `无法创建 ${parent}/${name}`);
+      }
+      parent = `${parent}/${name}`;
+    }
+  }
+
+  async function addCd2Offline(config, link) {
+    const response = await cd2Grpc("AddOfflineFiles", cd2Message([
+      cd2StringField(1, link),
+      cd2StringField(2, config.cloudPath),
+      cd2VarintField(3, 5)
+    ]), config);
+    const result = parseCd2FileOperation(response);
+    if (!result.success && !/exist|duplicate|重复|已添加/i.test(result.error)) throw new Error(result.error || "CloudDrive2 添加离线任务失败。");
+    return result;
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "").toLowerCase().replace(/\.[a-z0-9]{2,5}$/i, "").replace(/[^a-z0-9\u3400-\u9fff]+/g, "");
+  }
+
+  function videoFileScore(file, expectedName) {
+    if (file.isDirectory || !/\.(?:mp4|mkv|webm|mov|m4v|avi|wmv|flv|ts|m2ts)$/i.test(file.name || file.fullPathName)) return -1;
+    const expected = normalizeSearchText(expectedName);
+    const actual = normalizeSearchText(file.name || file.fullPathName);
+    const nameBonus = expected && (actual.includes(expected) || expected.includes(actual)) ? 1e15 : 0;
+    return nameBonus + Math.max(0, Number(file.size) || 0);
+  }
+
+  async function expandCd2Directories(config, files, expectedName) {
+    const output = [...files];
+    const queue = files.filter((file) => file.isDirectory && file.fullPathName).slice(0, 12).map((file) => ({ path: file.fullPathName, depth: 0 }));
+    const seen = new Set(queue.map((item) => item.path));
+    while (queue.length && seen.size <= 80) {
+      const current = queue.shift();
+      let children = [];
+      try { children = await getCd2SubFiles(config, current.path, false); } catch { continue; }
+      output.push(...children);
+      if (current.depth >= 4) continue;
+      children.filter((file) => file.isDirectory && file.fullPathName).forEach((file) => {
+        if (seen.has(file.fullPathName)) return;
+        seen.add(file.fullPathName);
+        queue.push({ path: file.fullPathName, depth: current.depth + 1 });
+      });
+      if (output.some((file) => videoFileScore(file, expectedName) >= 1e15)) break;
+    }
+    return output;
+  }
+
+  async function findCd2Playable(config, names) {
+    const terms = [];
+    names.filter(Boolean).forEach((name) => {
+      const clean = String(name).replace(/\.[a-z0-9]{2,5}$/i, "").trim();
+      const code = clean.match(/[a-z]{2,10}[-_ ]?\d{2,6}/i)?.[0];
+      [code, clean.slice(0, 80)].filter((item) => item && item.length >= 3).forEach((item) => {
+        if (!terms.includes(item)) terms.push(item);
+      });
+    });
+    let candidates = [];
+    for (const term of terms.slice(0, 4)) {
+      try { candidates.push(...await searchCd2Files(config, term)); } catch {}
+      if (candidates.some((file) => videoFileScore(file, names[0]) >= 0)) break;
+    }
+    if (!candidates.length) {
+      try {
+        const top = await getCd2SubFiles(config, config.cloudPath, true);
+        const expected = names.map(normalizeSearchText).filter(Boolean);
+        candidates = top.filter((file) => {
+          const actual = normalizeSearchText(file.name);
+          return expected.some((value) => actual.includes(value) || value.includes(actual));
+        });
+      } catch {}
+    }
+    candidates = await expandCd2Directories(config, candidates, names[0]);
+    const videos = candidates.filter((file) => videoFileScore(file, names[0]) >= 0);
+    return videos.sort((a, b) => videoFileScore(b, names[0]) - videoFileScore(a, names[0]))[0] || null;
+  }
+
+  async function getCd2PlaybackUrl(config, file) {
+    const response = await cd2Grpc("GetDownloadUrlPath", cd2Message([
+      cd2StringField(1, file.fullPathName),
+      cd2VarintField(2, 1),
+      cd2VarintField(3, 1)
+    ]), config);
+    const fields = cd2ParseProto(response);
+    const directUrl = fields.get(3)?.[0]?.string || "";
+    if (/^https?:\/\//i.test(directUrl)) return directUrl;
+    const template = fields.get(1)?.[0]?.string || "";
+    const base = new URL(config.baseUrl);
+    if (template) {
+      const path = template
+        .replaceAll("{SCHEME}", base.protocol.replace(":", ""))
+        .replaceAll("{HOST}", base.host)
+        .replaceAll("{PREVIEW}", "true");
+      return new URL(path, base.origin).href;
+    }
+    const encoded = encodeURIComponent(file.fullPathName.replace(/^\/+/, ""));
+    return `${base.origin}/static/${base.protocol.replace(":", "")}/${base.host}/true/${encoded}`;
+  }
+
+  async function testCd2Direct(config = null) {
+    const active = normalizeCd2Config(config || await readCd2Config());
+    const files = await getCd2SubFiles(active, active.cloudPath, false);
+    return { ok: true, count: files.length, config: active };
+  }
+
+  async function saveCd2Links(links, onProgress) {
+    const config = await readCd2Config();
+    await ensureCd2Folder(config);
+    let successCount = 0;
+    const results = [];
+    for (let index = 0; index < links.length; index += 1) {
+      onProgress?.(`正在提交 ${index + 1}/${links.length} 到 115…`);
+      try {
+        await addCd2Offline(config, links[index]);
+        successCount += 1;
+        results.push({ ok: true, link: links[index] });
+      } catch (error) {
+        results.push({ ok: false, link: links[index], error: String(error?.message || error) });
+      }
+    }
+    if (!successCount) throw new Error(results[0]?.error || "没有任务提交成功。");
+    return { ok: true, successCount, results };
+  }
+
+  async function playCd2Link(link, onProgress) {
+    const config = await readCd2Config();
+    await ensureCd2Folder(config);
+    const hash = downloadLinkHash(link).toLowerCase();
+    const linkName = downloadLinkName(link);
+    let offline = null;
+    try {
+      offline = (await listCd2Offline(config)).find((item) => hash && item.infoHash.toLowerCase() === hash) || null;
+    } catch {}
+    if (!offline) await addCd2Offline(config, link);
+    const deadline = Date.now() + config.maxWaitMinutes * 60000;
+    let lastSearch = 0;
+    while (Date.now() < deadline) {
+      let list = [];
+      try { list = await listCd2Offline(config); } catch {}
+      offline = list.find((item) => (hash && item.infoHash.toLowerCase() === hash) || item.url === link) || offline;
+      if (offline?.status === 3) throw new Error(`115 离线任务失败：${offline.name || linkName || "未知任务"}`);
+      const finished = offline?.status === 2;
+      onProgress?.(finished ? "转存完成，正在定位视频文件…" : `115 正在离线下载${offline?.name ? `：${offline.name}` : "…"}`);
+      if ((finished || !offline) && Date.now() - lastSearch > 4500) {
+        lastSearch = Date.now();
+        const file = await findCd2Playable(config, [offline?.name, linkName]);
+        if (file) return { ok: true, file, url: await getCd2PlaybackUrl(config, file) };
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    }
+    throw new Error(`等待播放文件超时（${config.maxWaitMinutes} 分钟），任务仍保留在 115。`);
   }
 
   async function probeCd2Bridge() {
-    setCd2BridgeStatus("磁力播放扩展：检测中…");
-    const response = await requestCd2Action("ping", [], 1600);
-    if (response?.ok) setCd2BridgeStatus("磁力播放扩展已连接 · 可保存到 CD2/115 或在浏览器播放", "ready");
-    else setCd2BridgeStatus(response?.error || "磁力播放扩展未连接", "error");
-    return response;
+    const config = await readCd2Config();
+    if (!config.apiToken) {
+      setCd2BridgeStatus("CloudDrive2 直连：未配置 API Token · 请到瀑光设置中填写", "error");
+      return { ok: false };
+    }
+    setCd2BridgeStatus("CloudDrive2 直连：检测中…");
+    try {
+      const response = await testCd2Direct(config);
+      setCd2BridgeStatus(`CloudDrive2 已直连 · 目标 ${config.cloudPath} · ${response.count} 项`, "ready");
+      return response;
+    } catch (error) {
+      setCd2BridgeStatus(String(error?.message || error), "error");
+      return { ok: false, error: String(error?.message || error) };
+    }
+  }
+
+  function prepareCd2PlaybackWindow() {
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) return null;
+    try {
+      popup.document.title = "瀑光 · 等待播放";
+      popup.document.body.innerHTML = '<main style="min-height:100vh;display:grid;place-items:center;background:#101114;color:#f5f5f4;font:700 16px/1.6 system-ui"><div><b style="display:block;font-size:22px">正在转存到 115</b><span style="color:#a1a1aa">文件可播放后会自动打开</span></div></main>';
+    } catch {}
+    return popup;
   }
 
   async function runCd2Action(action, links, button = null) {
     const clean = (links || []).filter((url) => /^(?:magnet:\?|ed2k:\/\/)/i.test(String(url || "")));
     if (!clean.length) return;
     const original = button?.textContent || "";
+    const playbackWindow = action === "play-browser" ? prepareCd2PlaybackWindow() : null;
     if (button) {
       button.disabled = true;
       button.textContent = action === "play-browser" ? "启动中" : "保存中";
     }
-    setCd2BridgeStatus(action === "play-browser" ? "正在等待 CloudDrive2 返回可播放文件…" : `正在提交 ${clean.length} 条链接到 CD2/115…`);
-    const response = await requestCd2Action(action, clean);
-    if (response?.ok) {
-      const successCount = Number(response.successCount ?? clean.length);
-      setCd2BridgeStatus(action === "play-browser" ? "已提交，文件可用后会在浏览器打开" : `已保存 ${successCount}/${clean.length} 条到 CD2/115`, "ready");
-      updateStatus(action === "play-browser" ? "已提交浏览器播放" : `已提交 ${successCount} 条到 115`);
-    } else {
-      setCd2BridgeStatus(response?.error || "提交失败", "error");
-      updateStatus(response?.error || "提交失败");
+    let response = null;
+    try {
+      if (action === "play-browser") {
+        response = await playCd2Link(clean[0], (text) => setCd2BridgeStatus(text));
+        if (playbackWindow && !playbackWindow.closed) playbackWindow.location.replace(response.url);
+        else if (typeof GM_openInTab === "function") GM_openInTab(response.url, { active: true, insert: true });
+        else window.open(response.url, "_blank", "noopener");
+        setCd2BridgeStatus(`已找到视频：${response.file.name}`, "ready");
+        updateStatus("已打开 CloudDrive2 浏览器播放");
+      } else {
+        response = await saveCd2Links(clean, (text) => setCd2BridgeStatus(text));
+        const successCount = Number(response.successCount || 0);
+        setCd2BridgeStatus(`已提交 ${successCount}/${clean.length} 条到 ${cd2SessionConfig.cloudPath}`, "ready");
+        updateStatus(`已提交 ${successCount} 条到 115`);
+      }
+    } catch (error) {
+      const message = String(error?.message || error || "提交失败");
+      response = { ok: false, error: message };
+      if (playbackWindow && !playbackWindow.closed) playbackWindow.close();
+      setCd2BridgeStatus(message, "error");
+      updateStatus(message);
     }
     if (button) {
       button.disabled = false;
@@ -4333,6 +4829,59 @@
       if (control.type === "checkbox") control.checked = !!state.settings[key];
       else control.value = String(state.settings[key] ?? "");
     });
+    void syncCd2SettingsPanel();
+  }
+
+  async function syncCd2SettingsPanel() {
+    if (!state.settingsPanel) return;
+    const config = await readCd2Config();
+    state.settingsPanel.querySelectorAll("[data-cd2-setting]").forEach((control) => {
+      if (document.activeElement !== control) control.value = String(config[control.dataset.cd2Setting] ?? "");
+    });
+  }
+
+  function cd2ConfigFromSettingsPanel() {
+    const current = { ...cd2SessionConfig };
+    state.settingsPanel?.querySelectorAll?.("[data-cd2-setting]").forEach((control) => {
+      current[control.dataset.cd2Setting] = control.value;
+    });
+    return normalizeCd2Config(current);
+  }
+
+  function setCd2SettingsStatus(text, stateName = "") {
+    const node = state.settingsPanel?.querySelector?.(".xiv-cd2-settings-status");
+    if (!node) return;
+    node.textContent = text;
+    node.dataset.state = stateName;
+  }
+
+  async function onCd2SettingsAction(event) {
+    const button = event.target?.closest?.("[data-cd2-action]");
+    if (!button) return;
+    const action = button.dataset.cd2Action;
+    if (action === "tokens") {
+      const config = cd2ConfigFromSettingsPanel();
+      window.open(`${config.baseUrl}/?page=tokens`, "_blank", "noopener");
+      return;
+    }
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = action === "test" ? "检测中…" : "保存中…";
+    try {
+      const config = await writeCd2Config(cd2ConfigFromSettingsPanel());
+      if (action === "test") {
+        const result = await testCd2Direct(config);
+        setCd2SettingsStatus(`连接成功 · ${config.cloudPath} 当前 ${result.count} 项`, "ready");
+      } else {
+        setCd2SettingsStatus("设置已保存到油猴私有存储。", "ready");
+      }
+      await probeCd2Bridge();
+    } catch (error) {
+      setCd2SettingsStatus(String(error?.message || error), "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
   }
 
   function onSettingsControlChange(event) {
@@ -4541,6 +5090,17 @@
         <label class="xiv-setting-row"><span>打开时自动全屏</span><input type="checkbox" data-setting="autoFullscreen"></label>
         <label class="xiv-setting-row"><span>网格视频预览</span><input type="checkbox" data-setting="videoPreview"></label>
         <label class="xiv-setting-row"><span>主题</span><select class="xiv-select" data-setting="theme"><option value="system">跟随系统</option><option value="dark">深色</option><option value="light">浅色</option></select></label>
+        <section class="xiv-cd2-settings" aria-label="CloudDrive2 直连设置">
+          <div class="xiv-cd2-settings-head"><strong>CloudDrive2 直连</strong><span>无需磁力播放插件</span></div>
+          <div class="xiv-cd2-grid">
+            <label class="xiv-cd2-field" data-wide="true">服务地址<input type="url" data-cd2-setting="baseUrl" placeholder="http://localhost:19798"></label>
+            <label class="xiv-cd2-field" data-wide="true">115 转存目录<input type="text" data-cd2-setting="cloudPath" placeholder="/115/云下载/临时播放"></label>
+            <label class="xiv-cd2-field" data-wide="true">API Token<input type="password" data-cd2-setting="apiToken" autocomplete="off" placeholder="CloudDrive2 → API Tokens 中创建"></label>
+            <label class="xiv-cd2-field">播放等待（分钟）<input type="number" min="1" max="180" data-cd2-setting="maxWaitMinutes" value="30"></label>
+          </div>
+          <div class="xiv-cd2-controls"><button type="button" data-cd2-action="save">保存直连设置</button><button type="button" data-cd2-action="test">测试连接</button><button type="button" data-cd2-action="tokens">打开 Token 页面</button></div>
+          <div class="xiv-cd2-settings-status">Token 只保存在油猴/扩展私有存储，不写入当前网页。</div>
+        </section>
         <small>入口可以直接拖动，位置会保存。设置会自动保存，刷新网页后完全生效。</small>
       </div>
       <div class="xiv-panel xiv-diagnostics" data-panel="diagnostics">
@@ -4554,7 +5114,7 @@
       <div class="xiv-panel xiv-link-panel" data-panel="link-grabber" aria-label="下载链接抓取">
         <div class="xiv-link-head"><h3>页面下载链接</h3><span class="xiv-link-count">0 磁力 · 0 ED2K</span></div>
         <div class="xiv-link-actions"><button type="button" data-link-action="save-all">全部存115</button><button type="button" data-link-action="rescan">重新扫描</button><button type="button" data-link-action="copy-all">复制全部</button><button type="button" data-link-action="export">导出 TXT</button></div>
-        <div class="xiv-link-bridge-status">磁力播放扩展：等待检测</div>
+        <div class="xiv-link-bridge-status">CloudDrive2 直连：等待检测</div>
         <div class="xiv-link-list"></div>
       </div>
       <div id="xiv-lightbox"><img alt=""></div>
@@ -4634,6 +5194,7 @@
     state.root.querySelectorAll("[data-setting]").forEach((control) => {
       control.addEventListener("change", onSettingsControlChange);
     });
+    state.settingsPanel.addEventListener("click", onCd2SettingsAction);
     state.stage.addEventListener("scroll", onScroll, { passive: true });
     state.stage.addEventListener("wheel", cancelViewerPositionRestoreForUser, { passive: true });
     state.stage.addEventListener("touchstart", cancelViewerPositionRestoreForUser, { passive: true });
@@ -4652,7 +5213,6 @@
     window.addEventListener("click", onLightboxClick, true);
     window.addEventListener("wheel", onLightboxWheel, { capture: true, passive: false });
     window.addEventListener("message", onVideoFrameMessage);
-    window.addEventListener("message", onCd2BridgeMessage);
     window.addEventListener("keydown", onKeydown, true);
     window.addEventListener("keyup", onKeyRelease, true);
     window.addEventListener("keypress", onKeyRelease, true);

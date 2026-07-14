@@ -38,6 +38,8 @@ for (const path of [files.desktop, files.mobile]) {
   assert(!content.includes("src/patches/lightbox-control-fixes.js"), `${path} still loads the conflicting slideshow controller`);
   assert(content.includes(`src/patches/site-adapter-center.js?v=${version}`), `${path} is missing site adapter center patch`);
   assert(content.includes(`src/core/version.js?v=${version}`), `${path} has stale version center require`);
+  assert(content.includes("// @grant        GM_openInTab"), `${path} cannot open completed CloudDrive2 playback`);
+  assert(content.includes("// @connect      localhost"), `${path} cannot connect to local CloudDrive2`);
 }
 
 const index = await text(files.index);
@@ -81,7 +83,9 @@ assert(syncIndexesBody.includes("indexByKey") && !syncIndexesBody.includes("stat
 assert(core.includes('data-xiv="queue-list"') && core.includes("jumpToGalleryQueueIndex"), "gallery queue list navigation is missing");
 assert(core.includes('data-xiv="link-grabber"') && core.includes("collectPageDownloadLinks"), "magnet/ed2k link grabber is missing");
 assert(!core.includes("xiv-lightbox-link-grabber"), "link grabber should not appear in the lightbox");
-assert(core.includes("requestCd2Action") && core.includes('data-link-action="save-all"'), "CD2/115 bridge actions are missing");
+assert(core.includes("saveCd2Links") && core.includes("playCd2Link") && core.includes('data-link-action="save-all"'), "direct CD2/115 actions are missing");
+assert(core.includes('data-cd2-setting="apiToken"') && core.includes("GetDownloadUrlPath"), "CloudDrive2 direct settings or playback URL support is missing");
+assert(!core.includes("cd2-magnet-request") && !core.includes("115 Magnet Play"), "legacy companion extension bridge is still present");
 assert(core.includes("__flowLensHandleLightboxZoomWheel = lightboxWheelZoom"), "lightbox wheel zoom handler is not exposed");
 assert(core.includes("xiv-lightbox-zoom") && core.includes("syncLightboxZoomButton"), "lightbox zoom control is missing");
 assert(!core.includes("state.lightbox.innerHTML ="), "lightbox still destroys and rebuilds its controls during media switches");
