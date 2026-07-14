@@ -26,8 +26,15 @@
         visibility: hidden !important;
         pointer-events: none !important;
       }
+      #xiv-root {
+        contain: none !important;
+        transform: none !important;
+      }
+      #xiv-lightbox[data-active="true"] {
+        contain: none !important;
+        transform: none !important;
+      }
       #xiv-lightbox .xiv-lightbox-slideshow,
-      #xiv-lightbox .xiv-lightbox-link-grabber,
       #xiv-lightbox .xiv-lightbox-zoom,
       #xiv-lightbox .xiv-lightbox-fav,
       #xiv-lightbox .xiv-lightbox-close {
@@ -75,7 +82,6 @@
       #xiv-lightbox .xiv-lightbox-fav { right: ${RIGHT + SIZE + GAP}px !important; }
       #xiv-lightbox .xiv-lightbox-slideshow { right: ${RIGHT + (SIZE + GAP) * 2}px !important; }
       #xiv-lightbox .xiv-lightbox-zoom { right: ${RIGHT + (SIZE + GAP) * 3}px !important; }
-      #xiv-lightbox .xiv-lightbox-link-grabber { right: ${RIGHT + (SIZE + GAP) * 4}px !important; }
       #xiv-lightbox .xiv-lightbox-arrow {
         position: fixed !important;
         top: 50dvh !important;
@@ -109,8 +115,6 @@
       #xiv-lightbox .xiv-lightbox-slideshow::after,
       #xiv-lightbox .xiv-lightbox-zoom::before,
       #xiv-lightbox .xiv-lightbox-zoom::after,
-      #xiv-lightbox .xiv-lightbox-link-grabber::before,
-      #xiv-lightbox .xiv-lightbox-link-grabber::after,
       #xiv-lightbox .xiv-lightbox-fav::before,
       #xiv-lightbox .xiv-lightbox-fav::after,
       #xiv-lightbox .xiv-lightbox-close::before,
@@ -120,7 +124,6 @@
       }
       #xiv-lightbox .xiv-lightbox-slideshow svg,
       #xiv-lightbox .xiv-lightbox-zoom svg,
-      #xiv-lightbox .xiv-lightbox-link-grabber svg,
       #xiv-lightbox .xiv-lightbox-fav svg,
       #xiv-lightbox .xiv-lightbox-close svg {
         display: block !important;

@@ -25,7 +25,7 @@
   const css = `
     html.xiv-active,
     html.xiv-active body { margin: 0 !important; padding: 0 !important; background: #000 !important; overscroll-behavior: none !important; }
-    #xiv-root { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; overflow: hidden !important; background: #050505 !important; transform: translateZ(0); }
+    #xiv-root { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; overflow: hidden !important; background: #050505 !important; transform: none !important; }
     #xiv-root[data-theme="light"] { background: #f4f4f1 !important; color: #141414 !important; }
     @supports not (height: 100dvh) { #xiv-root { height: 100vh !important; max-height: 100vh !important; } }
     #xiv-root::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: max(env(safe-area-inset-top, 0px), 1px); background: #050505; z-index: 2; pointer-events: none; }

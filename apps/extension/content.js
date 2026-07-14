@@ -564,20 +564,27 @@
     .xiv-queue-arrow { opacity: .5; font-size: 18px; }
     .xiv-queue-empty { padding: 28px 16px; color: rgba(255,255,255,.58); text-align: center; font: 700 13px/1.5 system-ui, sans-serif; }
     #xiv-root[data-theme="light"] .xiv-queue-empty { color: rgba(0,0,0,.5); }
-    .xiv-link-panel { width: min(440px, calc(100vw - 24px)); padding: 0; overflow: hidden; border-radius: 18px; }
+    .xiv-link-panel { width: min(560px, calc(100vw - 24px)); padding: 0; overflow: hidden; border-radius: 18px; }
     .xiv-link-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 15px 10px; border-bottom: 1px solid rgba(127,127,127,.18); }
     .xiv-link-head h3 { margin: 0; font-size: 16px; }
     .xiv-link-count { color: rgba(127,127,127,.76); font: 800 12px/1 system-ui, sans-serif; }
-    .xiv-link-actions { display: flex; gap: 7px; padding: 9px 10px; border-bottom: 1px solid rgba(127,127,127,.14); }
-    .xiv-link-actions button, .xiv-link-copy { border: 0; border-radius: 9px; background: rgba(127,127,127,.13); color: inherit; cursor: pointer; font: 800 11px/1 system-ui, sans-serif; }
+    .xiv-link-actions { display: flex; flex-wrap: wrap; gap: 7px; padding: 9px 10px; border-bottom: 1px solid rgba(127,127,127,.14); }
+    .xiv-link-actions button, .xiv-link-row-actions button { border: 0; border-radius: 9px; background: rgba(127,127,127,.13); color: inherit; cursor: pointer; font: 800 11px/1 system-ui, sans-serif; }
     .xiv-link-actions button { min-height: 32px; padding: 0 11px; }
+    .xiv-link-actions [data-link-action="save-all"] { background: #315bd8; color: #fff; }
+    .xiv-link-bridge-status { padding: 0 12px 9px; border-bottom: 1px solid rgba(127,127,127,.14); color: rgba(127,127,127,.8); font: 700 11px/1.3 system-ui, sans-serif; }
+    .xiv-link-bridge-status[data-ready="true"] { color: #2d9b67; }
+    .xiv-link-bridge-status[data-error="true"] { color: #d45555; }
     .xiv-link-list { max-height: min(58vh, 470px); overflow: auto; padding: 7px; overscroll-behavior: contain; }
-    .xiv-link-row { display: grid; grid-template-columns: 48px minmax(0,1fr) 46px; align-items: center; gap: 9px; min-height: 54px; padding: 7px 8px; border-radius: 11px; }
+    .xiv-link-row { display: grid; grid-template-columns: 48px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 58px; padding: 7px 8px; border-radius: 11px; }
     .xiv-link-row:hover { background: rgba(127,127,127,.09); }
     .xiv-link-type { display: grid; place-items: center; min-height: 24px; border-radius: 7px; background: rgba(56,112,255,.14); color: #6388ff; font: 900 9px/1 system-ui, sans-serif; letter-spacing: .04em; }
     #xiv-root[data-theme="light"] .xiv-link-type { color: #315bd8; }
-    .xiv-link-copy { width: 44px; height: 30px; }
-    .xiv-link-copy:hover, .xiv-link-actions button:hover { background: rgba(90,120,220,.2); }
+    .xiv-link-row-actions { display: flex; align-items: center; gap: 5px; }
+    .xiv-link-row-actions button { min-width: 42px; height: 30px; padding: 0 8px; }
+    .xiv-link-row-actions [data-link-row-action="play"] { background: rgba(49,91,216,.18); color: #6f91ff; }
+    #xiv-root[data-theme="light"] .xiv-link-row-actions [data-link-row-action="play"] { color: #315bd8; }
+    .xiv-link-row-actions button:hover, .xiv-link-actions button:hover { background: rgba(90,120,220,.2); }
     .xiv-link-copy-text { min-width: 0; }
     .xiv-link-name, .xiv-link-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .xiv-link-name { font: 800 12px/1.3 system-ui, sans-serif; }
@@ -657,7 +664,6 @@
     .xiv-lightbox-close:hover { transform: translateY(-1px) scale(1.04); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.28), rgba(42,42,46,.82)); }
     .xiv-lightbox-close:active { transform: scale(.96); }
     .xiv-lightbox-fav,
-    .xiv-lightbox-link-grabber,
     .xiv-lightbox-zoom {
       position: fixed; right: 68px; top: 18px; z-index: 6;
       width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26);
@@ -668,16 +674,12 @@
       backdrop-filter: blur(12px); transition: transform .14s ease, background .14s ease, border-color .14s ease, color .14s ease;
     }
     .xiv-lightbox-zoom { right: 168px; }
-    .xiv-lightbox-link-grabber { right: 218px; }
     .xiv-lightbox-fav:hover,
-    .xiv-lightbox-link-grabber:hover,
     .xiv-lightbox-zoom:hover { transform: translateY(-1px) scale(1.04); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.28), rgba(42,42,46,.82)); }
     .xiv-lightbox-fav:active,
-    .xiv-lightbox-link-grabber:active,
     .xiv-lightbox-zoom:active { transform: scale(.96); }
     .xiv-lightbox-fav svg,
     .xiv-lightbox-close svg,
-    .xiv-lightbox-link-grabber svg,
     .xiv-lightbox-zoom svg { width: 21px; height: 21px; display: block; filter: drop-shadow(0 5px 10px rgba(0,0,0,.28)); }
     .xiv-lightbox-zoom[data-active="true"] { color: #315bd8; border-color: rgba(49,91,216,.34); background: rgba(255,255,255,.98); }
     .xiv-lightbox-fav[data-favorited="true"] {
@@ -1516,6 +1518,73 @@
     }
   }
 
+  let cd2RequestSequence = 0;
+  const cd2PendingRequests = new Map();
+
+  function setCd2BridgeStatus(text, stateName = "") {
+    const node = state.linkGrabberPanel?.querySelector?.(".xiv-link-bridge-status");
+    if (!node) return;
+    node.textContent = text;
+    node.dataset.ready = stateName === "ready" ? "true" : "false";
+    node.dataset.error = stateName === "error" ? "true" : "false";
+  }
+
+  function requestCd2Action(action, links = [], timeoutMs = 90000) {
+    const requestId = `flowlens-cd2-${Date.now()}-${++cd2RequestSequence}`;
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        cd2PendingRequests.delete(requestId);
+        resolve({ ok: false, error: "未检测到“115 Magnet Play”扩展，请先在该扩展中启用当前站点。" });
+      }, timeoutMs);
+      cd2PendingRequests.set(requestId, { resolve, timer });
+      window.postMessage({ source: "flowlens", type: "cd2-magnet-request", requestId, action, links }, "*");
+    });
+  }
+
+  function onCd2BridgeMessage(event) {
+    if (event.source !== window) return;
+    const message = event.data || {};
+    if (message.source !== "cd2-magnet-play" || message.type !== "cd2-magnet-response") return;
+    const pending = cd2PendingRequests.get(message.requestId);
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    cd2PendingRequests.delete(message.requestId);
+    pending.resolve(message.response || { ok: false, error: "磁力播放扩展没有返回结果。" });
+  }
+
+  async function probeCd2Bridge() {
+    setCd2BridgeStatus("磁力播放扩展：检测中…");
+    const response = await requestCd2Action("ping", [], 1600);
+    if (response?.ok) setCd2BridgeStatus("磁力播放扩展已连接 · 可保存到 CD2/115 或在浏览器播放", "ready");
+    else setCd2BridgeStatus(response?.error || "磁力播放扩展未连接", "error");
+    return response;
+  }
+
+  async function runCd2Action(action, links, button = null) {
+    const clean = (links || []).filter((url) => /^(?:magnet:\?|ed2k:\/\/)/i.test(String(url || "")));
+    if (!clean.length) return;
+    const original = button?.textContent || "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = action === "play-browser" ? "启动中" : "保存中";
+    }
+    setCd2BridgeStatus(action === "play-browser" ? "正在等待 CloudDrive2 返回可播放文件…" : `正在提交 ${clean.length} 条链接到 CD2/115…`);
+    const response = await requestCd2Action(action, clean);
+    if (response?.ok) {
+      const successCount = Number(response.successCount ?? clean.length);
+      setCd2BridgeStatus(action === "play-browser" ? "已提交，文件可用后会在浏览器打开" : `已保存 ${successCount}/${clean.length} 条到 CD2/115`, "ready");
+      updateStatus(action === "play-browser" ? "已提交浏览器播放" : `已提交 ${successCount} 条到 115`);
+    } else {
+      setCd2BridgeStatus(response?.error || "提交失败", "error");
+      updateStatus(response?.error || "提交失败");
+    }
+    if (button) {
+      button.disabled = false;
+      button.textContent = response?.ok ? "已完成" : "重试";
+      window.setTimeout(() => { if (button.isConnected) button.textContent = original; }, 1400);
+    }
+  }
+
   function collectPageDownloadLinks() {
     const found = new Map();
     const remember = (raw) => {
@@ -1586,12 +1655,10 @@
       value.className = "xiv-link-value";
       value.textContent = item.url;
       copy.append(name, value);
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "xiv-link-copy";
-      button.dataset.linkIndex = String(index);
-      button.textContent = "复制";
-      row.append(type, copy, button);
+      const actions = document.createElement("span");
+      actions.className = "xiv-link-row-actions";
+      actions.innerHTML = `<button type="button" data-link-row-action="play" data-link-index="${index}">播放</button><button type="button" data-link-row-action="save" data-link-index="${index}">存115</button><button type="button" data-link-row-action="copy" data-link-index="${index}">复制</button>`;
+      row.append(type, copy, actions);
       list.appendChild(row);
     });
   }
@@ -1614,6 +1681,7 @@
     closePanels("link-grabber");
     scanPageDownloadLinks();
     state.linkGrabberPanel.dataset.open = "true";
+    void probeCd2Bridge();
   }
 
   function fetchSameOriginDocumentViaFrame(targetUrl, timeoutMs = 18000) {
@@ -4448,7 +4516,7 @@
           <button class="xiv-btn" type="button" data-xiv="theme" title="切换主题">${icons.theme}<span>主题</span></button>
           <button class="xiv-btn" type="button" data-xiv="full" title="全屏">${icons.fullscreen}<span>全屏</span></button>
           <button class="xiv-btn" type="button" data-xiv="download" title="下载 ZIP">${icons.download}<span>下载</span></button>
-          <button class="xiv-btn" type="button" data-xiv="link-grabber" title="抓取磁力 / ED2K 链接">${icons.magnet}<span>抓取链接</span></button>
+          <button class="xiv-btn" type="button" data-xiv="link-grabber" title="抓取磁力 / ED2K 链接（M）">${icons.magnet}<span>抓取链接</span></button>
           <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>
           <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>
           <button class="xiv-btn" type="button" data-xiv="auto" title="自动滚动">${icons.play}<span>自动</span></button>
@@ -4485,7 +4553,8 @@
       </div>
       <div class="xiv-panel xiv-link-panel" data-panel="link-grabber" aria-label="下载链接抓取">
         <div class="xiv-link-head"><h3>页面下载链接</h3><span class="xiv-link-count">0 磁力 · 0 ED2K</span></div>
-        <div class="xiv-link-actions"><button type="button" data-link-action="rescan">重新扫描</button><button type="button" data-link-action="copy-all">复制全部</button><button type="button" data-link-action="export">导出 TXT</button></div>
+        <div class="xiv-link-actions"><button type="button" data-link-action="save-all">全部存115</button><button type="button" data-link-action="rescan">重新扫描</button><button type="button" data-link-action="copy-all">复制全部</button><button type="button" data-link-action="export">导出 TXT</button></div>
+        <div class="xiv-link-bridge-status">磁力播放扩展：等待检测</div>
         <div class="xiv-link-list"></div>
       </div>
       <div id="xiv-lightbox"><img alt=""></div>
@@ -4524,17 +4593,25 @@
       if (item) void jumpToGalleryQueueIndex(item.dataset.queueIndex);
     });
     state.linkGrabberPanel.addEventListener("click", async (event) => {
-      const copyButton = event.target?.closest?.("[data-link-index]");
-      if (copyButton) {
-        const item = state.grabbedDownloadLinks[Number(copyButton.dataset.linkIndex)];
-        if (item && await copyCapturedText(item.url)) {
-          copyButton.textContent = "已复制";
-          window.setTimeout(() => { if (copyButton.isConnected) copyButton.textContent = "复制"; }, 900);
+      const rowButton = event.target?.closest?.("[data-link-row-action][data-link-index]");
+      if (rowButton) {
+        const item = state.grabbedDownloadLinks[Number(rowButton.dataset.linkIndex)];
+        const rowAction = rowButton.dataset.linkRowAction;
+        if (!item) return;
+        if (rowAction === "copy" && await copyCapturedText(item.url)) {
+          rowButton.textContent = "已复制";
+          window.setTimeout(() => { if (rowButton.isConnected) rowButton.textContent = "复制"; }, 900);
         }
+        if (rowAction === "save") void runCd2Action("save", [item.url], rowButton);
+        if (rowAction === "play") void runCd2Action("play-browser", [item.url], rowButton);
         return;
       }
       const action = event.target?.closest?.("[data-link-action]")?.dataset.linkAction;
       if (action === "rescan") scanPageDownloadLinks();
+      if (action === "save-all" && state.grabbedDownloadLinks.length) {
+        const button = event.target.closest("[data-link-action='save-all']");
+        void runCd2Action("save", state.grabbedDownloadLinks.map((item) => item.url), button);
+      }
       if (action === "copy-all" && state.grabbedDownloadLinks.length) {
         const ok = await copyCapturedText(state.grabbedDownloadLinks.map((item) => item.url).join("\n"));
         updateStatus(ok ? `已复制 ${state.grabbedDownloadLinks.length} 条链接` : "复制失败");
@@ -4575,6 +4652,7 @@
     window.addEventListener("click", onLightboxClick, true);
     window.addEventListener("wheel", onLightboxWheel, { capture: true, passive: false });
     window.addEventListener("message", onVideoFrameMessage);
+    window.addEventListener("message", onCd2BridgeMessage);
     window.addEventListener("keydown", onKeydown, true);
     window.addEventListener("keyup", onKeyRelease, true);
     window.addEventListener("keypress", onKeyRelease, true);
@@ -5910,7 +5988,7 @@
   }
 
   function lightboxArrows() {
-    return `<button class="xiv-lightbox-link-grabber" type="button" title="抓取磁力 / ED2K 链接">${icons.magnet}</button><button class="xiv-lightbox-zoom" type="button" title="放大（之后可滚轮缩放、拖动查看）">${zoomInIcon()}</button><button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
+    return `<button class="xiv-lightbox-zoom" type="button" title="放大（之后可滚轮缩放、拖动查看）">${zoomInIcon()}</button><button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
   }
 
   function ensureLightboxChrome() {
@@ -6580,10 +6658,6 @@
     if (event.target?.closest?.("#xiv-lightbox video") && !isMobilePointerEvent(event)) return;
     claimEvent(event);
     if (Date.now() < state.lightboxSuppressClickUntil) return;
-    if (event.target?.closest?.(".xiv-lightbox-link-grabber")) {
-      toggleLinkGrabberPanel();
-      return;
-    }
     if (event.target?.closest?.(".xiv-lightbox-zoom")) {
       toggleLightboxZoom();
       return;
@@ -6610,7 +6684,7 @@
 
   function onLightboxPointerDown(event) {
     if (state.lightbox?.dataset.active !== "true" || event.button !== 0) return;
-    if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow, .xiv-lightbox-zoom, .xiv-lightbox-link-grabber")) return;
+    if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow, .xiv-lightbox-zoom")) return;
     if (state.lightbox.dataset.zoom === "actual" && event.target?.matches?.("img, video")) {
       claimEvent(event);
       state.lightboxDrag = {
@@ -6811,6 +6885,11 @@
       claimEvent(event);
       if (event.repeat) return;
       showAdjacentImage(event.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
+    if (!isTyping && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "m") {
+      claimEvent(event);
+      if (!event.repeat) toggleLinkGrabberPanel();
       return;
     }
     const queuePrevKey = event.key === "ArrowLeft";

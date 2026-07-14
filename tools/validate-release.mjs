@@ -80,6 +80,8 @@ const syncIndexesBody = core.match(/function syncTileIndexes\(\) \{([\s\S]*?)\n 
 assert(syncIndexesBody.includes("indexByKey") && !syncIndexesBody.includes("state.images.indexOf"), "tile index synchronization regressed to quadratic scanning");
 assert(core.includes('data-xiv="queue-list"') && core.includes("jumpToGalleryQueueIndex"), "gallery queue list navigation is missing");
 assert(core.includes('data-xiv="link-grabber"') && core.includes("collectPageDownloadLinks"), "magnet/ed2k link grabber is missing");
+assert(!core.includes("xiv-lightbox-link-grabber"), "link grabber should not appear in the lightbox");
+assert(core.includes("requestCd2Action") && core.includes('data-link-action="save-all"'), "CD2/115 bridge actions are missing");
 assert(core.includes("__flowLensHandleLightboxZoomWheel = lightboxWheelZoom"), "lightbox wheel zoom handler is not exposed");
 assert(core.includes("xiv-lightbox-zoom") && core.includes("syncLightboxZoomButton"), "lightbox zoom control is missing");
 assert(!core.includes("state.lightbox.innerHTML ="), "lightbox still destroys and rebuilds its controls during media switches");
@@ -88,6 +90,10 @@ const optimizer = await text("src/core/optimizer.js");
 assert(optimizer.includes('function animateLightboxMedia() { lastSwitchDirection = "fade"; }'), "lightbox flash animation is still active");
 
 assert(lightboxEnhance.includes("return moved !== false;"), "slideshow controller can fall through to a duplicate navigation");
+const unifiedIcons = await text("src/patches/lightbox-icons-unified.js");
+assert(unifiedIcons.includes("contain: none !important") && unifiedIcons.includes("transform: none !important"), "lightbox controls can still inherit a scrolling fixed-position context");
+const pageBookmarks = await text("src/patches/page-bookmarks.js");
+assert(pageBookmarks.includes("fl-page-bookmark-settings") && pageBookmarks.includes("#xiv-topbar .fl-page-bookmark-btn"), "page bookmarks were not moved into settings");
 
 const sourceSync = await text("tools/sync-extension-sources.mjs");
 const sourcePairs = [...sourceSync.matchAll(/"([^"]+\.js)"\s*:\s*"([^"]+\.js)"/g)].map((match) => [match[1], match[2]]);

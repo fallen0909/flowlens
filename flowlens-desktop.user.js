@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens desktop
 // @namespace    local.flowlens.desktop
-// @version      2.0.1
+// @version      2.0.2
 // @description  FlowLens desktop release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -12,35 +12,35 @@
 // @grant        GM_setValue
 // @downloadURL  https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop.user.js
 // @updateURL    https://raw.githubusercontent.com/fallen0909/flowlens/master/flowlens-desktop.user.js
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/version.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/global-settings.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/x810114-safe-start.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/item-gallery.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/xchina-ad-filter.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-filter-center.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/site-adapter-center.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/pornpics-queue-hotfix.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/visible-sequence-safe.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-event-guard.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/flowlens-core.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/optimizer.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/product.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/fixes.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/ui-cleanup.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-stable.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/settings-compact.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/zhihu.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/topfix.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-sync.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-enhance.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-ios-smooth.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-gallery-swipe.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-icon-dom-fix.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-icons-unified.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-toolbar-stable.js?v=2.0.1
-// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/page-bookmarks.js?v=2.0.1
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/version.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/global-settings.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/x810114-safe-start.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/item-gallery.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/xchina-ad-filter.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-filter-center.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/site-adapter-center.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/pornpics-queue-hotfix.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/visible-sequence-safe.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-event-guard.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/flowlens-core.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/core/optimizer.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/product.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/fixes.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/ui-cleanup.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-stable.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/settings-compact.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/zhihu.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/topfix.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/media-sync.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-enhance.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-ios-smooth.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-gallery-swipe.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-icon-dom-fix.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-icons-unified.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/lightbox-toolbar-stable.js?v=2.0.2
+// @require      https://raw.githubusercontent.com/fallen0909/flowlens/master/src/patches/page-bookmarks.js?v=2.0.2
 // ==/UserScript==
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.1";
+  window.__FLOWLENS_VERSION__ = "2.0.2";
 })();

@@ -10,7 +10,7 @@
   const LIST_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h11M8 12h11M8 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
 
   const root = () => document.getElementById("xiv-root");
-  const actions = () => root()?.querySelector("#xiv-topbar .xiv-actions") || null;
+  const settingsPanel = () => root()?.querySelector('[data-panel="settings"]') || null;
 
   function normalizeUrl(url = location.href) {
     try {
@@ -112,8 +112,44 @@
     style.id = "fl-page-bookmarks-style";
     style.textContent = `
       #xiv-root .fl-page-bookmark-btn svg { width: 20px !important; height: 20px !important; display: block !important; }
-      #xiv-root .fl-page-bookmark-btn span { display: none !important; }
       #xiv-root #xiv-page-bookmarks-controls { display: none !important; visibility: hidden !important; pointer-events: none !important; }
+      #xiv-root #xiv-topbar .fl-page-bookmark-btn { display: none !important; }
+      #xiv-root .fl-page-bookmark-settings {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+        margin: 10px 0 2px !important;
+        padding: 10px !important;
+        border-radius: 14px !important;
+        background: rgba(92,104,132,.07) !important;
+        border: 1px solid rgba(127,127,127,.12) !important;
+      }
+      #xiv-root[data-theme="dark"] .fl-page-bookmark-settings { background: rgba(255,255,255,.06) !important; }
+      #xiv-root .fl-page-bookmark-settings-title {
+        grid-column: 1 / -1 !important;
+        color: #6d7482 !important;
+        font-size: 11px !important;
+        font-weight: 900 !important;
+        letter-spacing: .08em !important;
+      }
+      #xiv-root[data-theme="dark"] .fl-page-bookmark-settings-title { color: #b7bdc9 !important; }
+      #xiv-root .fl-page-bookmark-settings-btn {
+        min-width: 0 !important;
+        height: 40px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 8px !important;
+        padding: 0 12px !important;
+        border: 1px solid rgba(127,127,127,.18) !important;
+        border-radius: 12px !important;
+        background: rgba(255,255,255,.78) !important;
+        color: inherit !important;
+        font-size: 13px !important;
+        font-weight: 850 !important;
+        cursor: pointer !important;
+      }
+      #xiv-root[data-theme="dark"] .fl-page-bookmark-settings-btn { background: rgba(255,255,255,.08) !important; }
       #xiv-root .fl-page-bookmark-btn[data-saved="true"] { color: #ffb648 !important; border-color: rgba(255,190,80,.56) !important; background: rgba(255,190,80,.22) !important; }
       #xiv-root .fl-page-bookmark-btn[data-saved="true"] svg { fill: currentColor !important; }
       #xiv-root .fl-page-bookmark-panel {
@@ -258,7 +294,7 @@
 
   function makeButton(kind, icon, title) {
     const button = document.createElement("button");
-    button.className = "xiv-btn fl-page-bookmark-btn";
+    button.className = "fl-page-bookmark-settings-btn fl-page-bookmark-btn";
     button.type = "button";
     button.dataset.flPageBookmark = kind;
     button.title = title;
@@ -270,21 +306,24 @@
     injectStyle();
     removeLegacyControls();
     ensurePanel();
-    const bar = actions();
-    if (!bar) return;
-    if (!bar.querySelector('[data-fl-page-bookmark="save"]')) {
+    root()?.querySelectorAll('#xiv-topbar .fl-page-bookmark-btn').forEach((button) => button.remove());
+    const panel = settingsPanel();
+    if (!panel) return;
+    let section = panel.querySelector(".fl-page-bookmark-settings");
+    if (!section) {
+      section = document.createElement("section");
+      section.className = "fl-page-bookmark-settings";
+      section.innerHTML = '<div class="fl-page-bookmark-settings-title">页面收藏</div>';
+      panel.appendChild(section);
       const save = makeButton("save", SAVE_ICON, "收藏本页");
-      bar.insertBefore(save, bar.firstElementChild || null);
+      section.appendChild(save);
       save.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
         toggleCurrentPage();
       });
-    }
-    if (!bar.querySelector('[data-fl-page-bookmark="list"]')) {
       const list = makeButton("list", LIST_ICON, "收藏列表");
-      const save = bar.querySelector('[data-fl-page-bookmark="save"]');
-      bar.insertBefore(list, save?.nextSibling || bar.firstElementChild || null);
+      section.appendChild(list);
       list.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();

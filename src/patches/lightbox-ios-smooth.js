@@ -14,7 +14,7 @@
     style.id = STYLE_ID;
     style.textContent = `
       #xiv-lightbox[data-active="true"] {
-        contain: paint;
+        contain: none !important;
         -webkit-font-smoothing: antialiased;
       }
       #xiv-lightbox img.xiv-fl-smooth-media,
