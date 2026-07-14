@@ -52,6 +52,17 @@
     }
   }
 
+  function galleryInfo(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      const match = parsed.pathname.match(/^\/(?:([a-z]{2})\/)?galleries\/[^/?#]+-(\d+)\/?$/i);
+      if (!isHost(parsed.href) || !match) return null;
+      return { locale: (match[1] || "en").toLowerCase(), id: match[2] };
+    } catch {
+      return null;
+    }
+  }
+
   function isPublicListUrl(url = location.href) {
     try {
       const parsed = new URL(url, location.href);
@@ -71,10 +82,13 @@
   function unique(urls) {
     const seen = new Set();
     const clean = [];
+    const current = galleryInfo(currentGalleryUrl() || location.href);
     urls.forEach((url) => {
       const normalized = normalizeUrl(url);
       if (!normalized || !isGalleryUrl(normalized)) return;
-      const key = normalized.toLowerCase();
+      const info = galleryInfo(normalized);
+      if (current && info && current.locale !== info.locale) return;
+      const key = info ? `pornpics:${info.id}` : normalized.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
       clean.push(normalized);

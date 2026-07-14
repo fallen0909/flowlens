@@ -595,13 +595,23 @@
     }
     #xiv-root[data-theme="light"] .xiv-cd2-field input { background: rgba(255,255,255,.82); }
     .xiv-cd2-field input:focus { border-color: #5275df; box-shadow: 0 0 0 3px rgba(49,91,216,.13); }
+    .xiv-cd2-play-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 10px; }
+    .xiv-cd2-play-mode { position: relative; min-width: 0; cursor: pointer; }
+    .xiv-cd2-play-mode input { position: absolute; opacity: 0; pointer-events: none; }
+    .xiv-cd2-play-mode-card { display: grid; grid-template-columns: 32px minmax(0,1fr); align-items: center; gap: 8px; min-height: 58px; padding: 8px 10px; border: 1px solid rgba(127,127,127,.22); border-radius: 11px; background: rgba(127,127,127,.06); }
+    .xiv-cd2-play-mode input:checked + .xiv-cd2-play-mode-card { border-color: #315bd8; background: rgba(49,91,216,.1); box-shadow: inset 0 0 0 1px #315bd8; }
+    .xiv-cd2-play-mode-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: rgba(49,91,216,.14); color: #6388ff; font-size: 14px; }
+    .xiv-cd2-play-mode-copy strong, .xiv-cd2-play-mode-copy small { display: block; }
+    .xiv-cd2-play-mode-copy strong { font: 850 11px/1.2 system-ui, sans-serif; }
+    .xiv-cd2-play-mode-copy small { margin: 3px 0 0; color: rgba(127,127,127,.8); font: 650 9px/1.25 system-ui, sans-serif; }
+    .xiv-cd2-field[data-cd2-local-row][hidden] { display: none !important; }
     .xiv-cd2-controls { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
     .xiv-cd2-controls button { min-height: 32px; padding: 0 11px; border: 0; border-radius: 9px; background: rgba(127,127,127,.14); color: inherit; cursor: pointer; font: 850 11px/1 system-ui, sans-serif; }
     .xiv-cd2-controls [data-cd2-action="save"] { background: #315bd8; color: #fff; }
     .xiv-cd2-settings-status { min-height: 15px; margin-top: 8px; color: rgba(127,127,127,.78); font: 700 10px/1.45 system-ui, sans-serif; }
     .xiv-cd2-settings-status[data-state="ready"] { color: #2d9b67; }
     .xiv-cd2-settings-status[data-state="error"] { color: #d45555; }
-    @media (max-width: 520px) { .xiv-cd2-grid { grid-template-columns: 1fr; } .xiv-cd2-field[data-wide="true"] { grid-column: auto; } }
+    @media (max-width: 520px) { .xiv-cd2-grid { grid-template-columns: 1fr; } .xiv-cd2-field[data-wide="true"] { grid-column: auto; } .xiv-cd2-play-modes { grid-template-columns: 1fr; } }
     .xiv-link-list { max-height: min(58vh, 470px); overflow: auto; padding: 7px; overscroll-behavior: contain; }
     .xiv-link-row { display: grid; grid-template-columns: 48px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 58px; padding: 7px 8px; border-radius: 11px; }
     .xiv-link-row:hover { background: rgba(127,127,127,.09); }
@@ -884,6 +894,31 @@
     return false;
   }
 
+  function pornpicsGalleryInfo(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      if (!/(^|\.)pornpics\.com$/i.test(parsed.hostname)) return null;
+      const match = parsed.pathname.match(/^\/(?:([a-z]{2})\/)?galleries\/([^/?#]+)-(\d+)\/?$/i);
+      if (!match) return null;
+      return { locale: (match[1] || "en").toLowerCase(), slug: match[2].toLowerCase(), id: match[3] };
+    } catch {
+      return null;
+    }
+  }
+
+  function galleryQueueDedupeKey(url) {
+    const pornpics = pornpicsGalleryInfo(url);
+    return pornpics ? `pornpics:${pornpics.id}` : normalizedPageUrl(url).toLowerCase();
+  }
+
+  function isPornpicsLanguageMirror(url, base = location.href) {
+    const target = pornpicsGalleryInfo(url);
+    const source = pornpicsGalleryInfo(base);
+    if (!target || !source) return false;
+    if (target.id === source.id) return !samePageUrl(url, base);
+    return target.locale !== source.locale;
+  }
+
   function collectX810114SidebarProfileQueue(doc = document) {
     const found = [];
     const seen = new Set();
@@ -946,8 +981,9 @@
     function remember(raw) {
       const url = normalizedPageUrl(absoluteUrl(raw, base));
       if (!url || !isQueueCandidateUrl(url)) return;
+      if (isPornpicsLanguageMirror(url, base)) return;
       if (isPhotoGalleryPage(base) && sameGalleryPage(url, base)) return;
-      const key = url.toLowerCase();
+      const key = galleryQueueDedupeKey(url);
       if (seen.has(key)) return;
       seen.add(key);
       queue.push(url);
@@ -959,6 +995,16 @@
         sidebarQueue.forEach(remember);
         return queue;
       }
+    }
+
+    if (isPornpicsGalleryPage(base)) {
+      doc.querySelectorAll("a[href*='/galleries/']").forEach((link) => {
+        const image = link.querySelector("img")
+          || link.parentElement?.querySelector?.("img")
+          || link.closest("article, li, [class*='card' i], [class*='tile' i], [class*='item' i]")?.querySelector?.("img");
+        if (image) remember(link.getAttribute("href"));
+      });
+      return queue;
     }
 
     doc.querySelectorAll("a[href]").forEach((link) => remember(link.getAttribute("href")));
@@ -1022,14 +1068,17 @@
     function remember(raw) {
       const url = normalizedPageUrl(absoluteUrl(raw, base));
       if (!url || !isQueueCandidateUrl(url)) return;
-      const key = url.toLowerCase();
+      if (isPornpicsLanguageMirror(url, base)) return;
+      const key = galleryQueueDedupeKey(url);
       if (seen.has(key)) return;
       seen.add(key);
       found.push(url);
     }
 
-    for (const match of html.matchAll(/https?:\/\/(?:www\.)?pornpics\.com\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
-    for (const match of html.matchAll(/["'](\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?)["']/gi)) remember(match[1]);
+    if (!isPornpicsGalleryPage(base)) {
+      for (const match of html.matchAll(/https?:\/\/(?:www\.)?pornpics\.com\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
+      for (const match of html.matchAll(/["'](\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?)["']/gi)) remember(match[1]);
+    }
     for (const match of html.matchAll(/https?:\/\/(?:www\.)?xchina\.co\/(?:photo\/id-[A-Za-z0-9_-]+\.html|photos\/series-[A-Za-z0-9_-]+\/\d+\.html)/gi)) remember(match[0]);
     for (const match of html.matchAll(/["'](\/(?:photo\/id-[A-Za-z0-9_-]+\.html|photos\/series-[A-Za-z0-9_-]+\/\d+\.html))["']/gi)) remember(match[1]);
     for (const match of html.matchAll(/https?:\/\/(?:www\.)?buondua\.com\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
@@ -1112,7 +1161,16 @@
     try {
       const raw = sessionStorage.getItem(galleryQueueStorageKey());
       const data = JSON.parse(raw || "[]");
-      return Array.isArray(data) ? data.map(normalizedPageUrl).filter(isQueueCandidateUrl) : [];
+      if (!Array.isArray(data)) return [];
+      const base = activeGalleryQueueUrl();
+      const seen = new Set();
+      return data.map(normalizedPageUrl).filter((url) => {
+        if (!isQueueCandidateUrl(url) || isPornpicsLanguageMirror(url, base)) return false;
+        const key = galleryQueueDedupeKey(url);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     } catch {
       return [];
     }
@@ -1137,7 +1195,8 @@
     function remember(url) {
       const clean = normalizedPageUrl(url);
       if (!clean || !isQueueCandidateUrl(clean)) return;
-      const key = clean.toLowerCase();
+      if (isPornpicsLanguageMirror(clean, current)) return;
+      const key = galleryQueueDedupeKey(clean);
       if (seen.has(key)) return;
       seen.add(key);
       merged.push(clean);
@@ -1193,7 +1252,8 @@
     function remember(url) {
       const clean = normalizedPageUrl(url);
       if (!clean || !isQueueCandidateUrl(clean)) return;
-      const key = clean.toLowerCase();
+      if (isPornpicsLanguageMirror(clean, current)) return;
+      const key = galleryQueueDedupeKey(clean);
       if (seen.has(key)) return;
       seen.add(key);
       merged.push(clean);
@@ -1368,11 +1428,38 @@
     renderGalleryQueuePanel();
   }
 
+  function galleryQueueCoverFromImage(image, base = location.href) {
+    if (!image) return "";
+    const identity = [
+      image.getAttribute?.("alt"),
+      image.getAttribute?.("title"),
+      image.getAttribute?.("class"),
+      image.getAttribute?.("id")
+    ].filter(Boolean).join(" ");
+    if (/(?:logo|google|language|locale|flag|avatar|icon|sprite)/i.test(identity)) return "";
+    const declaredWidth = Number.parseInt(image.getAttribute?.("width") || "0", 10);
+    const declaredHeight = Number.parseInt(image.getAttribute?.("height") || "0", 10);
+    if (declaredWidth > 0 && declaredHeight > 0 && Math.max(declaredWidth, declaredHeight) < 140) return "";
+    const srcset = image.getAttribute?.("srcset") || image.getAttribute?.("data-srcset") || "";
+    const srcsetUrl = srcset.split(",").map((part) => part.trim().split(/\s+/)[0]).filter(Boolean).at(-1) || "";
+    const raw = image.currentSrc
+      || image.getAttribute?.("src")
+      || image.getAttribute?.("data-src")
+      || image.getAttribute?.("data-original")
+      || image.getAttribute?.("data-lazy-src")
+      || srcsetUrl;
+    const url = absoluteUrl(String(raw || "").split(/\s+/)[0], base);
+    if (!url || !/^(?:https?:|data:|blob:)/i.test(url)) return "";
+    if (/(?:logo|favicon|icon|sprite|avatar|google|flag|language)[._\/-]/i.test(url)) return "";
+    return url;
+  }
+
   function rememberGalleryQueueTitles(doc = document, base = location.href) {
     if (!doc?.querySelectorAll) return;
     doc.querySelectorAll("a[href]").forEach((anchor) => {
       const url = normalizedPageUrl(absoluteUrl(anchor.getAttribute("href"), base));
       if (!isQueueCandidateUrl(url)) return;
+      if (isPornpicsLanguageMirror(url, base)) return;
       const raw = anchor.getAttribute("title") || anchor.getAttribute("aria-label") || anchor.textContent || "";
       const title = String(raw).replace(/\s+/g, " ").trim();
       if (!title || /^(上一组|下一组|上一页|下一页|previous|next)$/i.test(title)) return;
@@ -1380,20 +1467,29 @@
       if (!previous || title.length > previous.length) state.galleryQueueTitles.set(url, title.slice(0, 100));
       if (!state.galleryQueueCovers.has(url)) {
         const nearby = anchor.querySelector("img")
+          || anchor.parentElement?.querySelector?.("img")
           || anchor.closest("article, li, [class*='card' i], [class*='item' i]")?.querySelector?.("img");
-        const rawCover = nearby?.currentSrc
-          || nearby?.getAttribute?.("src")
-          || nearby?.getAttribute?.("data-src")
-          || nearby?.getAttribute?.("data-original")
-          || nearby?.getAttribute?.("data-lazy-src")
-          || "";
-        const cover = absoluteUrl(String(rawCover).split(/\s+/)[0], base);
-        if (cover && /^(?:https?:|data:|blob:)/i.test(cover)) state.galleryQueueCovers.set(url, cover);
+        const cover = galleryQueueCoverFromImage(nearby, base);
+        if (cover) state.galleryQueueCovers.set(url, cover);
       }
     });
     const currentUrl = normalizedPageUrl(doc?.documentElement?.dataset?.xivBase || base);
     const currentTitle = pageTitleFromDocument(doc, currentUrl);
     if (isQueueCandidateUrl(currentUrl) && currentTitle) state.galleryQueueTitles.set(currentUrl, currentTitle.slice(0, 100));
+    if (isQueueCandidateUrl(currentUrl) && !state.galleryQueueCovers.has(currentUrl)) {
+      const selectorGroups = isPornpicsGalleryPage(currentUrl)
+        ? ["#tiles img", "[class*='thumb' i] img", "[class*='gallery' i] img", "main img"]
+        : ["main article img, main img, article img"];
+      for (const selectors of selectorGroups) {
+        for (const image of doc.querySelectorAll?.(selectors) || []) {
+          const cover = galleryQueueCoverFromImage(image, currentUrl);
+          if (!cover) continue;
+          state.galleryQueueCovers.set(currentUrl, cover);
+          break;
+        }
+        if (state.galleryQueueCovers.has(currentUrl)) break;
+      }
+    }
   }
 
   function galleryQueueDisplayTitle(url, index) {
@@ -1551,7 +1647,8 @@
     baseUrl: "http://localhost:19798",
     cloudPath: "/115/云下载/临时播放",
     apiToken: "",
-    maxWaitMinutes: 30
+    playMode: "stream",
+    localMountPath: "E:\\云下载\\临时播放"
   });
   const cd2TextEncoder = new TextEncoder();
   const cd2TextDecoder = new TextDecoder();
@@ -1674,7 +1771,8 @@
       baseUrl,
       cloudPath,
       apiToken: String(value.apiToken || "").trim().replace(/^Bearer\s+/i, ""),
-      maxWaitMinutes: Math.min(180, Math.max(1, Number(value.maxWaitMinutes) || CD2_DEFAULT_CONFIG.maxWaitMinutes))
+      playMode: value.playMode === "local" ? "local" : "stream",
+      localMountPath: String(value.localMountPath || CD2_DEFAULT_CONFIG.localMountPath).trim().replace(/[\\/]+$/, "")
     };
   }
 
@@ -1962,6 +2060,31 @@
     return `${base.origin}/static/${base.protocol.replace(":", "")}/${base.host}/true/${encoded}`;
   }
 
+  function getCd2LocalFilePath(config, file) {
+    const remote = String(file?.fullPathName || "").replace(/\\/g, "/");
+    const root = String(config.cloudPath || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    if (!remote || !root || !remote.toLowerCase().startsWith(`${root.toLowerCase()}/`)) {
+      throw new Error("视频不在当前 115 转存目录下，无法映射本地文件。");
+    }
+    const relative = remote.slice(root.length).replace(/^\/+/, "").replace(/\//g, "\\");
+    if (!config.localMountPath) throw new Error("请先在设置中填写 CloudDrive2 本地挂载目录。");
+    return `${config.localMountPath}\\${relative}`;
+  }
+
+  function localFileUrl(path) {
+    const normalized = String(path || "").replace(/\\/g, "/");
+    const encoded = normalized.split("/").map((part, index) => index === 0 ? part : encodeURIComponent(part)).join("/");
+    return `file:///${encoded}`;
+  }
+
+  async function resolveCd2PlaybackTarget(config, file) {
+    if (config.playMode === "local") {
+      const path = getCd2LocalFilePath(config, file);
+      return { mode: "local", url: localFileUrl(path), path };
+    }
+    return { mode: "stream", url: await getCd2PlaybackUrl(config, file), path: file.fullPathName };
+  }
+
   async function testCd2Direct(config = null) {
     const active = normalizeCd2Config(config || await readCd2Config());
     const files = await getCd2SubFiles(active, active.cloudPath, false);
@@ -1992,12 +2115,19 @@
     await ensureCd2Folder(config);
     const hash = downloadLinkHash(link).toLowerCase();
     const linkName = downloadLinkName(link);
+    onProgress?.("正在查找已有视频…");
+    const cachedFile = await findCd2Playable(config, [linkName]);
+    if (cachedFile) {
+      return { ok: true, file: cachedFile, ...(await resolveCd2PlaybackTarget(config, cachedFile)) };
+    }
     let offline = null;
     try {
       offline = (await listCd2Offline(config)).find((item) => hash && item.infoHash.toLowerCase() === hash) || null;
     } catch {}
     if (!offline) await addCd2Offline(config, link);
-    const deadline = Date.now() + config.maxWaitMinutes * 60000;
+    // New offline tasks cannot be played before 115 exposes the resulting
+    // file. Keep this internal; users only choose the playback target.
+    const deadline = Date.now() + 30 * 60000;
     let lastSearch = 0;
     while (Date.now() < deadline) {
       let list = [];
@@ -2009,11 +2139,11 @@
       if ((finished || !offline) && Date.now() - lastSearch > 4500) {
         lastSearch = Date.now();
         const file = await findCd2Playable(config, [offline?.name, linkName]);
-        if (file) return { ok: true, file, url: await getCd2PlaybackUrl(config, file) };
+        if (file) return { ok: true, file, ...(await resolveCd2PlaybackTarget(config, file)) };
       }
       await new Promise((resolve) => window.setTimeout(resolve, 2500));
     }
-    throw new Error(`等待播放文件超时（${config.maxWaitMinutes} 分钟），任务仍保留在 115。`);
+    throw new Error("115 尚未生成可播放文件，离线任务仍会继续执行。");
   }
 
   async function probeCd2Bridge() {
@@ -2037,8 +2167,8 @@
     const popup = window.open("about:blank", "_blank");
     if (!popup) return null;
     try {
-      popup.document.title = "瀑光 · 等待播放";
-      popup.document.body.innerHTML = '<main style="min-height:100vh;display:grid;place-items:center;background:#101114;color:#f5f5f4;font:700 16px/1.6 system-ui"><div><b style="display:block;font-size:22px">正在转存到 115</b><span style="color:#a1a1aa">文件可播放后会自动打开</span></div></main>';
+      popup.document.title = "瀑光 · 正在打开";
+      popup.document.body.innerHTML = '<main style="min-height:100vh;display:grid;place-items:center;background:#101114;color:#f5f5f4;font:700 16px/1.6 system-ui"><div><b style="display:block;font-size:22px">正在打开视频</b><span style="color:#a1a1aa">优先查找已有文件，新任务准备好后自动继续</span></div></main>';
     } catch {}
     return popup;
   }
@@ -2056,11 +2186,12 @@
     try {
       if (action === "play-browser") {
         response = await playCd2Link(clean[0], (text) => setCd2BridgeStatus(text));
-        if (playbackWindow && !playbackWindow.closed) playbackWindow.location.replace(response.url);
+        if (response.mode === "local" && playbackWindow && !playbackWindow.closed) playbackWindow.close();
+        if (response.mode !== "local" && playbackWindow && !playbackWindow.closed) playbackWindow.location.replace(response.url);
         else if (typeof GM_openInTab === "function") GM_openInTab(response.url, { active: true, insert: true });
         else window.open(response.url, "_blank", "noopener");
-        setCd2BridgeStatus(`已找到视频：${response.file.name}`, "ready");
-        updateStatus("已打开 CloudDrive2 浏览器播放");
+        setCd2BridgeStatus(`已打开${response.mode === "local" ? "本地文件" : "流媒体"}：${response.file.name}`, "ready");
+        updateStatus(response.mode === "local" ? "已请求打开本地挂载文件" : "已打开 CloudDrive2 流媒体");
       } else {
         response = await saveCd2Links(clean, (text) => setCd2BridgeStatus(text));
         const successCount = Number(response.successCount || 0);
@@ -4836,13 +4967,18 @@
     if (!state.settingsPanel) return;
     const config = await readCd2Config();
     state.settingsPanel.querySelectorAll("[data-cd2-setting]").forEach((control) => {
-      if (document.activeElement !== control) control.value = String(config[control.dataset.cd2Setting] ?? "");
+      const value = String(config[control.dataset.cd2Setting] ?? "");
+      if (control.type === "radio") control.checked = control.value === value;
+      else if (document.activeElement !== control) control.value = value;
     });
+    const localRow = state.settingsPanel.querySelector("[data-cd2-local-row]");
+    if (localRow) localRow.hidden = config.playMode !== "local";
   }
 
   function cd2ConfigFromSettingsPanel() {
     const current = { ...cd2SessionConfig };
     state.settingsPanel?.querySelectorAll?.("[data-cd2-setting]").forEach((control) => {
+      if (control.type === "radio" && !control.checked) return;
       current[control.dataset.cd2Setting] = control.value;
     });
     return normalizeCd2Config(current);
@@ -4882,6 +5018,13 @@
       button.disabled = false;
       button.textContent = original;
     }
+  }
+
+  function onCd2SettingsChange(event) {
+    const control = event.target?.closest?.("[data-cd2-setting]");
+    if (!control || control.dataset.cd2Setting !== "playMode") return;
+    const localRow = state.settingsPanel?.querySelector?.("[data-cd2-local-row]");
+    if (localRow) localRow.hidden = control.value !== "local";
   }
 
   function onSettingsControlChange(event) {
@@ -5092,11 +5235,15 @@
         <label class="xiv-setting-row"><span>主题</span><select class="xiv-select" data-setting="theme"><option value="system">跟随系统</option><option value="dark">深色</option><option value="light">浅色</option></select></label>
         <section class="xiv-cd2-settings" aria-label="CloudDrive2 直连设置">
           <div class="xiv-cd2-settings-head"><strong>CloudDrive2 直连</strong><span>无需磁力播放插件</span></div>
+          <div class="xiv-cd2-play-modes" role="radiogroup" aria-label="磁力播放方式">
+            <label class="xiv-cd2-play-mode"><input type="radio" name="xiv-cd2-play-mode" value="stream" data-cd2-setting="playMode"><span class="xiv-cd2-play-mode-card"><span class="xiv-cd2-play-mode-icon">▶</span><span class="xiv-cd2-play-mode-copy"><strong>流媒体</strong><small>通过 CloudDrive2 直链打开</small></span></span></label>
+            <label class="xiv-cd2-play-mode"><input type="radio" name="xiv-cd2-play-mode" value="local" data-cd2-setting="playMode"><span class="xiv-cd2-play-mode-card"><span class="xiv-cd2-play-mode-icon">▰</span><span class="xiv-cd2-play-mode-copy"><strong>本地文件</strong><small>打开 CloudDrive2 挂载路径</small></span></span></label>
+          </div>
           <div class="xiv-cd2-grid">
             <label class="xiv-cd2-field" data-wide="true">服务地址<input type="url" data-cd2-setting="baseUrl" placeholder="http://localhost:19798"></label>
             <label class="xiv-cd2-field" data-wide="true">115 转存目录<input type="text" data-cd2-setting="cloudPath" placeholder="/115/云下载/临时播放"></label>
             <label class="xiv-cd2-field" data-wide="true">API Token<input type="password" data-cd2-setting="apiToken" autocomplete="off" placeholder="CloudDrive2 → API Tokens 中创建"></label>
-            <label class="xiv-cd2-field">播放等待（分钟）<input type="number" min="1" max="180" data-cd2-setting="maxWaitMinutes" value="30"></label>
+            <label class="xiv-cd2-field" data-wide="true" data-cd2-local-row hidden>本地挂载目录<input type="text" data-cd2-setting="localMountPath" placeholder="E:\\云下载\\临时播放"><small>浏览器需允许 Tampermonkey 访问 file:// 地址。</small></label>
           </div>
           <div class="xiv-cd2-controls"><button type="button" data-cd2-action="save">保存直连设置</button><button type="button" data-cd2-action="test">测试连接</button><button type="button" data-cd2-action="tokens">打开 Token 页面</button></div>
           <div class="xiv-cd2-settings-status">Token 只保存在油猴/扩展私有存储，不写入当前网页。</div>
@@ -5195,6 +5342,7 @@
       control.addEventListener("change", onSettingsControlChange);
     });
     state.settingsPanel.addEventListener("click", onCd2SettingsAction);
+    state.settingsPanel.addEventListener("change", onCd2SettingsChange);
     state.stage.addEventListener("scroll", onScroll, { passive: true });
     state.stage.addEventListener("wheel", cancelViewerPositionRestoreForUser, { passive: true });
     state.stage.addEventListener("touchstart", cancelViewerPositionRestoreForUser, { passive: true });

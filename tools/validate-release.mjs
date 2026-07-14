@@ -77,6 +77,7 @@ assert(!background.includes("setUiOptions") && !background.includes("setShelfEna
 
 const lightboxEnhance = await text("src/patches/lightbox-enhance.js");
 assert(lightboxEnhance.includes('window.__flowLensSlideshowOwner = "lightbox-enhance";'), "lightbox controller does not own slideshow state");
+assert(lightboxEnhance.includes("advanceAfterVideoEnded") && lightboxEnhance.includes("if (video.ended)"), "video-ended slideshow advance is missing");
 const core = await text("src/core/flowlens-core.js");
 const syncIndexesBody = core.match(/function syncTileIndexes\(\) \{([\s\S]*?)\n  \}/)?.[1] || "";
 assert(syncIndexesBody.includes("indexByKey") && !syncIndexesBody.includes("state.images.indexOf"), "tile index synchronization regressed to quadratic scanning");
@@ -85,10 +86,16 @@ assert(core.includes('data-xiv="link-grabber"') && core.includes("collectPageDow
 assert(!core.includes("xiv-lightbox-link-grabber"), "link grabber should not appear in the lightbox");
 assert(core.includes("saveCd2Links") && core.includes("playCd2Link") && core.includes('data-link-action="save-all"'), "direct CD2/115 actions are missing");
 assert(core.includes('data-cd2-setting="apiToken"') && core.includes("GetDownloadUrlPath"), "CloudDrive2 direct settings or playback URL support is missing");
+assert(core.includes('data-cd2-setting="playMode"') && core.includes("resolveCd2PlaybackTarget") && core.includes("localFileUrl"), "CloudDrive2 stream/local playback selection is missing");
+assert(!core.includes("播放等待（分钟）"), "obsolete visible playback-wait setting is still present");
 assert(!core.includes("cd2-magnet-request") && !core.includes("115 Magnet Play"), "legacy companion extension bridge is still present");
 assert(core.includes("__flowLensHandleLightboxZoomWheel = lightboxWheelZoom"), "lightbox wheel zoom handler is not exposed");
 assert(core.includes("xiv-lightbox-zoom") && core.includes("syncLightboxZoomButton"), "lightbox zoom control is missing");
 assert(!core.includes("state.lightbox.innerHTML ="), "lightbox still destroys and rebuilds its controls during media switches");
+assert(core.includes("pornpicsGalleryInfo") && core.includes("galleryQueueDedupeKey") && core.includes("galleryQueueCoverFromImage"), "PornPics locale dedupe or queue previews are missing");
+
+const compactSettings = await text("src/patches/settings-compact.js");
+assert(compactSettings.includes('data-settings-group="${key}"') && compactSettings.includes("显示与浏览") && compactSettings.includes("磁力与播放"), "collapsible settings modules are missing");
 
 const optimizer = await text("src/core/optimizer.js");
 assert(optimizer.includes('function animateLightboxMedia() { lastSwitchDirection = "fade"; }'), "lightbox flash animation is still active");

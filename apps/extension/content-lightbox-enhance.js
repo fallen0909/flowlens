@@ -21,6 +21,9 @@
   let zoomMediaKey = "";
   let drag = null;
   let slideshowPointerHandledAt = 0;
+  let videoAdvanceTimer = 0;
+  let lastEndedMediaKey = "";
+  let lastEndedAt = 0;
 
   function root() { return document.getElementById("xiv-root"); }
   function lightbox() { return root()?.querySelector("#xiv-lightbox"); }
@@ -159,9 +162,11 @@
   function videoRunning() {
     const video = activeVideo();
     if (!video) return false;
+    // Calling play() on an ended video restarts it in Chromium. Check ended
+    // first or the slideshow can loop the same video forever.
+    if (video.ended) return false;
     playVideo(video);
     const duration = Number(video.duration || 0);
-    if (video.ended) return false;
     if (Number.isFinite(duration) && duration > 0) return Number(video.currentTime || 0) < duration - 0.35;
     return true;
   }
@@ -205,6 +210,28 @@
     scheduleSlideshow(slideshowDelay());
   }
 
+  function advanceAfterVideoEnded(sourceKey = "") {
+    if (!slideshowActive || !isOpen()) return;
+    const key = sourceKey || mediaKey();
+    const now = Date.now();
+    if (key && key === lastEndedMediaKey && now - lastEndedAt < 1200) return;
+    lastEndedMediaKey = key;
+    lastEndedAt = now;
+    clearTimeout(videoAdvanceTimer);
+    clearTimeout(slideshowTimer);
+    videoAdvanceTimer = window.setTimeout(() => {
+      if (!slideshowActive || !isOpen()) return;
+      const current = activeVideo();
+      if (current && !current.ended && mediaKey(current) === key) return;
+      goNext();
+      window.setTimeout(() => {
+        const nextVideo = activeVideo();
+        if (nextVideo) playVideo(nextVideo);
+      }, 120);
+      scheduleSlideshow(slideshowDelay());
+    }, 140);
+  }
+
   function startSlideshow() {
     if (!ownsSlideshow()) return;
     if (!isOpen()) return;
@@ -219,6 +246,7 @@
   function stopSlideshow(update = true) {
     slideshowActive = false;
     clearTimeout(slideshowTimer);
+    clearTimeout(videoAdvanceTimer);
     slideshowTimer = 0;
     if (update && isOpen()) ensureButton();
     window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: false } }));
@@ -401,7 +429,7 @@
 
   window.addEventListener("message", (event) => {
     const msg = event.data || {};
-    if (msg.type === "XIV_VIDEO_TIME" && msg.eventName === "ended" && slideshowActive) scheduleSlideshow(250);
+    if (msg.type === "XIV_VIDEO_TIME" && msg.eventName === "ended") advanceAfterVideoEnded(String(msg.url || ""));
   });
   document.addEventListener("pointerdown", onSlideshowPointerDown, true);
   document.addEventListener("click", onClick, true);
@@ -411,7 +439,7 @@
   document.addEventListener("pointerup", onPointerUp, true);
   document.addEventListener("pointercancel", onPointerUp, true);
   document.addEventListener("ended", (event) => {
-    if (slideshowActive && event.target?.matches?.("#xiv-lightbox video")) scheduleSlideshow(250);
+    if (event.target?.matches?.("#xiv-lightbox video")) advanceAfterVideoEnded(mediaKey(event.target));
   }, true);
 
   observer = new MutationObserver(() => scheduleRefresh(80));

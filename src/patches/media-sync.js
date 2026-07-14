@@ -198,8 +198,9 @@
       speedRow.className = "xiv-setting-row fl-slideshow-speed-row";
       speedRow.innerHTML = `<span>大图切换速度</span><select class="xiv-select fl-slideshow-speed"></select>`;
       const autoScrollRow = [...panel.querySelectorAll(".xiv-setting-row")].find((row) => /自动滚动速度/.test(row.textContent || ""));
-      if (autoScrollRow?.nextSibling) panel.insertBefore(speedRow, autoScrollRow.nextSibling);
-      else panel.appendChild(speedRow);
+      const rowContainer = autoScrollRow?.parentNode || panel;
+      if (autoScrollRow?.nextSibling) rowContainer.insertBefore(speedRow, autoScrollRow.nextSibling);
+      else rowContainer.appendChild(speedRow);
       speedRow.querySelector("select")?.addEventListener("change", (event) => setSlideshowDelay(event.target.value));
     }
     const select = speedRow.querySelector("select");
@@ -223,6 +224,15 @@
   function ensureSlideshowButton() {
     const app = root();
     if (!app) return;
+    if (nativeSlideshowOwnsButton()) {
+      // lightbox-enhance owns the only slideshow button. Remove the legacy
+      // root-level copy so clicks cannot land on a controller that immediately
+      // stops itself.
+      app.querySelectorAll(":scope > .xiv-lightbox-slideshow").forEach((node) => node.remove());
+      if (slideshowActive) stopSlideshow(false);
+      app.dataset.flLightbox = isLightboxOpen() ? "true" : "false";
+      return;
+    }
     let button = app.querySelector(".xiv-lightbox-slideshow");
     if (!button) {
       button = document.createElement("button");
@@ -243,10 +253,6 @@
     }
     const open = isLightboxOpen();
     app.dataset.flLightbox = open ? "true" : "false";
-    if (nativeSlideshowOwnsButton()) {
-      if (slideshowActive) stopSlideshow(false);
-      return;
-    }
     if (!open) {
       stopSlideshow(false);
       return;
