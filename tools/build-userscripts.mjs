@@ -20,7 +20,11 @@ await writeFile(
   "utf8"
 );
 
-const baseUrl = "https://raw.githubusercontent.com/fallen0909/flowlens/master";
+const rawRef = process.env.FLOWLENS_RAW_REF || "master";
+const outputSuffix = process.env.FLOWLENS_OUTPUT_SUFFIX || "";
+if (!/^[A-Za-z0-9._/-]+$/.test(rawRef)) throw new Error(`Invalid raw ref: ${rawRef}`);
+if (outputSuffix && !/^-[a-z0-9-]+$/.test(outputSuffix)) throw new Error(`Invalid output suffix: ${outputSuffix}`);
+const baseUrl = `https://raw.githubusercontent.com/fallen0909/flowlens/${rawRef}`;
 const shared = [
   "src/core/version.js",
   "src/core/global-settings.js",
@@ -29,7 +33,6 @@ const shared = [
   "src/patches/xchina-ad-filter.js",
   "src/patches/media-filter-center.js",
   "src/patches/site-adapter-center.js",
-  "src/patches/lightbox-control-fixes.js",
   "src/patches/pornpics-queue-hotfix.js",
   "src/patches/visible-sequence-safe.js",
   "src/patches/lightbox-event-guard.js",
@@ -69,6 +72,9 @@ function header({ name, namespace, description, output, additions = [] }) {
 // @grant        GM_download
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_openInTab
+// @connect      localhost
+// @connect      127.0.0.1
 // @downloadURL  ${baseUrl}/${output}
 // @updateURL    ${baseUrl}/${output}
 ${requires}
@@ -81,7 +87,8 @@ ${requires}
 }
 
 async function build(entry) {
-  await writeFile(resolve(root, entry.output), header(entry), "utf8");
+  const output = entry.output.replace(/\.user\.js$/, `${outputSuffix}.user.js`);
+  await writeFile(resolve(root, output), header({ ...entry, output }), "utf8");
 }
 
 await build({

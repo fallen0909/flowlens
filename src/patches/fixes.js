@@ -10,7 +10,7 @@
   let recoveryTimer = 0;
 
   const css = `
-    #xiv-root, #xiv-stage, #xiv-grid, .xiv-masonry-column {
+    #xiv-stage, #xiv-grid, .xiv-masonry-column {
       contain: layout style paint;
     }
     #xiv-grid .xiv-tile {

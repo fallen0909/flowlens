@@ -172,7 +172,7 @@
   function writeSettings(patch) {
     const next = { ...readSettings(), ...patch };
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    try { if (chrome?.storage?.local?.set) chrome.storage.local.set({ [SETTINGS_KEY]: next }); } catch { /* ignore */ }
+    try { (chrome?.storage?.sync || chrome?.storage?.local)?.set?.({ [SETTINGS_KEY]: next }); } catch { /* ignore */ }
     return next;
   }
 

@@ -3,7 +3,7 @@
   window.__flowLensIosSmoothPatch = true;
 
   const STYLE_ID = "flowlens-lightbox-ios-smooth-style";
-  const PRELOAD_OFFSETS = [1, 2, 3, -1];
+  const PRELOAD_OFFSETS = [1, 2, 3, 4, -1, -2];
   const preloadCache = new Map();
   const internalSrcSets = new WeakSet();
   const pendingTokens = new WeakMap();
@@ -14,7 +14,7 @@
     style.id = STYLE_ID;
     style.textContent = `
       #xiv-lightbox[data-active="true"] {
-        contain: paint;
+        contain: none !important;
         -webkit-font-smoothing: antialiased;
       }
       #xiv-lightbox img.xiv-fl-smooth-media,
@@ -87,6 +87,7 @@
 
     const img = new Image();
     img.decoding = "async";
+    try { img.fetchPriority = "high"; } catch {}
     img.referrerPolicy = referrerPolicyFor(key, referrerPolicy);
 
     let done = false;
@@ -168,7 +169,10 @@
     pendingTokens.set(img, token);
     markSmoothMedia(img);
 
-    await warmImage(url, img.referrerPolicy || "");
+    await Promise.race([
+      warmImage(url, img.referrerPolicy || ""),
+      new Promise((resolve) => window.setTimeout(resolve, 180))
+    ]);
     if (!img.isConnected || pendingTokens.get(img) !== token) return;
 
     const onReady = () => {

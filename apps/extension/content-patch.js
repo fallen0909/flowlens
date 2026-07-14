@@ -15,7 +15,7 @@
 
   const SETTINGS_KEY = "flowlens-settings-v2";
   const FILTER_KEY = "flowlens-media-filter-v1";
-  const KEEP_ACTIONS = new Set(["download", "auto", "full", "prev-set", "next-set", "top", "settings", "close"]);
+  const KEEP_ACTIONS = new Set(["download", "link-grabber", "auto", "full", "prev-set", "next-set", "queue-list", "top", "settings", "close"]);
   const VIDEO_RE = /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i;
   let mutationTimer = 0;
   let lightboxObserver = null;
@@ -25,7 +25,7 @@
   const css = `
     html.xiv-active,
     html.xiv-active body { margin: 0 !important; padding: 0 !important; background: #000 !important; overscroll-behavior: none !important; }
-    #xiv-root { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; overflow: hidden !important; background: #050505 !important; transform: translateZ(0); }
+    #xiv-root { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; overflow: hidden !important; background: #050505 !important; transform: none !important; }
     #xiv-root[data-theme="light"] { background: #f4f4f1 !important; color: #141414 !important; }
     @supports not (height: 100dvh) { #xiv-root { height: 100vh !important; max-height: 100vh !important; } }
     #xiv-root::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: max(env(safe-area-inset-top, 0px), 1px); background: #050505; z-index: 2; pointer-events: none; }
@@ -34,13 +34,13 @@
     #xiv-topbar { top: 0 !important; padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important; background: linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.36), rgba(0,0,0,0)) !important; }
     #xiv-root[data-theme="light"] #xiv-topbar { background: linear-gradient(to bottom, rgba(244,244,241,.92), rgba(244,244,241,.45), rgba(244,244,241,0)) !important; }
     #xiv-topbar .xiv-pill { background: transparent !important; border: 0 !important; color: #fff !important; padding: 0 4px !important; box-shadow: none !important; backdrop-filter: none !important; text-shadow: 0 1px 2px rgba(0,0,0,.72), 0 0 10px rgba(0,0,0,.46) !important; }
-    #xiv-topbar [data-xiv]:not([data-xiv="download"]):not([data-xiv="auto"]):not([data-xiv="full"]):not([data-xiv="prev-set"]):not([data-xiv="next-set"]):not([data-xiv="top"]):not([data-xiv="settings"]):not([data-xiv="close"]), #xiv-topbar .xiv-select[data-xiv="filter"] { display: none !important; }
+    #xiv-topbar [data-xiv]:not([data-xiv="download"]):not([data-xiv="link-grabber"]):not([data-xiv="auto"]):not([data-xiv="full"]):not([data-xiv="prev-set"]):not([data-xiv="next-set"]):not([data-xiv="queue-list"]):not([data-xiv="top"]):not([data-xiv="settings"]):not([data-xiv="close"]), #xiv-topbar .xiv-select[data-xiv="filter"] { display: none !important; }
     #xiv-topbar .xiv-actions { gap: 8px !important; flex-wrap: nowrap !important; }
     #xiv-root[data-lightbox-active="true"] #xiv-topbar { justify-content: flex-end !important; gap: 0 !important; padding: 8px 10px !important; pointer-events: none !important; }
     #xiv-root[data-lightbox-active="true"] #xiv-topbar .xiv-pill { display: none !important; }
     #xiv-root[data-lightbox-active="true"] #xiv-topbar .xiv-actions { max-width: calc(100vw - 20px) !important; gap: 7px !important; flex-wrap: nowrap !important; justify-content: flex-end !important; overflow: visible !important; pointer-events: auto !important; }
     #xiv-root[data-lightbox-active="true"] #xiv-topbar .xiv-btn { min-width: 38px !important; width: 38px !important; height: 38px !important; padding: 0 !important; flex: 0 0 38px !important; }
-    #xiv-root[data-lightbox-active="true"] #xiv-topbar [data-xiv="prev-set"], #xiv-root[data-lightbox-active="true"] #xiv-topbar [data-xiv="next-set"], #xiv-root[data-lightbox-active="true"] #xiv-topbar [data-xiv="top"] { display: none !important; }
+    #xiv-root[data-lightbox-active="true"] #xiv-topbar [data-xiv="prev-set"], #xiv-root[data-lightbox-active="true"] #xiv-topbar [data-xiv="next-set"], #xiv-root[data-lightbox-active="true"] #xiv-topbar [data-xiv="queue-list"], #xiv-root[data-lightbox-active="true"] #xiv-topbar [data-xiv="top"] { display: none !important; }
     html.xiv-fl-launch-hidden #xiv-launch { display: none !important; }
     .xiv-fl-filter-select { height: 34px; min-width: 108px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); background: rgba(18,18,20,.72); color: #fff; padding: 0 28px 0 12px; font: 800 13px/1 system-ui, sans-serif; }
     #xiv-root[data-theme="light"] .xiv-fl-filter-select { background: rgba(255,255,255,.86); color: #151515; border-color: rgba(0,0,0,.12); }
@@ -50,7 +50,7 @@
     #xiv-root[data-theme="light"] .xiv-fl-stepper button { background: rgba(255,255,255,.86); color: #151515; border-color: rgba(0,0,0,.12); }
     #xiv-root [data-panel="settings"] small { display: none !important; }
     #xiv-lightbox img, #xiv-lightbox video, #xiv-lightbox iframe, #xiv-lightbox .xiv-video-frame { will-change: transform, opacity; backface-visibility: hidden; }
-    #xiv-lightbox .xiv-fl-media-anim { animation-duration: 280ms; animation-timing-function: cubic-bezier(.22,.61,.36,1); animation-fill-mode: both; }
+    #xiv-lightbox .xiv-fl-media-anim { animation: none !important; opacity: 1 !important; transform: none !important; }
     #xiv-lightbox[data-fl-dir="next-y"] .xiv-fl-media-anim { animation-name: xivFlNextY; }
     #xiv-lightbox[data-fl-dir="prev-y"] .xiv-fl-media-anim { animation-name: xivFlPrevY; }
     #xiv-lightbox[data-fl-dir="next-x"] .xiv-fl-media-anim { animation-name: xivFlNextX; }
@@ -65,8 +65,8 @@
   `;
 
   function injectStyle() { if (document.getElementById("xiv-fl-ux-patch-style")) return; const style = document.createElement("style"); style.id = "xiv-fl-ux-patch-style"; style.textContent = css; document.documentElement.appendChild(style); }
-  function readSettings() { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; } }
-  function saveSettings(patch) { const settings = { ...readSettings(), ...patch }; try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } }
+  function readSettings() { const extensionSettings = window.__flowLensSettingsStore?.read?.(); if (extensionSettings) return extensionSettings; try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; } }
+  function saveSettings(patch) { if (window.__flowLensSettingsStore?.write) return window.__flowLensSettingsStore.write(patch); const settings = { ...readSettings(), ...patch }; try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } return settings; }
   function launchHidden() { return readSettings().launchHidden === true; }
   function applyLaunchVisibility() { document.documentElement.classList.toggle("xiv-fl-launch-hidden", launchHidden()); }
   function getStoredFilter() { const nativeSelect = document.querySelector('#xiv-root [data-xiv="filter"]'); const value = localStorage.getItem(FILTER_KEY) || (nativeSelect ? nativeSelect.value : "all") || "all"; return ["all", "image", "video"].includes(value) ? value : "all"; }
@@ -81,9 +81,9 @@
   function syncAddonControls() { const hideInput = document.querySelector('[data-fl-setting="launchHidden"]'); if (hideInput) hideInput.checked = launchHidden(); const filterSelect = document.querySelector('[data-fl-setting="mediaFilter"]'); if (filterSelect) filterSelect.value = getStoredFilter(); refreshSteppers(); }
   function isTypingTarget(target) { return target && target.matches && target.matches("input, textarea, select, [contenteditable='true'], [contenteditable='']"); }
   function toggleViewerByPatch() { const root = document.getElementById("xiv-root"); if (root && root.dataset.active === "true") { const close = document.querySelector('#xiv-root [data-xiv="close"]'); if (close) close.click(); return; } const launch = document.getElementById("xiv-launch"); if (launch) launch.click(); }
-  function closePanelsOnOutside(event) { const settingsPanel = document.querySelector('#xiv-root [data-panel="settings"]'); const diagnosticsPanel = document.querySelector('#xiv-root [data-panel="diagnostics"]'); if ((!settingsPanel || settingsPanel.dataset.open !== "true") && (!diagnosticsPanel || diagnosticsPanel.dataset.open !== "true")) return; if (event.target && event.target.closest && event.target.closest('[data-panel="settings"], [data-panel="diagnostics"], [data-xiv="settings"], [data-xiv="diag"]')) return; if (settingsPanel) settingsPanel.dataset.open = "false"; if (diagnosticsPanel) diagnosticsPanel.dataset.open = "false"; }
+  function closePanelsOnOutside(event) { const settingsPanel = document.querySelector('#xiv-root [data-panel="settings"]'); const diagnosticsPanel = document.querySelector('#xiv-root [data-panel="diagnostics"]'); const queuePanel = document.querySelector('#xiv-root [data-panel="queue"]'); const linkPanel = document.querySelector('#xiv-root [data-panel="link-grabber"]'); if ((!settingsPanel || settingsPanel.dataset.open !== "true") && (!diagnosticsPanel || diagnosticsPanel.dataset.open !== "true") && (!queuePanel || queuePanel.dataset.open !== "true") && (!linkPanel || linkPanel.dataset.open !== "true")) return; if (event.target && event.target.closest && event.target.closest('[data-panel="settings"], [data-panel="diagnostics"], [data-panel="queue"], [data-panel="link-grabber"], [data-xiv="settings"], [data-xiv="diag"], [data-xiv="queue-list"], [data-xiv="link-grabber"]')) return; if (settingsPanel) settingsPanel.dataset.open = "false"; if (diagnosticsPanel) diagnosticsPanel.dataset.open = "false"; if (queuePanel) queuePanel.dataset.open = "false"; if (linkPanel) linkPanel.dataset.open = "false"; }
   function bindShortcuts() { document.addEventListener("pointerdown", closePanelsOnOutside, true); document.addEventListener("keydown", (event) => { if (isTypingTarget(event.target)) return; if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "f") { event.preventDefault(); event.stopPropagation(); toggleViewerByPatch(); } const lightbox = document.getElementById("xiv-lightbox"); if (lightbox && lightbox.dataset.active === "true") { if (event.key === "ArrowRight") lastSwitchDirection = "next-x"; else if (event.key === "ArrowLeft") lastSwitchDirection = "prev-x"; } }, true); document.addEventListener("wheel", (event) => { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.active !== "true" || !lightbox.contains(event.target)) return; const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX; if (Math.abs(delta) > 4) lastSwitchDirection = delta > 0 ? "next-y" : "prev-y"; }, true); document.addEventListener("pointerdown", (event) => { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.active !== "true" || !lightbox.contains(event.target)) return; if (event.target && event.target.closest && event.target.closest(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow")) return; swipeStart = { x: event.clientX, y: event.clientY }; }, true); document.addEventListener("pointerup", (event) => { if (!swipeStart) return; const dx = event.clientX - swipeStart.x; const dy = event.clientY - swipeStart.y; swipeStart = null; if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return; lastSwitchDirection = Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "next-x" : "prev-x") : (dy < 0 ? "next-y" : "prev-y"); }, true); }
-  function animateLightboxMedia() { const lightbox = document.getElementById("xiv-lightbox"); if (!lightbox || lightbox.dataset.active !== "true") return; const media = lightbox.querySelector(".xiv-video-frame, img, video, iframe"); if (!media) return; lightbox.dataset.flDir = lastSwitchDirection || "fade"; media.classList.remove("xiv-fl-media-anim"); void media.offsetWidth; media.classList.add("xiv-fl-media-anim"); setTimeout(() => media.classList.remove("xiv-fl-media-anim"), 340); lastSwitchDirection = "fade"; }
+  function animateLightboxMedia() { lastSwitchDirection = "fade"; }
   function setImportantStyle(el, key, value) { if (el) el.style.setProperty(key, value, "important"); }
   function clearStyle(el, keys) { if (!el) return; keys.forEach((key) => el.style.removeProperty(key)); }
   function isTouchLikeDevice() { return matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent); }
@@ -92,7 +92,7 @@
     const pill = document.querySelector("#xiv-topbar .xiv-pill");
     const actions = document.querySelector("#xiv-topbar .xiv-actions");
     const buttons = document.querySelectorAll("#xiv-topbar .xiv-btn");
-    const hidden = document.querySelectorAll('#xiv-topbar [data-xiv="prev-set"], #xiv-topbar [data-xiv="next-set"], #xiv-topbar [data-xiv="top"]');
+    const hidden = document.querySelectorAll('#xiv-topbar [data-xiv="prev-set"], #xiv-topbar [data-xiv="next-set"], #xiv-topbar [data-xiv="queue-list"], #xiv-topbar [data-xiv="top"]');
     if (active) {
       setImportantStyle(topbar, "justify-content", "flex-end");
       setImportantStyle(topbar, "gap", "0");

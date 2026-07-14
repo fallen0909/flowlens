@@ -1,83 +1,89 @@
-// ==UserScript==
-// @name         瀑光 FlowLens 全局设置同步
-// @namespace    local.flowlens.settings
-// @version      1.3.5
-// @description  让隐藏入口图标、主题、列数、自动滚动速度、大图切换速度等设置在所有网站共用一份。
-// @match        *://*/*
-// @run-at       document-start
-// @noframes
-// @grant        GM_getValue
-// @grant        GM_setValue
-// ==/UserScript==
-
 (() => {
-  if (window.__flowLensGlobalSettings) return;
-  window.__flowLensGlobalSettings = true;
+  if (window.__flowLensSettingsStore) return;
 
   const SETTINGS_KEY = "flowlens-settings-v2";
-  const GLOBAL_KEY = "flowlens-global-settings-v2";
-  const SYNC_KEYS = ["launchHidden", "launchCompact", "autoFullscreen", "videoPreview", "theme", "columns", "autoScrollSpeed", "lightboxAutoDelay"];
-  let saveTimer = 0;
+  const DELAYS = [800, 1200, 1800, 2400, 3200];
+  const DEFAULTS = {
+    launchHidden: false,
+    launchCompact: false,
+    launchX: 0,
+    launchY: 0,
+    autoFullscreen: true,
+    videoPreview: true,
+    theme: "system",
+    columns: 3,
+    autoScrollSpeed: 3,
+    downloadFolder: "",
+    lightboxAutoDelay: 1200
+  };
 
-  function safeJsonParse(text) {
-    try { return JSON.parse(text || "{}") || {}; } catch { return {}; }
+  function clamp(value, min, max, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
   }
 
-  function readLocalSettings() {
-    return safeJsonParse(localStorage.getItem(SETTINGS_KEY) || "{}");
-  }
-
-  function writeLocalSettings(settings) {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings || {})); } catch { /* ignore */ }
-  }
-
-  function pick(settings) {
+  function sanitize(input = {}) {
     const result = {};
-    SYNC_KEYS.forEach((key) => {
-      if (Object.prototype.hasOwnProperty.call(settings || {}, key)) result[key] = settings[key];
-    });
+    if ("launchHidden" in input) result.launchHidden = input.launchHidden === true;
+    if ("launchCompact" in input) result.launchCompact = input.launchCompact === true;
+    if ("launchX" in input) result.launchX = clamp(input.launchX, -10000, 10000, 0);
+    if ("launchY" in input) result.launchY = clamp(input.launchY, -10000, 10000, 0);
+    if ("autoFullscreen" in input) result.autoFullscreen = input.autoFullscreen !== false;
+    if ("videoPreview" in input) result.videoPreview = input.videoPreview !== false;
+    if ("theme" in input) result.theme = ["system", "dark", "light"].includes(input.theme) ? input.theme : "system";
+    if ("columns" in input) result.columns = clamp(input.columns, 2, 8, 3);
+    if ("autoScrollSpeed" in input) result.autoScrollSpeed = clamp(input.autoScrollSpeed, 1, 10, 3);
+    if ("downloadFolder" in input) result.downloadFolder = String(input.downloadFolder || "").replace(/[<>:"|?*\x00-\x1f]+/g, "_").slice(0, 120);
+    if ("lightboxAutoDelay" in input) {
+      const delay = Number(input.lightboxAutoDelay);
+      result.lightboxAutoDelay = DELAYS.includes(delay) ? delay : 1200;
+    }
     return result;
   }
 
-  function readGlobalSettings() {
-    try { return safeJsonParse(GM_getValue(GLOBAL_KEY, "{}")); } catch { return {}; }
+  let current = { ...DEFAULTS, ...sanitize(window.__FLOWLENS_EXTENSION_SETTINGS__ || {}) };
+
+  function read() {
+    return { ...current };
   }
 
-  function writeGlobalSettings(settings) {
-    try { GM_setValue(GLOBAL_KEY, JSON.stringify(pick(settings || {}))); } catch { /* ignore */ }
+  function notify() {
+    window.dispatchEvent(new CustomEvent("flowlens:settings-sync", { detail: { settings: read() } }));
+    document.documentElement.classList.toggle("xiv-fl-launch-hidden", current.launchHidden === true);
   }
 
-  function applyLaunchVisibility(settings) {
-    document.documentElement.classList.toggle("xiv-fl-launch-hidden", settings && settings.launchHidden === true);
+  function replace(settings, persist = false) {
+    current = { ...DEFAULTS, ...current, ...sanitize(settings || {}) };
+    window.__FLOWLENS_EXTENSION_SETTINGS__ = read();
+    notify();
+    if (persist) chrome.storage.sync.set({ [SETTINGS_KEY]: current });
+    return read();
   }
 
-  function applyGlobalToThisSite() {
-    const global = readGlobalSettings();
-    const local = readLocalSettings();
-    const merged = { ...local, ...pick(global) };
-    writeLocalSettings(merged);
-    applyLaunchVisibility(merged);
-    return merged;
+  function write(patch) {
+    return replace(patch, true);
   }
 
-  function syncThisSiteToGlobal() {
-    const local = readLocalSettings();
-    writeGlobalSettings(local);
-    applyLaunchVisibility(local);
+  async function load() {
+    try {
+      const result = await chrome.storage.sync.get(SETTINGS_KEY);
+      replace(result?.[SETTINGS_KEY] || {}, false);
+    } catch {
+      notify();
+    }
+    return read();
   }
 
-  window.__flowLensApplyGlobalSettings = applyGlobalToThisSite;
-  window.__flowLensSyncGlobalSettings = syncThisSiteToGlobal;
+  window.__flowLensSettingsStore = { read, write, replace, load };
+  window.__flowLensGlobalSettings = true;
+  window.__flowLensApplyGlobalSettings = load;
+  window.__flowLensSyncGlobalSettings = () => chrome.storage.sync.set({ [SETTINGS_KEY]: current });
 
-  applyGlobalToThisSite();
-
-  window.addEventListener("storage", (event) => {
-    if (event.key !== SETTINGS_KEY) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(syncThisSiteToGlobal, 120);
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "sync" || !changes[SETTINGS_KEY]?.newValue) return;
+    replace(changes[SETTINGS_KEY].newValue, false);
   });
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") syncThisSiteToGlobal();
-  });
+  notify();
+  load();
 })();

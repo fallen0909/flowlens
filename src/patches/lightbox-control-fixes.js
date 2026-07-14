@@ -145,9 +145,23 @@
     }
   }
 
+  function iframeVideo(frame) {
+    try { return frame?.contentDocument?.querySelector?.("video") || null; } catch { return null; }
+  }
+
+  function frameVideoShell() {
+    return lightbox()?.querySelector("iframe[data-media-url], .xiv-video-frame") || null;
+  }
+
+  function activeVideo() {
+    const box = lightbox();
+    return box?.querySelector("video") || iframeVideo(frameVideoShell());
+  }
+
   function currentVideoStillPlaying() {
-    const video = lightbox()?.querySelector("video");
-    if (!video) return false;
+    const box = lightbox();
+    const video = activeVideo();
+    if (!video) return !!frameVideoShell() && box?.dataset.flVideoEnded !== "true";
     try {
       video.playsInline = true;
       if (video.paused && !video.ended) video.play?.()?.catch?.(() => {});
@@ -235,6 +249,14 @@
     if (event.type === "click" && Date.now() - pointerDownAt > 600) toggle();
   }
 
+  function onVideoFrameMessage(event) {
+    const message = event.data || {};
+    if (message.type === "XIV_VIDEO_TIME" && message.eventName === "ended" && playing && isOpen()) {
+      lightbox().dataset.flVideoEnded = "true";
+      schedule(250);
+    }
+  }
+
   function mediaElement() {
     return lightbox()?.querySelector("img, video") || null;
   }
@@ -313,6 +335,7 @@
   window.addEventListener("pointerdown", onSlideshowEvent, true);
   window.addEventListener("touchstart", onSlideshowEvent, { capture: true, passive: false });
   window.addEventListener("click", onSlideshowEvent, true);
+  window.addEventListener("message", onVideoFrameMessage, true);
   document.addEventListener("pointerdown", onSlideshowEvent, true);
   document.addEventListener("touchstart", onSlideshowEvent, { capture: true, passive: false });
   document.addEventListener("click", onSlideshowEvent, true);

@@ -8,6 +8,9 @@
 // @noframes
 // @grant        GM_xmlhttpRequest
 // @grant        GM_download
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_openInTab
 // @connect      *
 // ==/UserScript==
 
@@ -90,6 +93,7 @@
     stage: null,
     grid: null,
     masonryColumns: [],
+    masonryColumnHeights: [],
     lightbox: null,
     counter: null,
     status: null,
@@ -115,6 +119,8 @@
     autoScroll: false,
     autoScrollSpeed: 3,
     autoScrollFrame: 0,
+    autoScrollLastTime: 0,
+    autoScrollRemainder: 0,
     autoScrollPausedForLightbox: false,
     active: false,
     index: 0,
@@ -143,6 +149,7 @@
     viewerSwipe: null,
     lastLightboxWheelAt: 0,
     mediaPreloadTimer: 0,
+    highResResolveTimer: 0,
     mediaPreloadCache: new Map(),
     lightboxDrag: null,
     lightboxSuppressClickUntil: 0,
@@ -167,6 +174,11 @@
     galleryQueueIndex: -1,
     galleryQueueCurrentUrl: "",
     galleryQueueCurrentTitle: "",
+    galleryQueueTitles: new Map(),
+    galleryQueueCovers: new Map(),
+    galleryQueuePanel: null,
+    linkGrabberPanel: null,
+    grabbedDownloadLinks: [],
     x810114RecentQueue: [],
     x810114ActiveSidebarQueue: []
   };
@@ -194,21 +206,26 @@
     return "flowlens-settings-v2";
   }
 
-  function chromeStorageLocal() {
+  function chromeSettingsStorage() {
     try {
-      return typeof chrome !== "undefined" ? chrome.storage?.local : null;
+      return typeof chrome !== "undefined" ? chrome.storage?.sync || chrome.storage?.local || null : null;
     } catch {
       return null;
     }
   }
 
   function loadSettings() {
+    const extensionSettings = window.__flowLensSettingsStore?.read?.();
+    if (extensionSettings && typeof extensionSettings === "object") {
+      state.settings = { ...DEFAULT_SETTINGS, ...extensionSettings };
+    } else {
     try {
       const raw = localStorage.getItem(settingsStorageKey());
       const parsed = raw ? JSON.parse(raw) : {};
       state.settings = { ...DEFAULT_SETTINGS, ...parsed };
     } catch {
       state.settings = { ...DEFAULT_SETTINGS };
+    }
     }
     state.columns = Math.max(2, Math.min(8, Number(state.settings.columns || DEFAULT_SETTINGS.columns)));
     state.autoScrollSpeed = Math.max(1, Math.min(10, Number(state.settings.autoScrollSpeed || DEFAULT_SETTINGS.autoScrollSpeed)));
@@ -217,7 +234,14 @@
   }
 
   function loadExtensionSettings() {
-    const storage = chromeStorageLocal();
+    const settingsStore = window.__flowLensSettingsStore;
+    if (settingsStore?.read) {
+      state.settings = { ...DEFAULT_SETTINGS, ...state.settings, ...settingsStore.read() };
+      applySettings();
+      settingsStore.load?.();
+      return;
+    }
+    const storage = chromeSettingsStorage();
     if (!storage?.get) return;
     try {
       storage.get(settingsStorageKey(), (result) => {
@@ -234,12 +258,16 @@
 
   function saveSettings(patch = {}) {
     state.settings = { ...(state.settings || DEFAULT_SETTINGS), ...patch };
+    if (window.__flowLensSettingsStore?.write) {
+      state.settings = { ...state.settings, ...window.__flowLensSettingsStore.write(patch) };
+      return;
+    }
     try {
       localStorage.setItem(settingsStorageKey(), JSON.stringify(state.settings));
     } catch {
       // Storage can be blocked on restricted pages; settings remain active for this session.
     }
-    const storage = chromeStorageLocal();
+    const storage = chromeSettingsStorage();
     if (storage?.set) {
       try {
         storage.set({ [settingsStorageKey()]: state.settings });
@@ -267,6 +295,13 @@
     }
     applyLaunchSettings();
     syncSettingsPanel();
+  }
+
+  function applySyncedSettings(event) {
+    const settings = event?.detail?.settings;
+    if (!settings || typeof settings !== "object") return;
+    state.settings = { ...(state.settings || DEFAULT_SETTINGS), ...settings };
+    applySettings();
   }
 
   const css = `
@@ -446,6 +481,7 @@
     }
     #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="prev-set"],
     #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="next-set"],
+    #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="queue-list"],
     #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="top"] {
       display: none;
     }
@@ -490,6 +526,106 @@
       display: block; margin-top: 8px; color: rgba(255,255,255,.62); line-height: 1.45;
     }
     #xiv-root[data-theme="light"] .xiv-panel small { color: rgba(0,0,0,.58); }
+    .xiv-queue-panel {
+      width: min(390px, calc(100vw - 24px)); padding: 0; overflow: hidden;
+      border-radius: 18px; background: rgba(16,17,20,.94); box-shadow: 0 24px 70px rgba(0,0,0,.46);
+    }
+    #xiv-root[data-theme="light"] .xiv-queue-panel { background: rgba(250,250,248,.96); }
+    .xiv-queue-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 15px 16px 12px; border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    #xiv-root[data-theme="light"] .xiv-queue-head { border-bottom-color: rgba(0,0,0,.08); }
+    .xiv-queue-head h3 { margin: 0; font-size: 16px; }
+    .xiv-queue-count { color: rgba(255,255,255,.58); font: 750 12px/1 system-ui, sans-serif; }
+    #xiv-root[data-theme="light"] .xiv-queue-count { color: rgba(0,0,0,.5); }
+    .xiv-queue-list { max-height: min(62vh, 520px); overflow: auto; padding: 8px; overscroll-behavior: contain; }
+    .xiv-queue-item {
+      width: 100%; min-height: 66px; display: grid; grid-template-columns: 52px minmax(0,1fr) 18px;
+      align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 12px;
+      background: transparent; color: inherit; text-align: left; cursor: pointer;
+    }
+    .xiv-queue-item:hover { background: rgba(255,255,255,.08); }
+    #xiv-root[data-theme="light"] .xiv-queue-item:hover { background: rgba(0,0,0,.055); }
+    .xiv-queue-item[data-current="true"] { background: rgba(89,126,255,.18); }
+    #xiv-root[data-theme="light"] .xiv-queue-item[data-current="true"] { background: rgba(43,91,222,.1); }
+    .xiv-queue-cover {
+      position: relative; width: 52px; height: 52px; overflow: hidden; border-radius: 11px;
+      background: linear-gradient(145deg, rgba(108,128,188,.28), rgba(255,255,255,.06));
+    }
+    #xiv-root[data-theme="light"] .xiv-queue-cover { background: linear-gradient(145deg, rgba(76,104,184,.14), rgba(0,0,0,.035)); }
+    .xiv-queue-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .xiv-queue-number {
+      position: absolute; left: 4px; bottom: 4px; min-width: 20px; height: 20px; display: grid; place-items: center;
+      padding: 0 4px; border-radius: 7px; background: rgba(0,0,0,.66); color: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.24); font: 850 10px/1 system-ui, sans-serif;
+    }
+    .xiv-queue-copy { min-width: 0; }
+    .xiv-queue-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 13px/1.3 system-ui, sans-serif; }
+    .xiv-queue-url { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,.5); font: 600 11px/1.2 system-ui, sans-serif; }
+    #xiv-root[data-theme="light"] .xiv-queue-url { color: rgba(0,0,0,.46); }
+    .xiv-queue-arrow { opacity: .5; font-size: 18px; }
+    .xiv-queue-empty { padding: 28px 16px; color: rgba(255,255,255,.58); text-align: center; font: 700 13px/1.5 system-ui, sans-serif; }
+    #xiv-root[data-theme="light"] .xiv-queue-empty { color: rgba(0,0,0,.5); }
+    .xiv-link-panel { width: min(560px, calc(100vw - 24px)); padding: 0; overflow: hidden; border-radius: 18px; }
+    .xiv-link-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 15px 10px; border-bottom: 1px solid rgba(127,127,127,.18); }
+    .xiv-link-head h3 { margin: 0; font-size: 16px; }
+    .xiv-link-count { color: rgba(127,127,127,.76); font: 800 12px/1 system-ui, sans-serif; }
+    .xiv-link-actions { display: flex; flex-wrap: wrap; gap: 7px; padding: 9px 10px; border-bottom: 1px solid rgba(127,127,127,.14); }
+    .xiv-link-actions button, .xiv-link-row-actions button { border: 0; border-radius: 9px; background: rgba(127,127,127,.13); color: inherit; cursor: pointer; font: 800 11px/1 system-ui, sans-serif; }
+    .xiv-link-actions button { min-height: 32px; padding: 0 11px; }
+    .xiv-link-actions [data-link-action="save-all"] { background: #315bd8; color: #fff; }
+    .xiv-link-bridge-status { padding: 0 12px 9px; border-bottom: 1px solid rgba(127,127,127,.14); color: rgba(127,127,127,.8); font: 700 11px/1.3 system-ui, sans-serif; }
+    .xiv-link-bridge-status[data-ready="true"] { color: #2d9b67; }
+    .xiv-link-bridge-status[data-error="true"] { color: #d45555; }
+    .xiv-cd2-settings {
+      margin-top: 12px; padding: 12px; border: 1px solid rgba(127,127,127,.2); border-radius: 14px;
+      background: linear-gradient(145deg, rgba(49,91,216,.09), rgba(127,127,127,.04));
+    }
+    .xiv-cd2-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .xiv-cd2-settings-head strong { font: 900 13px/1.2 system-ui, sans-serif; }
+    .xiv-cd2-settings-head span { color: #6388ff; font: 850 10px/1 system-ui, sans-serif; letter-spacing: .04em; }
+    #xiv-root[data-theme="light"] .xiv-cd2-settings-head span { color: #315bd8; }
+    .xiv-cd2-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .xiv-cd2-field { display: grid; gap: 5px; min-width: 0; color: rgba(127,127,127,.92); font: 750 10px/1.2 system-ui, sans-serif; }
+    .xiv-cd2-field[data-wide="true"] { grid-column: 1 / -1; }
+    .xiv-cd2-field input {
+      box-sizing: border-box; width: 100%; height: 36px; padding: 0 10px; border: 1px solid rgba(127,127,127,.24);
+      border-radius: 9px; outline: none; background: rgba(15,16,19,.46); color: inherit; font: 700 11px/1 ui-monospace, Consolas, monospace;
+    }
+    #xiv-root[data-theme="light"] .xiv-cd2-field input { background: rgba(255,255,255,.82); }
+    .xiv-cd2-field input:focus { border-color: #5275df; box-shadow: 0 0 0 3px rgba(49,91,216,.13); }
+    .xiv-cd2-play-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 10px; }
+    .xiv-cd2-play-mode { position: relative; min-width: 0; cursor: pointer; }
+    .xiv-cd2-play-mode input { position: absolute; opacity: 0; pointer-events: none; }
+    .xiv-cd2-play-mode-card { display: grid; grid-template-columns: 32px minmax(0,1fr); align-items: center; gap: 8px; min-height: 58px; padding: 8px 10px; border: 1px solid rgba(127,127,127,.22); border-radius: 11px; background: rgba(127,127,127,.06); }
+    .xiv-cd2-play-mode input:checked + .xiv-cd2-play-mode-card { border-color: #315bd8; background: rgba(49,91,216,.1); box-shadow: inset 0 0 0 1px #315bd8; }
+    .xiv-cd2-play-mode-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: rgba(49,91,216,.14); color: #6388ff; font-size: 14px; }
+    .xiv-cd2-play-mode-copy strong, .xiv-cd2-play-mode-copy small { display: block; }
+    .xiv-cd2-play-mode-copy strong { font: 850 11px/1.2 system-ui, sans-serif; }
+    .xiv-cd2-play-mode-copy small { margin: 3px 0 0; color: rgba(127,127,127,.8); font: 650 9px/1.25 system-ui, sans-serif; }
+    .xiv-cd2-field[data-cd2-local-row][hidden] { display: none !important; }
+    .xiv-cd2-controls { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .xiv-cd2-controls button { min-height: 32px; padding: 0 11px; border: 0; border-radius: 9px; background: rgba(127,127,127,.14); color: inherit; cursor: pointer; font: 850 11px/1 system-ui, sans-serif; }
+    .xiv-cd2-controls [data-cd2-action="save"] { background: #315bd8; color: #fff; }
+    .xiv-cd2-settings-status { min-height: 15px; margin-top: 8px; color: rgba(127,127,127,.78); font: 700 10px/1.45 system-ui, sans-serif; }
+    .xiv-cd2-settings-status[data-state="ready"] { color: #2d9b67; }
+    .xiv-cd2-settings-status[data-state="error"] { color: #d45555; }
+    @media (max-width: 520px) { .xiv-cd2-grid { grid-template-columns: 1fr; } .xiv-cd2-field[data-wide="true"] { grid-column: auto; } .xiv-cd2-play-modes { grid-template-columns: 1fr; } }
+    .xiv-link-list { max-height: min(58vh, 470px); overflow: auto; padding: 7px; overscroll-behavior: contain; }
+    .xiv-link-row { display: grid; grid-template-columns: 48px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 58px; padding: 7px 8px; border-radius: 11px; }
+    .xiv-link-row:hover { background: rgba(127,127,127,.09); }
+    .xiv-link-type { display: grid; place-items: center; min-height: 24px; border-radius: 7px; background: rgba(56,112,255,.14); color: #6388ff; font: 900 9px/1 system-ui, sans-serif; letter-spacing: .04em; }
+    #xiv-root[data-theme="light"] .xiv-link-type { color: #315bd8; }
+    .xiv-link-row-actions { display: flex; align-items: center; gap: 5px; }
+    .xiv-link-row-actions button { min-width: 42px; height: 30px; padding: 0 8px; }
+    .xiv-link-row-actions [data-link-row-action="play"] { background: rgba(49,91,216,.18); color: #6f91ff; }
+    #xiv-root[data-theme="light"] .xiv-link-row-actions [data-link-row-action="play"] { color: #315bd8; }
+    .xiv-link-row-actions button:hover, .xiv-link-actions button:hover { background: rgba(90,120,220,.2); }
+    .xiv-link-copy-text { min-width: 0; }
+    .xiv-link-name, .xiv-link-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xiv-link-name { font: 800 12px/1.3 system-ui, sans-serif; }
+    .xiv-link-value { margin-top: 4px; color: rgba(127,127,127,.76); font: 600 10px/1.2 ui-monospace, Consolas, monospace; }
     .xiv-diagnostics pre {
       max-height: 48vh; overflow: auto; margin: 8px 0 0; white-space: pre-wrap;
       font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -564,7 +700,8 @@
     }
     .xiv-lightbox-close:hover { transform: translateY(-1px) scale(1.04); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.28), rgba(42,42,46,.82)); }
     .xiv-lightbox-close:active { transform: scale(.96); }
-    .xiv-lightbox-fav {
+    .xiv-lightbox-fav,
+    .xiv-lightbox-zoom {
       position: fixed; right: 68px; top: 18px; z-index: 6;
       width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26);
       background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72));
@@ -573,10 +710,15 @@
       box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18);
       backdrop-filter: blur(12px); transition: transform .14s ease, background .14s ease, border-color .14s ease, color .14s ease;
     }
-    .xiv-lightbox-fav:hover { transform: translateY(-1px) scale(1.04); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.28), rgba(42,42,46,.82)); }
-    .xiv-lightbox-fav:active { transform: scale(.96); }
+    .xiv-lightbox-zoom { right: 168px; }
+    .xiv-lightbox-fav:hover,
+    .xiv-lightbox-zoom:hover { transform: translateY(-1px) scale(1.04); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.28), rgba(42,42,46,.82)); }
+    .xiv-lightbox-fav:active,
+    .xiv-lightbox-zoom:active { transform: scale(.96); }
     .xiv-lightbox-fav svg,
-    .xiv-lightbox-close svg { width: 21px; height: 21px; display: block; filter: drop-shadow(0 5px 10px rgba(0,0,0,.28)); }
+    .xiv-lightbox-close svg,
+    .xiv-lightbox-zoom svg { width: 21px; height: 21px; display: block; filter: drop-shadow(0 5px 10px rgba(0,0,0,.28)); }
+    .xiv-lightbox-zoom[data-active="true"] { color: #315bd8; border-color: rgba(49,91,216,.34); background: rgba(255,255,255,.98); }
     .xiv-lightbox-fav[data-favorited="true"] {
       color: #ff3b6b; border-color: rgba(255,59,107,.68);
       background: radial-gradient(circle at 32% 24%, rgba(255,119,149,.36), rgba(82,10,28,.78));
@@ -608,6 +750,8 @@
     play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
     prevSet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6 9 12l6 6"/><path d="M20 6 14 12l6 6"/><path d="M4 5v14"/></svg>',
     nextSet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/><path d="M4 6l6 6-6 6"/><path d="M20 5v14"/></svg>',
+    queueList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="14" height="12" rx="2"/><path d="m6 15 3.1-3.2a1.4 1.4 0 0 1 2 0L14 15"/><circle cx="13.5" cy="10" r="1"/><path d="M7 3h12a2 2 0 0 1 2 2v10"/></svg>',
+    magnet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v8a6 6 0 0 0 12 0V4"/><path d="M6 8h4M14 8h4M6 4h4M14 4h4"/></svg>',
     slow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M8 8l-4 4 4 4"/></svg>',
     fast: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M16 8l4 4-4 4"/></svg>',
     top: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M6 15l6-6 6 6M12 9v10"/></svg>',
@@ -750,6 +894,31 @@
     return false;
   }
 
+  function pornpicsGalleryInfo(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      if (!/(^|\.)pornpics\.com$/i.test(parsed.hostname)) return null;
+      const match = parsed.pathname.match(/^\/(?:([a-z]{2})\/)?galleries\/([^/?#]+)-(\d+)\/?$/i);
+      if (!match) return null;
+      return { locale: (match[1] || "en").toLowerCase(), slug: match[2].toLowerCase(), id: match[3] };
+    } catch {
+      return null;
+    }
+  }
+
+  function galleryQueueDedupeKey(url) {
+    const pornpics = pornpicsGalleryInfo(url);
+    return pornpics ? `pornpics:${pornpics.id}` : normalizedPageUrl(url).toLowerCase();
+  }
+
+  function isPornpicsLanguageMirror(url, base = location.href) {
+    const target = pornpicsGalleryInfo(url);
+    const source = pornpicsGalleryInfo(base);
+    if (!target || !source) return false;
+    if (target.id === source.id) return !samePageUrl(url, base);
+    return target.locale !== source.locale;
+  }
+
   function collectX810114SidebarProfileQueue(doc = document) {
     const found = [];
     const seen = new Set();
@@ -812,8 +981,9 @@
     function remember(raw) {
       const url = normalizedPageUrl(absoluteUrl(raw, base));
       if (!url || !isQueueCandidateUrl(url)) return;
+      if (isPornpicsLanguageMirror(url, base)) return;
       if (isPhotoGalleryPage(base) && sameGalleryPage(url, base)) return;
-      const key = url.toLowerCase();
+      const key = galleryQueueDedupeKey(url);
       if (seen.has(key)) return;
       seen.add(key);
       queue.push(url);
@@ -825,6 +995,16 @@
         sidebarQueue.forEach(remember);
         return queue;
       }
+    }
+
+    if (isPornpicsGalleryPage(base)) {
+      doc.querySelectorAll("a[href*='/galleries/']").forEach((link) => {
+        const image = link.querySelector("img")
+          || link.parentElement?.querySelector?.("img")
+          || link.closest("article, li, [class*='card' i], [class*='tile' i], [class*='item' i]")?.querySelector?.("img");
+        if (image) remember(link.getAttribute("href"));
+      });
+      return queue;
     }
 
     doc.querySelectorAll("a[href]").forEach((link) => remember(link.getAttribute("href")));
@@ -888,14 +1068,17 @@
     function remember(raw) {
       const url = normalizedPageUrl(absoluteUrl(raw, base));
       if (!url || !isQueueCandidateUrl(url)) return;
-      const key = url.toLowerCase();
+      if (isPornpicsLanguageMirror(url, base)) return;
+      const key = galleryQueueDedupeKey(url);
       if (seen.has(key)) return;
       seen.add(key);
       found.push(url);
     }
 
-    for (const match of html.matchAll(/https?:\/\/(?:www\.)?pornpics\.com\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
-    for (const match of html.matchAll(/["'](\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?)["']/gi)) remember(match[1]);
+    if (!isPornpicsGalleryPage(base)) {
+      for (const match of html.matchAll(/https?:\/\/(?:www\.)?pornpics\.com\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
+      for (const match of html.matchAll(/["'](\/(?:[a-z]{2}\/)?galleries\/[^"'<>\\\s]+?-\d+\/?)["']/gi)) remember(match[1]);
+    }
     for (const match of html.matchAll(/https?:\/\/(?:www\.)?xchina\.co\/(?:photo\/id-[A-Za-z0-9_-]+\.html|photos\/series-[A-Za-z0-9_-]+\/\d+\.html)/gi)) remember(match[0]);
     for (const match of html.matchAll(/["'](\/(?:photo\/id-[A-Za-z0-9_-]+\.html|photos\/series-[A-Za-z0-9_-]+\/\d+\.html))["']/gi)) remember(match[1]);
     for (const match of html.matchAll(/https?:\/\/(?:www\.)?buondua\.com\/[^"'<>\\\s]+?-\d+\/?/gi)) remember(match[0]);
@@ -978,7 +1161,16 @@
     try {
       const raw = sessionStorage.getItem(galleryQueueStorageKey());
       const data = JSON.parse(raw || "[]");
-      return Array.isArray(data) ? data.map(normalizedPageUrl).filter(isQueueCandidateUrl) : [];
+      if (!Array.isArray(data)) return [];
+      const base = activeGalleryQueueUrl();
+      const seen = new Set();
+      return data.map(normalizedPageUrl).filter((url) => {
+        if (!isQueueCandidateUrl(url) || isPornpicsLanguageMirror(url, base)) return false;
+        const key = galleryQueueDedupeKey(url);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     } catch {
       return [];
     }
@@ -993,6 +1185,7 @@
   }
 
   function refreshGalleryQueue(doc = document, base = location.href) {
+    rememberGalleryQueueTitles(doc, base);
     const stored = readStoredGalleryQueue();
     const discovered = collectGalleryQueueFromDocument(doc, base);
     const current = isX810114Url(base) ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
@@ -1002,7 +1195,8 @@
     function remember(url) {
       const clean = normalizedPageUrl(url);
       if (!clean || !isQueueCandidateUrl(clean)) return;
-      const key = clean.toLowerCase();
+      if (isPornpicsLanguageMirror(clean, current)) return;
+      const key = galleryQueueDedupeKey(clean);
       if (seen.has(key)) return;
       seen.add(key);
       merged.push(clean);
@@ -1048,6 +1242,7 @@
 
   function rebuildGalleryQueueFromVisiblePage() {
     const visibleBase = state.collectionBase || location.href;
+    rememberGalleryQueueTitles(document, visibleBase);
     const current = isX810114Url(visibleBase) ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
     const discovered = collectGalleryQueueFromDocument(document, visibleBase);
     const stored = readStoredGalleryQueue();
@@ -1057,7 +1252,8 @@
     function remember(url) {
       const clean = normalizedPageUrl(url);
       if (!clean || !isQueueCandidateUrl(clean)) return;
-      const key = clean.toLowerCase();
+      if (isPornpicsLanguageMirror(clean, current)) return;
+      const key = galleryQueueDedupeKey(clean);
       if (seen.has(key)) return;
       seen.add(key);
       merged.push(clean);
@@ -1223,6 +1419,896 @@
       const shortcut = button.dataset.xiv === "prev-set" ? "," : ".";
       button.title = hasQueue && index ? `${label}（${index}/${total}，${shortcut}）` : `${label}（未识别到队列，${shortcut}）`;
     });
+    const listButton = state.root?.querySelector('[data-xiv="queue-list"]');
+    if (listButton) {
+      listButton.disabled = !total && !allowRefreshClick;
+      listButton.dataset.enabled = total ? "true" : "false";
+      listButton.title = total ? `组列表（${index || 0}/${total}）` : "组列表（尚未识别到内容）";
+    }
+    renderGalleryQueuePanel();
+  }
+
+  function galleryQueueCoverFromImage(image, base = location.href) {
+    if (!image) return "";
+    const identity = [
+      image.getAttribute?.("alt"),
+      image.getAttribute?.("title"),
+      image.getAttribute?.("class"),
+      image.getAttribute?.("id")
+    ].filter(Boolean).join(" ");
+    if (/(?:logo|google|language|locale|flag|avatar|icon|sprite)/i.test(identity)) return "";
+    const declaredWidth = Number.parseInt(image.getAttribute?.("width") || "0", 10);
+    const declaredHeight = Number.parseInt(image.getAttribute?.("height") || "0", 10);
+    if (declaredWidth > 0 && declaredHeight > 0 && Math.max(declaredWidth, declaredHeight) < 140) return "";
+    const srcset = image.getAttribute?.("srcset") || image.getAttribute?.("data-srcset") || "";
+    const srcsetUrl = srcset.split(",").map((part) => part.trim().split(/\s+/)[0]).filter(Boolean).at(-1) || "";
+    const raw = image.currentSrc
+      || image.getAttribute?.("src")
+      || image.getAttribute?.("data-src")
+      || image.getAttribute?.("data-original")
+      || image.getAttribute?.("data-lazy-src")
+      || srcsetUrl;
+    const url = absoluteUrl(String(raw || "").split(/\s+/)[0], base);
+    if (!url || !/^(?:https?:|data:|blob:)/i.test(url)) return "";
+    if (/(?:logo|favicon|icon|sprite|avatar|google|flag|language)[._\/-]/i.test(url)) return "";
+    return url;
+  }
+
+  function rememberGalleryQueueTitles(doc = document, base = location.href) {
+    if (!doc?.querySelectorAll) return;
+    doc.querySelectorAll("a[href]").forEach((anchor) => {
+      const url = normalizedPageUrl(absoluteUrl(anchor.getAttribute("href"), base));
+      if (!isQueueCandidateUrl(url)) return;
+      if (isPornpicsLanguageMirror(url, base)) return;
+      const raw = anchor.getAttribute("title") || anchor.getAttribute("aria-label") || anchor.textContent || "";
+      const title = String(raw).replace(/\s+/g, " ").trim();
+      if (!title || /^(上一组|下一组|上一页|下一页|previous|next)$/i.test(title)) return;
+      const previous = state.galleryQueueTitles.get(url);
+      if (!previous || title.length > previous.length) state.galleryQueueTitles.set(url, title.slice(0, 100));
+      if (!state.galleryQueueCovers.has(url)) {
+        const nearby = anchor.querySelector("img")
+          || anchor.parentElement?.querySelector?.("img")
+          || anchor.closest("article, li, [class*='card' i], [class*='item' i]")?.querySelector?.("img");
+        const cover = galleryQueueCoverFromImage(nearby, base);
+        if (cover) state.galleryQueueCovers.set(url, cover);
+      }
+    });
+    const currentUrl = normalizedPageUrl(doc?.documentElement?.dataset?.xivBase || base);
+    const currentTitle = pageTitleFromDocument(doc, currentUrl);
+    if (isQueueCandidateUrl(currentUrl) && currentTitle) state.galleryQueueTitles.set(currentUrl, currentTitle.slice(0, 100));
+    if (isQueueCandidateUrl(currentUrl) && !state.galleryQueueCovers.has(currentUrl)) {
+      const selectorGroups = isPornpicsGalleryPage(currentUrl)
+        ? ["#tiles img", "[class*='thumb' i] img", "[class*='gallery' i] img", "main img"]
+        : ["main article img, main img, article img"];
+      for (const selectors of selectorGroups) {
+        for (const image of doc.querySelectorAll?.(selectors) || []) {
+          const cover = galleryQueueCoverFromImage(image, currentUrl);
+          if (!cover) continue;
+          state.galleryQueueCovers.set(currentUrl, cover);
+          break;
+        }
+        if (state.galleryQueueCovers.has(currentUrl)) break;
+      }
+    }
+  }
+
+  function galleryQueueDisplayTitle(url, index) {
+    const stored = state.galleryQueueTitles.get(normalizedPageUrl(url));
+    if (stored) return stored;
+    try {
+      const parsed = new URL(url, location.href);
+      const tail = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).pop() || "")
+        .replace(/\.(?:html?|php)$/i, "")
+        .replace(/[-_]+/g, " ")
+        .trim();
+      return tail || parsed.hostname || `第 ${index + 1} 组`;
+    } catch {
+      return `第 ${index + 1} 组`;
+    }
+  }
+
+  function galleryQueueDisplayUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return `${parsed.hostname}${decodeURIComponent(parsed.pathname)}`;
+    } catch {
+      return String(url || "");
+    }
+  }
+
+  function renderGalleryQueuePanel() {
+    const panel = state.galleryQueuePanel;
+    if (!panel) return;
+    const list = panel.querySelector(".xiv-queue-list");
+    const count = panel.querySelector(".xiv-queue-count");
+    if (!list || !count) return;
+    const queue = state.galleryQueue;
+    const activeUrl = activeGalleryQueueUrl();
+    const activeIndex = galleryQueueIndexForUrl(queue, activeUrl) >= 0
+      ? galleryQueueIndexForUrl(queue, activeUrl)
+      : state.galleryQueueIndex;
+    count.textContent = queue.length ? `${activeIndex >= 0 ? activeIndex + 1 : 0} / ${queue.length}` : "0 组";
+    list.replaceChildren();
+    if (!queue.length) {
+      const empty = document.createElement("div");
+      empty.className = "xiv-queue-empty";
+      empty.textContent = "暂未识别到后续组，稍后打开列表会自动重试。";
+      list.appendChild(empty);
+      return;
+    }
+    queue.forEach((url, index) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "xiv-queue-item";
+      item.dataset.queueIndex = String(index);
+      item.dataset.current = index === activeIndex ? "true" : "false";
+      item.title = galleryQueueDisplayTitle(url, index);
+
+      const cover = document.createElement("span");
+      cover.className = "xiv-queue-cover";
+      const coverUrl = state.galleryQueueCovers.get(normalizedPageUrl(url));
+      if (coverUrl) {
+        const image = document.createElement("img");
+        image.loading = "lazy";
+        image.decoding = "async";
+        image.referrerPolicy = "no-referrer";
+        image.alt = "";
+        image.src = coverUrl;
+        image.addEventListener("error", () => image.remove(), { once: true });
+        cover.appendChild(image);
+      }
+      const number = document.createElement("span");
+      number.className = "xiv-queue-number";
+      number.textContent = String(index + 1);
+      cover.appendChild(number);
+      const copy = document.createElement("span");
+      copy.className = "xiv-queue-copy";
+      const title = document.createElement("span");
+      title.className = "xiv-queue-title";
+      title.textContent = galleryQueueDisplayTitle(url, index);
+      const path = document.createElement("span");
+      path.className = "xiv-queue-url";
+      path.textContent = galleryQueueDisplayUrl(url);
+      const arrow = document.createElement("span");
+      arrow.className = "xiv-queue-arrow";
+      arrow.textContent = index === activeIndex ? "•" : "›";
+      copy.append(title, path);
+      item.append(cover, copy, arrow);
+      list.appendChild(item);
+    });
+  }
+
+  function toggleGalleryQueuePanel() {
+    if (!state.galleryQueuePanel) return;
+    const open = state.galleryQueuePanel.dataset.open === "true";
+    if (open) {
+      state.galleryQueuePanel.dataset.open = "false";
+      return;
+    }
+    refreshGalleryQueue();
+    rebuildGalleryQueueFromVisiblePage();
+    closePanels("queue");
+    renderGalleryQueuePanel();
+    state.galleryQueuePanel.dataset.open = "true";
+    requestAnimationFrame(() => {
+      state.galleryQueuePanel?.querySelector('.xiv-queue-item[data-current="true"]')?.scrollIntoView?.({ block: "nearest" });
+    });
+  }
+
+  async function jumpToGalleryQueueIndex(index) {
+    const target = state.galleryQueue[Number(index)];
+    if (!target) return;
+    state.galleryQueuePanel.dataset.open = "false";
+    if (samePageUrl(target, activeGalleryQueueUrl())) {
+      updateStatus(`当前已是第 ${Number(index) + 1} 组`);
+      return;
+    }
+    rememberX810114QueueVisit(target);
+    const selfieTarget = isSelfieGalleryQueueUrl(target);
+    if (!selfieTarget) {
+      try { sessionStorage.setItem(galleryQueueAutoOpenKey(), target); } catch {}
+    }
+    if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
+      try { await state.root?.requestFullscreen?.(); } catch {}
+    }
+    updateStatus(`正在跳转到第 ${Number(index) + 1} 组`);
+    try {
+      if (await loadGalleryQueueTargetInPlace(target)) return;
+    } catch {}
+    if (selfieTarget) return;
+    if (samePageUrl(target, location.href)) location.reload();
+    else location.href = target;
+  }
+
+  function decodeCapturedLink(value) {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = String(value || "");
+    return textarea.value.replace(/&amp;/gi, "&").trim();
+  }
+
+  function capturedLinkName(item) {
+    try {
+      if (item.type === "MAGNET") {
+        const name = new URL(item.url).searchParams.get("dn");
+        if (name) return decodeURIComponent(name.replace(/\+/g, " "));
+        const hash = new URL(item.url).searchParams.get("xt") || "";
+        return hash.replace(/^urn:btih:/i, "") || "磁力链接";
+      }
+      const parts = item.url.split("|");
+      return decodeURIComponent(parts[2] || "ED2K 链接");
+    } catch {
+      return item.type === "MAGNET" ? "磁力链接" : "ED2K 链接";
+    }
+  }
+
+  const CD2_CONFIG_KEY = "flowlens-cd2-direct-v1";
+  const CD2_SERVICE = "clouddrive.CloudDriveFileSrv";
+  const CD2_DEFAULT_CONFIG = Object.freeze({
+    baseUrl: "http://localhost:19798",
+    cloudPath: "/115/云下载/临时播放",
+    apiToken: "",
+    playMode: "stream",
+    localMountPath: "E:\\云下载\\临时播放"
+  });
+  const cd2TextEncoder = new TextEncoder();
+  const cd2TextDecoder = new TextDecoder();
+  let cd2SessionConfig = { ...CD2_DEFAULT_CONFIG };
+
+  function setCd2BridgeStatus(text, stateName = "") {
+    const node = state.linkGrabberPanel?.querySelector?.(".xiv-link-bridge-status");
+    if (!node) return;
+    node.textContent = text;
+    node.dataset.ready = stateName === "ready" ? "true" : "false";
+    node.dataset.error = stateName === "error" ? "true" : "false";
+  }
+
+  function cd2Concat(...parts) {
+    const length = parts.reduce((total, part) => total + part.length, 0);
+    const output = new Uint8Array(length);
+    let offset = 0;
+    parts.forEach((part) => { output.set(part, offset); offset += part.length; });
+    return output;
+  }
+
+  function cd2Varint(value) {
+    let next = BigInt(value);
+    const bytes = [];
+    while (next >= 0x80n) {
+      bytes.push(Number((next & 0x7fn) | 0x80n));
+      next >>= 7n;
+    }
+    bytes.push(Number(next));
+    return Uint8Array.from(bytes);
+  }
+
+  function cd2StringField(number, value) {
+    const data = cd2TextEncoder.encode(String(value));
+    return cd2Concat(cd2Varint((number << 3) | 2), cd2Varint(data.length), data);
+  }
+
+  function cd2VarintField(number, value) {
+    return cd2Concat(cd2Varint(number << 3), cd2Varint(value));
+  }
+
+  function cd2Message(fields) {
+    return cd2Concat(...fields.filter(Boolean));
+  }
+
+  function cd2ReadVarint(bytes, cursor) {
+    let value = 0n;
+    let shift = 0n;
+    while (cursor.index < bytes.length) {
+      const byte = bytes[cursor.index++];
+      value |= BigInt(byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) return value;
+      shift += 7n;
+    }
+    throw new Error("CloudDrive2 返回了损坏的数据。");
+  }
+
+  function cd2ParseProto(bytes) {
+    const fields = new Map();
+    const cursor = { index: 0 };
+    const remember = (field, entry) => {
+      if (!fields.has(field)) fields.set(field, []);
+      fields.get(field).push(entry);
+    };
+    while (cursor.index < bytes.length) {
+      const tag = Number(cd2ReadVarint(bytes, cursor));
+      const field = tag >> 3;
+      const wire = tag & 7;
+      if (wire === 0) {
+        remember(field, { wire, varint: cd2ReadVarint(bytes, cursor) });
+      } else if (wire === 2) {
+        const length = Number(cd2ReadVarint(bytes, cursor));
+        const data = bytes.slice(cursor.index, cursor.index + length);
+        cursor.index += length;
+        remember(field, { wire, bytes: data, string: cd2TextDecoder.decode(data) });
+      } else if (wire === 1) {
+        cursor.index += 8;
+      } else if (wire === 5) {
+        cursor.index += 4;
+      } else {
+        throw new Error(`CloudDrive2 返回了不支持的字段类型 ${wire}。`);
+      }
+    }
+    return fields;
+  }
+
+  function cd2ParseFrames(value) {
+    const bytes = value instanceof Uint8Array ? value : new Uint8Array(value || 0);
+    const messages = [];
+    const trailers = {};
+    let offset = 0;
+    while (offset + 5 <= bytes.length) {
+      const flags = bytes[offset];
+      const length = new DataView(bytes.buffer, bytes.byteOffset + offset + 1, 4).getUint32(0, false);
+      const start = offset + 5;
+      const end = start + length;
+      if (end > bytes.length) break;
+      const data = bytes.slice(start, end);
+      if ((flags & 0x80) === 0x80) {
+        cd2TextDecoder.decode(data).split(/\r?\n/).forEach((line) => {
+          const index = line.indexOf(":");
+          if (index < 1) return;
+          const key = line.slice(0, index).toLowerCase();
+          const raw = line.slice(index + 1).trim();
+          try { trailers[key] = decodeURIComponent(raw); } catch { trailers[key] = raw; }
+        });
+      } else {
+        messages.push(data);
+      }
+      offset = end;
+    }
+    return { messages, trailers };
+  }
+
+  function normalizeCd2Config(value = {}) {
+    const baseUrl = String(value.baseUrl || CD2_DEFAULT_CONFIG.baseUrl).trim().replace(/\/+$/, "");
+    const rawPath = String(value.cloudPath || CD2_DEFAULT_CONFIG.cloudPath).trim().replace(/\\/g, "/");
+    const cloudPath = `${rawPath.startsWith("/") ? "" : "/"}${rawPath}`.replace(/\/+$/, "") || "/";
+    return {
+      baseUrl,
+      cloudPath,
+      apiToken: String(value.apiToken || "").trim().replace(/^Bearer\s+/i, ""),
+      playMode: value.playMode === "local" ? "local" : "stream",
+      localMountPath: String(value.localMountPath || CD2_DEFAULT_CONFIG.localMountPath).trim().replace(/[\\/]+$/, "")
+    };
+  }
+
+  async function readCd2Config() {
+    let stored = null;
+    try {
+      if (typeof GM_getValue === "function") stored = await GM_getValue(CD2_CONFIG_KEY, null);
+    } catch {}
+    if (!stored) {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          const result = await chrome.storage.local.get(CD2_CONFIG_KEY);
+          stored = result?.[CD2_CONFIG_KEY];
+        }
+      } catch {}
+    }
+    if (typeof stored === "string") {
+      try { stored = JSON.parse(stored); } catch { stored = null; }
+    }
+    cd2SessionConfig = normalizeCd2Config(stored || cd2SessionConfig);
+    return { ...cd2SessionConfig };
+  }
+
+  async function writeCd2Config(value) {
+    cd2SessionConfig = normalizeCd2Config(value);
+    let stored = false;
+    try {
+      if (typeof GM_setValue === "function") {
+        await GM_setValue(CD2_CONFIG_KEY, JSON.stringify(cd2SessionConfig));
+        stored = true;
+      }
+    } catch {}
+    if (!stored) {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          await chrome.storage.local.set({ [CD2_CONFIG_KEY]: cd2SessionConfig });
+          stored = true;
+        }
+      } catch {}
+    }
+    return { ...cd2SessionConfig };
+  }
+
+  function cd2RequestArrayBuffer(url, headers, body) {
+    if (typeof GM_xmlhttpRequest === "function") {
+      return new Promise((resolve, reject) => {
+        GM_xmlhttpRequest({
+          method: "POST",
+          url,
+          headers,
+          data: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+          responseType: "arraybuffer",
+          timeout: 30000,
+          onload: (response) => resolve({
+            status: response.status,
+            body: response.response || new ArrayBuffer(0),
+            responseHeaders: String(response.responseHeaders || "")
+          }),
+          ontimeout: () => reject(new Error("连接 CloudDrive2 超时。")),
+          onerror: () => reject(new Error("无法连接 CloudDrive2，请确认服务已启动。"))
+        });
+      });
+    }
+    return fetch(url, { method: "POST", headers, body }).then(async (response) => {
+      const responseHeaders = [...response.headers.entries()].map(([key, value]) => `${key}: ${value}`).join("\n");
+      return { status: response.status, body: await response.arrayBuffer(), responseHeaders };
+    });
+  }
+
+  function cd2ResponseHeader(headers, name) {
+    const match = String(headers || "").match(new RegExp(`^${name}:\\s*(.+)$`, "im"));
+    return match?.[1]?.trim() || "";
+  }
+
+  async function cd2Grpc(method, payload, config, { stream = false } = {}) {
+    if (!/^https?:\/\//i.test(config.baseUrl)) throw new Error("CloudDrive2 地址必须以 http:// 或 https:// 开头。");
+    if (!config.apiToken) throw new Error("请先在瀑光设置里填写 CloudDrive2 API Token。");
+    const frame = new Uint8Array(payload.length + 5);
+    new DataView(frame.buffer).setUint32(1, payload.length, false);
+    frame.set(payload, 5);
+    const headers = {
+      "content-type": "application/grpc-web+proto",
+      "x-grpc-web": "1",
+      authorization: `Bearer ${config.apiToken}`
+    };
+    const response = await cd2RequestArrayBuffer(`${config.baseUrl}/${CD2_SERVICE}/${method}`, headers, frame);
+    const parsed = cd2ParseFrames(response.body);
+    const grpcStatus = parsed.trailers["grpc-status"] || cd2ResponseHeader(response.responseHeaders, "grpc-status");
+    if (response.status < 200 || response.status >= 300 || (grpcStatus && grpcStatus !== "0")) {
+      const rawMessage = parsed.trailers["grpc-message"] || cd2ResponseHeader(response.responseHeaders, "grpc-message");
+      let message = rawMessage;
+      try { message = decodeURIComponent(rawMessage); } catch {}
+      message ||= `${method} 请求失败（HTTP ${response.status} / gRPC ${grpcStatus || "未知"}）`;
+      if (grpcStatus === "16") throw new Error("CloudDrive2 API Token 无效或已过期。");
+      throw new Error(message);
+    }
+    return stream ? parsed.messages : (parsed.messages[0] || new Uint8Array());
+  }
+
+  function parseCd2File(bytes) {
+    const fields = cd2ParseProto(bytes);
+    const text = (field) => fields.get(field)?.[0]?.string || "";
+    const number = (field) => Number(fields.get(field)?.[0]?.varint || 0n);
+    return {
+      id: text(1),
+      name: text(2),
+      fullPathName: text(3),
+      size: number(4),
+      fileType: number(5),
+      isDirectory: number(30) === 1 || number(5) === 0
+    };
+  }
+
+  function parseCd2FileReplies(messages) {
+    const files = [];
+    messages.forEach((message) => {
+      const fields = cd2ParseProto(message);
+      (fields.get(1) || []).forEach((entry) => {
+        if (entry.bytes) files.push(parseCd2File(entry.bytes));
+      });
+    });
+    return files.filter((file) => file.fullPathName || file.name);
+  }
+
+  async function getCd2SubFiles(config, path, forceRefresh = false) {
+    const payload = cd2Message([cd2StringField(1, path), forceRefresh ? cd2VarintField(2, 1) : null]);
+    return parseCd2FileReplies(await cd2Grpc("GetSubFiles", payload, config, { stream: true }));
+  }
+
+  async function searchCd2Files(config, searchFor) {
+    const payload = cd2Message([
+      cd2StringField(1, config.cloudPath),
+      cd2StringField(2, searchFor),
+      cd2VarintField(4, 1)
+    ]);
+    return parseCd2FileReplies(await cd2Grpc("GetSearchResults", payload, config, { stream: true }));
+  }
+
+  function parseCd2FileOperation(bytes) {
+    const fields = cd2ParseProto(bytes);
+    return {
+      success: Number(fields.get(1)?.[0]?.varint || 0n) === 1,
+      error: fields.get(2)?.[0]?.string || ""
+    };
+  }
+
+  function parseCd2Offline(bytes) {
+    const fields = cd2ParseProto(bytes);
+    const text = (field) => fields.get(field)?.[0]?.string || "";
+    const number = (field) => Number(fields.get(field)?.[0]?.varint || 0n);
+    return { name: text(1), size: number(2), url: text(3), status: number(4), infoHash: text(5), fileId: text(6), parentId: text(8) };
+  }
+
+  async function listCd2Offline(config) {
+    const response = await cd2Grpc("ListOfflineFilesByPath", cd2StringField(1, config.cloudPath), config);
+    const fields = cd2ParseProto(response);
+    return (fields.get(1) || []).map((entry) => parseCd2Offline(entry.bytes)).filter(Boolean);
+  }
+
+  function downloadLinkHash(link) {
+    if (/^magnet:/i.test(link)) {
+      try { return new URL(link).searchParams.get("xt")?.replace(/^urn:btih:/i, "") || ""; } catch { return ""; }
+    }
+    return String(link).split("|")[4] || "";
+  }
+
+  function downloadLinkName(link) {
+    if (/^magnet:/i.test(link)) {
+      try { return new URL(link).searchParams.get("dn") || ""; } catch { return ""; }
+    }
+    const raw = String(link).split("|")[2] || "";
+    try { return decodeURIComponent(raw); } catch { return raw; }
+  }
+
+  async function ensureCd2Folder(config) {
+    const parts = config.cloudPath.split("/").filter(Boolean);
+    if (parts.length < 2) return;
+    let parent = `/${parts[0]}`;
+    for (let index = 1; index < parts.length; index += 1) {
+      const name = parts[index];
+      try {
+        await cd2Grpc("FindFileByPath", cd2Message([cd2StringField(1, parent), cd2StringField(2, name)]), config);
+      } catch (error) {
+        if (/token|鉴权|连接|超时/i.test(String(error?.message || error))) throw error;
+        const result = await cd2Grpc("CreateFolder", cd2Message([cd2StringField(1, parent), cd2StringField(2, name)]), config);
+        const outer = cd2ParseProto(result);
+        const operation = outer.get(2)?.[0]?.bytes ? parseCd2FileOperation(outer.get(2)[0].bytes) : { success: true };
+        if (!operation.success && !/exist|存在/i.test(operation.error)) throw new Error(operation.error || `无法创建 ${parent}/${name}`);
+      }
+      parent = `${parent}/${name}`;
+    }
+  }
+
+  async function addCd2Offline(config, link) {
+    const response = await cd2Grpc("AddOfflineFiles", cd2Message([
+      cd2StringField(1, link),
+      cd2StringField(2, config.cloudPath),
+      cd2VarintField(3, 5)
+    ]), config);
+    const result = parseCd2FileOperation(response);
+    if (!result.success && !/exist|duplicate|重复|已添加/i.test(result.error)) throw new Error(result.error || "CloudDrive2 添加离线任务失败。");
+    return result;
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "").toLowerCase().replace(/\.[a-z0-9]{2,5}$/i, "").replace(/[^a-z0-9\u3400-\u9fff]+/g, "");
+  }
+
+  function videoFileScore(file, expectedName) {
+    if (file.isDirectory || !/\.(?:mp4|mkv|webm|mov|m4v|avi|wmv|flv|ts|m2ts)$/i.test(file.name || file.fullPathName)) return -1;
+    const expected = normalizeSearchText(expectedName);
+    const actual = normalizeSearchText(file.name || file.fullPathName);
+    const nameBonus = expected && (actual.includes(expected) || expected.includes(actual)) ? 1e15 : 0;
+    return nameBonus + Math.max(0, Number(file.size) || 0);
+  }
+
+  async function expandCd2Directories(config, files, expectedName) {
+    const output = [...files];
+    const queue = files.filter((file) => file.isDirectory && file.fullPathName).slice(0, 12).map((file) => ({ path: file.fullPathName, depth: 0 }));
+    const seen = new Set(queue.map((item) => item.path));
+    while (queue.length && seen.size <= 80) {
+      const current = queue.shift();
+      let children = [];
+      try { children = await getCd2SubFiles(config, current.path, false); } catch { continue; }
+      output.push(...children);
+      if (current.depth >= 4) continue;
+      children.filter((file) => file.isDirectory && file.fullPathName).forEach((file) => {
+        if (seen.has(file.fullPathName)) return;
+        seen.add(file.fullPathName);
+        queue.push({ path: file.fullPathName, depth: current.depth + 1 });
+      });
+      if (output.some((file) => videoFileScore(file, expectedName) >= 1e15)) break;
+    }
+    return output;
+  }
+
+  async function findCd2Playable(config, names) {
+    const terms = [];
+    names.filter(Boolean).forEach((name) => {
+      const clean = String(name).replace(/\.[a-z0-9]{2,5}$/i, "").trim();
+      const code = clean.match(/[a-z]{2,10}[-_ ]?\d{2,6}/i)?.[0];
+      [code, clean.slice(0, 80)].filter((item) => item && item.length >= 3).forEach((item) => {
+        if (!terms.includes(item)) terms.push(item);
+      });
+    });
+    let candidates = [];
+    for (const term of terms.slice(0, 4)) {
+      try { candidates.push(...await searchCd2Files(config, term)); } catch {}
+      if (candidates.some((file) => videoFileScore(file, names[0]) >= 0)) break;
+    }
+    if (!candidates.length) {
+      try {
+        const top = await getCd2SubFiles(config, config.cloudPath, true);
+        const expected = names.map(normalizeSearchText).filter(Boolean);
+        candidates = top.filter((file) => {
+          const actual = normalizeSearchText(file.name);
+          return expected.some((value) => actual.includes(value) || value.includes(actual));
+        });
+      } catch {}
+    }
+    candidates = await expandCd2Directories(config, candidates, names[0]);
+    const videos = candidates.filter((file) => videoFileScore(file, names[0]) >= 0);
+    return videos.sort((a, b) => videoFileScore(b, names[0]) - videoFileScore(a, names[0]))[0] || null;
+  }
+
+  async function getCd2PlaybackUrl(config, file) {
+    const response = await cd2Grpc("GetDownloadUrlPath", cd2Message([
+      cd2StringField(1, file.fullPathName),
+      cd2VarintField(2, 1),
+      cd2VarintField(3, 1)
+    ]), config);
+    const fields = cd2ParseProto(response);
+    const directUrl = fields.get(3)?.[0]?.string || "";
+    if (/^https?:\/\//i.test(directUrl)) return directUrl;
+    const template = fields.get(1)?.[0]?.string || "";
+    const base = new URL(config.baseUrl);
+    if (template) {
+      const path = template
+        .replaceAll("{SCHEME}", base.protocol.replace(":", ""))
+        .replaceAll("{HOST}", base.host)
+        .replaceAll("{PREVIEW}", "true");
+      return new URL(path, base.origin).href;
+    }
+    const encoded = encodeURIComponent(file.fullPathName.replace(/^\/+/, ""));
+    return `${base.origin}/static/${base.protocol.replace(":", "")}/${base.host}/true/${encoded}`;
+  }
+
+  function getCd2LocalFilePath(config, file) {
+    const remote = String(file?.fullPathName || "").replace(/\\/g, "/");
+    const root = String(config.cloudPath || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    if (!remote || !root || !remote.toLowerCase().startsWith(`${root.toLowerCase()}/`)) {
+      throw new Error("视频不在当前 115 转存目录下，无法映射本地文件。");
+    }
+    const relative = remote.slice(root.length).replace(/^\/+/, "").replace(/\//g, "\\");
+    if (!config.localMountPath) throw new Error("请先在设置中填写 CloudDrive2 本地挂载目录。");
+    return `${config.localMountPath}\\${relative}`;
+  }
+
+  function localFileUrl(path) {
+    const normalized = String(path || "").replace(/\\/g, "/");
+    const encoded = normalized.split("/").map((part, index) => index === 0 ? part : encodeURIComponent(part)).join("/");
+    return `file:///${encoded}`;
+  }
+
+  async function resolveCd2PlaybackTarget(config, file) {
+    if (config.playMode === "local") {
+      const path = getCd2LocalFilePath(config, file);
+      return { mode: "local", url: localFileUrl(path), path };
+    }
+    return { mode: "stream", url: await getCd2PlaybackUrl(config, file), path: file.fullPathName };
+  }
+
+  async function testCd2Direct(config = null) {
+    const active = normalizeCd2Config(config || await readCd2Config());
+    const files = await getCd2SubFiles(active, active.cloudPath, false);
+    return { ok: true, count: files.length, config: active };
+  }
+
+  async function saveCd2Links(links, onProgress) {
+    const config = await readCd2Config();
+    await ensureCd2Folder(config);
+    let successCount = 0;
+    const results = [];
+    for (let index = 0; index < links.length; index += 1) {
+      onProgress?.(`正在提交 ${index + 1}/${links.length} 到 115…`);
+      try {
+        await addCd2Offline(config, links[index]);
+        successCount += 1;
+        results.push({ ok: true, link: links[index] });
+      } catch (error) {
+        results.push({ ok: false, link: links[index], error: String(error?.message || error) });
+      }
+    }
+    if (!successCount) throw new Error(results[0]?.error || "没有任务提交成功。");
+    return { ok: true, successCount, results };
+  }
+
+  async function playCd2Link(link, onProgress) {
+    const config = await readCd2Config();
+    await ensureCd2Folder(config);
+    const hash = downloadLinkHash(link).toLowerCase();
+    const linkName = downloadLinkName(link);
+    onProgress?.("正在查找已有视频…");
+    const cachedFile = await findCd2Playable(config, [linkName]);
+    if (cachedFile) {
+      return { ok: true, file: cachedFile, ...(await resolveCd2PlaybackTarget(config, cachedFile)) };
+    }
+    let offline = null;
+    try {
+      offline = (await listCd2Offline(config)).find((item) => hash && item.infoHash.toLowerCase() === hash) || null;
+    } catch {}
+    if (!offline) await addCd2Offline(config, link);
+    // New offline tasks cannot be played before 115 exposes the resulting
+    // file. Keep this internal; users only choose the playback target.
+    const deadline = Date.now() + 30 * 60000;
+    let lastSearch = 0;
+    while (Date.now() < deadline) {
+      let list = [];
+      try { list = await listCd2Offline(config); } catch {}
+      offline = list.find((item) => (hash && item.infoHash.toLowerCase() === hash) || item.url === link) || offline;
+      if (offline?.status === 3) throw new Error(`115 离线任务失败：${offline.name || linkName || "未知任务"}`);
+      const finished = offline?.status === 2;
+      onProgress?.(finished ? "转存完成，正在定位视频文件…" : `115 正在离线下载${offline?.name ? `：${offline.name}` : "…"}`);
+      if ((finished || !offline) && Date.now() - lastSearch > 4500) {
+        lastSearch = Date.now();
+        const file = await findCd2Playable(config, [offline?.name, linkName]);
+        if (file) return { ok: true, file, ...(await resolveCd2PlaybackTarget(config, file)) };
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    }
+    throw new Error("115 尚未生成可播放文件，离线任务仍会继续执行。");
+  }
+
+  async function probeCd2Bridge() {
+    const config = await readCd2Config();
+    if (!config.apiToken) {
+      setCd2BridgeStatus("CloudDrive2 直连：未配置 API Token · 请到瀑光设置中填写", "error");
+      return { ok: false };
+    }
+    setCd2BridgeStatus("CloudDrive2 直连：检测中…");
+    try {
+      const response = await testCd2Direct(config);
+      setCd2BridgeStatus(`CloudDrive2 已直连 · 目标 ${config.cloudPath} · ${response.count} 项`, "ready");
+      return response;
+    } catch (error) {
+      setCd2BridgeStatus(String(error?.message || error), "error");
+      return { ok: false, error: String(error?.message || error) };
+    }
+  }
+
+  function prepareCd2PlaybackWindow() {
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) return null;
+    try {
+      popup.document.title = "瀑光 · 正在打开";
+      popup.document.body.innerHTML = '<main style="min-height:100vh;display:grid;place-items:center;background:#101114;color:#f5f5f4;font:700 16px/1.6 system-ui"><div><b style="display:block;font-size:22px">正在打开视频</b><span style="color:#a1a1aa">优先查找已有文件，新任务准备好后自动继续</span></div></main>';
+    } catch {}
+    return popup;
+  }
+
+  async function runCd2Action(action, links, button = null) {
+    const clean = (links || []).filter((url) => /^(?:magnet:\?|ed2k:\/\/)/i.test(String(url || "")));
+    if (!clean.length) return;
+    const original = button?.textContent || "";
+    const playbackWindow = action === "play-browser" ? prepareCd2PlaybackWindow() : null;
+    if (button) {
+      button.disabled = true;
+      button.textContent = action === "play-browser" ? "启动中" : "保存中";
+    }
+    let response = null;
+    try {
+      if (action === "play-browser") {
+        response = await playCd2Link(clean[0], (text) => setCd2BridgeStatus(text));
+        if (response.mode === "local" && playbackWindow && !playbackWindow.closed) playbackWindow.close();
+        if (response.mode !== "local" && playbackWindow && !playbackWindow.closed) playbackWindow.location.replace(response.url);
+        else if (typeof GM_openInTab === "function") GM_openInTab(response.url, { active: true, insert: true });
+        else window.open(response.url, "_blank", "noopener");
+        setCd2BridgeStatus(`已打开${response.mode === "local" ? "本地文件" : "流媒体"}：${response.file.name}`, "ready");
+        updateStatus(response.mode === "local" ? "已请求打开本地挂载文件" : "已打开 CloudDrive2 流媒体");
+      } else {
+        response = await saveCd2Links(clean, (text) => setCd2BridgeStatus(text));
+        const successCount = Number(response.successCount || 0);
+        setCd2BridgeStatus(`已提交 ${successCount}/${clean.length} 条到 ${cd2SessionConfig.cloudPath}`, "ready");
+        updateStatus(`已提交 ${successCount} 条到 115`);
+      }
+    } catch (error) {
+      const message = String(error?.message || error || "提交失败");
+      response = { ok: false, error: message };
+      if (playbackWindow && !playbackWindow.closed) playbackWindow.close();
+      setCd2BridgeStatus(message, "error");
+      updateStatus(message);
+    }
+    if (button) {
+      button.disabled = false;
+      button.textContent = response?.ok ? "已完成" : "重试";
+      window.setTimeout(() => { if (button.isConnected) button.textContent = original; }, 1400);
+    }
+  }
+
+  function collectPageDownloadLinks() {
+    const found = new Map();
+    const remember = (raw) => {
+      const url = decodeCapturedLink(raw).replace(/[\u200b\u200c\u200d]/g, "");
+      if (!/^(?:magnet:\?|ed2k:\/\/)/i.test(url)) return;
+      const type = /^magnet:/i.test(url) ? "MAGNET" : "ED2K";
+      const key = url.toLowerCase();
+      if (!found.has(key)) found.set(key, { type, url });
+    };
+
+    document.querySelectorAll("a[href], [data-url], [data-href], [data-link]").forEach((node) => {
+      ["href", "data-url", "data-href", "data-link"].forEach((attr) => remember(node.getAttribute?.(attr) || ""));
+    });
+
+    const source = `${document.documentElement?.innerHTML || ""}\n${document.body?.innerText || ""}`.slice(0, 12 * 1024 * 1024);
+    for (const match of source.matchAll(/magnet:\?[^"'<>\\\s]+/gi)) remember(match[0]);
+    for (const match of source.matchAll(/ed2k:\/\/\|(?:file|server)\|[^"'<>\\\s]+/gi)) remember(match[0]);
+    return [...found.values()].slice(0, 1000);
+  }
+
+  async function copyCapturedText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0;";
+      document.documentElement.appendChild(textarea);
+      textarea.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch {}
+      textarea.remove();
+      return ok;
+    }
+  }
+
+  function renderLinkGrabberPanel() {
+    const panel = state.linkGrabberPanel;
+    if (!panel) return;
+    const list = panel.querySelector(".xiv-link-list");
+    const count = panel.querySelector(".xiv-link-count");
+    if (!list || !count) return;
+    const items = state.grabbedDownloadLinks;
+    const magnets = items.filter((item) => item.type === "MAGNET").length;
+    const ed2k = items.length - magnets;
+    count.textContent = `${magnets} 磁力 · ${ed2k} ED2K`;
+    list.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "xiv-queue-empty";
+      empty.textContent = "当前页面没有识别到 magnet 或 ed2k 链接。";
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "xiv-link-row";
+      const type = document.createElement("span");
+      type.className = "xiv-link-type";
+      type.textContent = item.type;
+      const copy = document.createElement("span");
+      copy.className = "xiv-link-copy-text";
+      const name = document.createElement("span");
+      name.className = "xiv-link-name";
+      name.textContent = capturedLinkName(item);
+      const value = document.createElement("span");
+      value.className = "xiv-link-value";
+      value.textContent = item.url;
+      copy.append(name, value);
+      const actions = document.createElement("span");
+      actions.className = "xiv-link-row-actions";
+      actions.innerHTML = `<button type="button" data-link-row-action="play" data-link-index="${index}">播放</button><button type="button" data-link-row-action="save" data-link-index="${index}">存115</button><button type="button" data-link-row-action="copy" data-link-index="${index}">复制</button>`;
+      row.append(type, copy, actions);
+      list.appendChild(row);
+    });
+  }
+
+  function scanPageDownloadLinks() {
+    state.grabbedDownloadLinks = collectPageDownloadLinks();
+    renderLinkGrabberPanel();
+    updateStatus(state.grabbedDownloadLinks.length
+      ? `找到 ${state.grabbedDownloadLinks.length} 条下载链接`
+      : "未找到磁力或 ED2K 链接");
+  }
+
+  function toggleLinkGrabberPanel() {
+    if (!state.linkGrabberPanel) return;
+    const open = state.linkGrabberPanel.dataset.open === "true";
+    if (open) {
+      state.linkGrabberPanel.dataset.open = "false";
+      return;
+    }
+    closePanels("link-grabber");
+    scanPageDownloadLinks();
+    state.linkGrabberPanel.dataset.open = "true";
+    void probeCd2Bridge();
   }
 
   function fetchSameOriginDocumentViaFrame(targetUrl, timeoutMs = 18000) {
@@ -2470,7 +3556,11 @@
   }
 
   function normalizeX810114VideoUrl(url) {
-    return url ? url.replace("https://video.twimg.com", "https://video-cf.twimg.com") : "";
+    return url
+      ? url
+        .replace("https://video.twimg.com", "https://twimg.moonchan.xyz")
+        .replace("https://video-cf.twimg.com", "https://twimg.moonchan.xyz")
+      : "";
   }
 
   function normalizeMediaUrl(url) {
@@ -2703,6 +3793,7 @@
   }
 
   function alternateVideoUrl(url) {
+    if (url.includes("https://twimg.moonchan.xyz")) return url.replace("https://twimg.moonchan.xyz", "https://video.twimg.com");
     if (url.includes("https://video.twimg.com")) return url.replace("https://video.twimg.com", "https://video-cf.twimg.com");
     if (url.includes("https://video-cf.twimg.com")) return url.replace("https://video-cf.twimg.com", "https://video.twimg.com");
     return "";
@@ -2724,10 +3815,10 @@
     const previousSrc = img.currentSrc || img.src || "";
     img.dataset.fallbackTried = "";
     img.dataset.awaitingFallback = "";
-    img.addEventListener("load", () => {
+    img.onload = () => {
       img.dataset.awaitingFallback = "";
-    });
-    img.addEventListener("error", () => {
+    };
+    img.onerror = () => {
       if (img.dataset.fallbackTried === "true") {
         img.dataset.awaitingFallback = "";
         return;
@@ -2741,7 +3832,7 @@
       img.dataset.fallbackTried = "true";
       img.dataset.awaitingFallback = "true";
       img.src = fallback;
-    });
+    };
     img.src = url;
   }
 
@@ -2839,11 +3930,13 @@
     setImageSourceWithFallback(img, url);
     img.addEventListener("load", () => {
       if (!isLoadedPhotoLike(img)) rejectImage(url);
+      const previousRatio = state.mediaRatioByImage.get(keyForUrl(url)) || 0;
       rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
       if (img.naturalWidth > 0 && img.naturalHeight > 0) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
       const tile = img.closest?.(".xiv-tile");
       if (tile) tile.dataset.estimatedHeight = "";
-      scheduleMasonryLayout();
+      const nextRatio = img.naturalWidth > 0 && img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : 0;
+      if (!previousRatio || (nextRatio && Math.abs(nextRatio - previousRatio) > 0.08)) scheduleMasonryLayout();
     }, { once: true });
     img.addEventListener("error", () => {
       setTimeout(() => {
@@ -2872,7 +3965,7 @@
         preload: "none",
         keepFirstFrame: true,
         previewTime: 1,
-        previewMode: isGenericX810114Page() || /\/\/video(?:-cf)?\.twimg\.com\//i.test(url) ? "seek" : "canvas",
+        previewMode: isGenericX810114Page() || /\/\/twimg\.moonchan\.xyz\//i.test(url) ? "canvas" : /\/\/video(?:-cf)?\.twimg\.com\//i.test(url) ? "seek" : "canvas",
         deferSource: true
       });
       const size = videoSizeFromUrl(url);
@@ -3206,7 +4299,7 @@
     const video = document.createElement("video");
     const poster = state.posterByImage.get(keyForUrl(url));
     if (poster) video.poster = poster;
-    if (previewMode === "canvas" && !/\/\/video(?:-cf)?\.twimg\.com\//i.test(url)) video.crossOrigin = "anonymous";
+    if (previewMode === "canvas") video.crossOrigin = "anonymous";
     video.muted = muted;
     video.defaultMuted = muted;
     video.volume = muted ? 0 : 1;
@@ -3836,7 +4929,7 @@
   }
 
   function closePanels(except = "") {
-    [state.settingsPanel, state.diagnosticsPanel].forEach((panel) => {
+    [state.settingsPanel, state.diagnosticsPanel, state.galleryQueuePanel, state.linkGrabberPanel].forEach((panel) => {
       if (!panel) return;
       if (panel.dataset.panel === except) return;
       panel.dataset.open = "false";
@@ -3867,6 +4960,71 @@
       if (control.type === "checkbox") control.checked = !!state.settings[key];
       else control.value = String(state.settings[key] ?? "");
     });
+    void syncCd2SettingsPanel();
+  }
+
+  async function syncCd2SettingsPanel() {
+    if (!state.settingsPanel) return;
+    const config = await readCd2Config();
+    state.settingsPanel.querySelectorAll("[data-cd2-setting]").forEach((control) => {
+      const value = String(config[control.dataset.cd2Setting] ?? "");
+      if (control.type === "radio") control.checked = control.value === value;
+      else if (document.activeElement !== control) control.value = value;
+    });
+    const localRow = state.settingsPanel.querySelector("[data-cd2-local-row]");
+    if (localRow) localRow.hidden = config.playMode !== "local";
+  }
+
+  function cd2ConfigFromSettingsPanel() {
+    const current = { ...cd2SessionConfig };
+    state.settingsPanel?.querySelectorAll?.("[data-cd2-setting]").forEach((control) => {
+      if (control.type === "radio" && !control.checked) return;
+      current[control.dataset.cd2Setting] = control.value;
+    });
+    return normalizeCd2Config(current);
+  }
+
+  function setCd2SettingsStatus(text, stateName = "") {
+    const node = state.settingsPanel?.querySelector?.(".xiv-cd2-settings-status");
+    if (!node) return;
+    node.textContent = text;
+    node.dataset.state = stateName;
+  }
+
+  async function onCd2SettingsAction(event) {
+    const button = event.target?.closest?.("[data-cd2-action]");
+    if (!button) return;
+    const action = button.dataset.cd2Action;
+    if (action === "tokens") {
+      const config = cd2ConfigFromSettingsPanel();
+      window.open(`${config.baseUrl}/?page=tokens`, "_blank", "noopener");
+      return;
+    }
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = action === "test" ? "检测中…" : "保存中…";
+    try {
+      const config = await writeCd2Config(cd2ConfigFromSettingsPanel());
+      if (action === "test") {
+        const result = await testCd2Direct(config);
+        setCd2SettingsStatus(`连接成功 · ${config.cloudPath} 当前 ${result.count} 项`, "ready");
+      } else {
+        setCd2SettingsStatus("设置已保存到油猴私有存储。", "ready");
+      }
+      await probeCd2Bridge();
+    } catch (error) {
+      setCd2SettingsStatus(String(error?.message || error), "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
+  function onCd2SettingsChange(event) {
+    const control = event.target?.closest?.("[data-cd2-setting]");
+    if (!control || control.dataset.cd2Setting !== "playMode") return;
+    const localRow = state.settingsPanel?.querySelector?.("[data-cd2-local-row]");
+    if (localRow) localRow.hidden = control.value !== "local";
   }
 
   function onSettingsControlChange(event) {
@@ -3927,6 +5085,12 @@
         return parsePageBookmarks(await GM_getValue(PAGE_BOOKMARKS_KEY, "[]"));
       }
     } catch {}
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        const result = await chrome.storage.local.get(PAGE_BOOKMARKS_KEY);
+        return parsePageBookmarks(result?.[PAGE_BOOKMARKS_KEY]);
+      }
+    } catch {}
     try { return parsePageBookmarks(localStorage.getItem(PAGE_BOOKMARKS_KEY)); } catch { return []; }
   }
 
@@ -3940,6 +5104,14 @@
         stored = true;
       }
     } catch {}
+    if (!stored) {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          await chrome.storage.local.set({ [PAGE_BOOKMARKS_KEY]: clean });
+          stored = true;
+        }
+      } catch {}
+    }
     if (!stored) {
       try { localStorage.setItem(PAGE_BOOKMARKS_KEY, value); } catch {}
     }
@@ -4015,6 +5187,7 @@
     window.addEventListener("pointermove", onLaunchPointerMove, true);
     window.addEventListener("pointerup", endLaunchDrag, true);
     window.addEventListener("pointercancel", endLaunchDrag, true);
+    window.addEventListener("flowlens:settings-sync", applySyncedSettings);
     document.documentElement.appendChild(state.launch);
     applyLaunchSettings();
 
@@ -4035,11 +5208,13 @@
           <button class="xiv-btn" type="button" data-xiv="theme" title="切换主题">${icons.theme}<span>主题</span></button>
           <button class="xiv-btn" type="button" data-xiv="full" title="全屏">${icons.fullscreen}<span>全屏</span></button>
           <button class="xiv-btn" type="button" data-xiv="download" title="下载 ZIP">${icons.download}<span>下载</span></button>
+          <button class="xiv-btn" type="button" data-xiv="link-grabber" title="抓取磁力 / ED2K 链接（M）">${icons.magnet}<span>抓取链接</span></button>
           <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>
           <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>
           <button class="xiv-btn" type="button" data-xiv="auto" title="自动滚动">${icons.play}<span>自动</span></button>
           <button class="xiv-btn" type="button" data-xiv="prev-set" title="上一组">${icons.prevSet}<span>上一组</span></button>
           <button class="xiv-btn" type="button" data-xiv="next-set" title="下一组">${icons.nextSet}<span>下一组</span></button>
+          <button class="xiv-btn" type="button" data-xiv="queue-list" title="组列表">${icons.queueList}<span>组列表</span></button>
           <button class="xiv-btn" type="button" data-xiv="slower" title="减慢自动滚动">${icons.slow}<span>减速</span></button>
           <button class="xiv-btn" type="button" data-xiv="faster" title="加快自动滚动">${icons.fast}<span>加速</span></button>
           <button class="xiv-btn" type="button" data-xiv="top" title="回到顶部">${icons.top}<span>顶部</span></button>
@@ -4058,11 +5233,36 @@
         <label class="xiv-setting-row"><span>打开时自动全屏</span><input type="checkbox" data-setting="autoFullscreen"></label>
         <label class="xiv-setting-row"><span>网格视频预览</span><input type="checkbox" data-setting="videoPreview"></label>
         <label class="xiv-setting-row"><span>主题</span><select class="xiv-select" data-setting="theme"><option value="system">跟随系统</option><option value="dark">深色</option><option value="light">浅色</option></select></label>
-        <small>入口可以直接拖动，位置会保存。普通更新通过 reload-token 自动重载。</small>
+        <section class="xiv-cd2-settings" aria-label="CloudDrive2 直连设置">
+          <div class="xiv-cd2-settings-head"><strong>CloudDrive2 直连</strong><span>无需磁力播放插件</span></div>
+          <div class="xiv-cd2-play-modes" role="radiogroup" aria-label="磁力播放方式">
+            <label class="xiv-cd2-play-mode"><input type="radio" name="xiv-cd2-play-mode" value="stream" data-cd2-setting="playMode"><span class="xiv-cd2-play-mode-card"><span class="xiv-cd2-play-mode-icon">▶</span><span class="xiv-cd2-play-mode-copy"><strong>流媒体</strong><small>通过 CloudDrive2 直链打开</small></span></span></label>
+            <label class="xiv-cd2-play-mode"><input type="radio" name="xiv-cd2-play-mode" value="local" data-cd2-setting="playMode"><span class="xiv-cd2-play-mode-card"><span class="xiv-cd2-play-mode-icon">▰</span><span class="xiv-cd2-play-mode-copy"><strong>本地文件</strong><small>打开 CloudDrive2 挂载路径</small></span></span></label>
+          </div>
+          <div class="xiv-cd2-grid">
+            <label class="xiv-cd2-field" data-wide="true">服务地址<input type="url" data-cd2-setting="baseUrl" placeholder="http://localhost:19798"></label>
+            <label class="xiv-cd2-field" data-wide="true">115 转存目录<input type="text" data-cd2-setting="cloudPath" placeholder="/115/云下载/临时播放"></label>
+            <label class="xiv-cd2-field" data-wide="true">API Token<input type="password" data-cd2-setting="apiToken" autocomplete="off" placeholder="CloudDrive2 → API Tokens 中创建"></label>
+            <label class="xiv-cd2-field" data-wide="true" data-cd2-local-row hidden>本地挂载目录<input type="text" data-cd2-setting="localMountPath" placeholder="E:\\云下载\\临时播放"><small>浏览器需允许 Tampermonkey 访问 file:// 地址。</small></label>
+          </div>
+          <div class="xiv-cd2-controls"><button type="button" data-cd2-action="save">保存直连设置</button><button type="button" data-cd2-action="test">测试连接</button><button type="button" data-cd2-action="tokens">打开 Token 页面</button></div>
+          <div class="xiv-cd2-settings-status">Token 只保存在油猴/扩展私有存储，不写入当前网页。</div>
+        </section>
+        <small>入口可以直接拖动，位置会保存。设置会自动保存，刷新网页后完全生效。</small>
       </div>
       <div class="xiv-panel xiv-diagnostics" data-panel="diagnostics">
         <h3>诊断报告</h3>
         <pre></pre>
+      </div>
+      <div class="xiv-panel xiv-queue-panel" data-panel="queue" aria-label="组列表">
+        <div class="xiv-queue-head"><h3>后续组</h3><span class="xiv-queue-count">0 组</span></div>
+        <div class="xiv-queue-list"></div>
+      </div>
+      <div class="xiv-panel xiv-link-panel" data-panel="link-grabber" aria-label="下载链接抓取">
+        <div class="xiv-link-head"><h3>页面下载链接</h3><span class="xiv-link-count">0 磁力 · 0 ED2K</span></div>
+        <div class="xiv-link-actions"><button type="button" data-link-action="save-all">全部存115</button><button type="button" data-link-action="rescan">重新扫描</button><button type="button" data-link-action="copy-all">复制全部</button><button type="button" data-link-action="export">导出 TXT</button></div>
+        <div class="xiv-link-bridge-status">CloudDrive2 直连：等待检测</div>
+        <div class="xiv-link-list"></div>
       </div>
       <div id="xiv-lightbox"><img alt=""></div>
     `;
@@ -4078,6 +5278,8 @@
     state.status = state.root.querySelector("#xiv-status");
     state.settingsPanel = state.root.querySelector('[data-panel="settings"]');
     state.diagnosticsPanel = state.root.querySelector('[data-panel="diagnostics"]');
+    state.galleryQueuePanel = state.root.querySelector('[data-panel="queue"]');
+    state.linkGrabberPanel = state.root.querySelector('[data-panel="link-grabber"]');
 
     state.root.querySelector('[data-xiv="close"]').addEventListener("click", closeViewer);
     state.root.querySelector('[data-xiv="filter"]').addEventListener("change", (event) => setMediaFilter(event.target.value));
@@ -4086,11 +5288,45 @@
     state.root.querySelector('[data-xiv="theme"]').addEventListener("click", toggleTheme);
     state.root.querySelector('[data-xiv="full"]').addEventListener("click", toggleFullscreen);
     state.root.querySelector('[data-xiv="download"]').addEventListener("click", downloadZip);
+    state.root.querySelector('[data-xiv="link-grabber"]').addEventListener("click", toggleLinkGrabberPanel);
     state.root.querySelector('[data-xiv="favzip"]').addEventListener("click", () => downloadZip("favorites"));
     state.root.querySelector('[data-xiv="links"]').addEventListener("click", exportLinks);
     state.root.querySelector('[data-xiv="auto"]').addEventListener("click", toggleAutoScroll);
     state.root.querySelector('[data-xiv="prev-set"]').addEventListener("click", () => navigateGalleryQueue(-1));
     state.root.querySelector('[data-xiv="next-set"]').addEventListener("click", () => navigateGalleryQueue(1));
+    state.root.querySelector('[data-xiv="queue-list"]').addEventListener("click", toggleGalleryQueuePanel);
+    state.galleryQueuePanel.addEventListener("click", (event) => {
+      const item = event.target?.closest?.(".xiv-queue-item[data-queue-index]");
+      if (item) void jumpToGalleryQueueIndex(item.dataset.queueIndex);
+    });
+    state.linkGrabberPanel.addEventListener("click", async (event) => {
+      const rowButton = event.target?.closest?.("[data-link-row-action][data-link-index]");
+      if (rowButton) {
+        const item = state.grabbedDownloadLinks[Number(rowButton.dataset.linkIndex)];
+        const rowAction = rowButton.dataset.linkRowAction;
+        if (!item) return;
+        if (rowAction === "copy" && await copyCapturedText(item.url)) {
+          rowButton.textContent = "已复制";
+          window.setTimeout(() => { if (rowButton.isConnected) rowButton.textContent = "复制"; }, 900);
+        }
+        if (rowAction === "save") void runCd2Action("save", [item.url], rowButton);
+        if (rowAction === "play") void runCd2Action("play-browser", [item.url], rowButton);
+        return;
+      }
+      const action = event.target?.closest?.("[data-link-action]")?.dataset.linkAction;
+      if (action === "rescan") scanPageDownloadLinks();
+      if (action === "save-all" && state.grabbedDownloadLinks.length) {
+        const button = event.target.closest("[data-link-action='save-all']");
+        void runCd2Action("save", state.grabbedDownloadLinks.map((item) => item.url), button);
+      }
+      if (action === "copy-all" && state.grabbedDownloadLinks.length) {
+        const ok = await copyCapturedText(state.grabbedDownloadLinks.map((item) => item.url).join("\n"));
+        updateStatus(ok ? `已复制 ${state.grabbedDownloadLinks.length} 条链接` : "复制失败");
+      }
+      if (action === "export" && state.grabbedDownloadLinks.length) {
+        downloadTextFile(state.grabbedDownloadLinks.map((item) => item.url).join("\n"), `flowlens-download-links-${state.grabbedDownloadLinks.length}.txt`);
+      }
+    });
     state.root.querySelector('[data-xiv="slower"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed - 1));
     state.root.querySelector('[data-xiv="faster"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed + 1));
     state.root.querySelector('[data-xiv="top"]').addEventListener("click", () => state.stage.scrollTo({ top: 0, behavior: "smooth" }));
@@ -4105,6 +5341,8 @@
     state.root.querySelectorAll("[data-setting]").forEach((control) => {
       control.addEventListener("change", onSettingsControlChange);
     });
+    state.settingsPanel.addEventListener("click", onCd2SettingsAction);
+    state.settingsPanel.addEventListener("change", onCd2SettingsChange);
     state.stage.addEventListener("scroll", onScroll, { passive: true });
     state.stage.addEventListener("wheel", cancelViewerPositionRestoreForUser, { passive: true });
     state.stage.addEventListener("touchstart", cancelViewerPositionRestoreForUser, { passive: true });
@@ -4129,6 +5367,14 @@
     window.addEventListener("beforeunload", saveViewerPosition);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") saveViewerPosition();
+    });
+    state.root.addEventListener("pointerdown", (event) => {
+      const queueOpen = state.galleryQueuePanel?.dataset.open === "true";
+      const linksOpen = state.linkGrabberPanel?.dataset.open === "true";
+      if (!queueOpen && !linksOpen) return;
+      if (event.target?.closest?.('[data-panel="queue"], [data-xiv="queue-list"], [data-panel="link-grabber"], [data-xiv="link-grabber"]')) return;
+      if (state.galleryQueuePanel) state.galleryQueuePanel.dataset.open = "false";
+      if (state.linkGrabberPanel) state.linkGrabberPanel.dataset.open = "false";
     });
     watchSystemTheme();
     syncSettingsPanel();
@@ -4170,12 +5416,14 @@
 
   function scheduleRenderQueue() {
     if (state.renderFrame || !state.renderQueue.length) return;
+    if (state.lightbox?.dataset.active === "true") return;
     state.renderFrame = requestAnimationFrame(processRenderQueue);
   }
 
   function processRenderQueue() {
     state.renderFrame = 0;
     if (!state.grid || !state.renderQueue.length) return;
+    if (state.lightbox?.dataset.active === "true") return;
     const fragment = document.createDocumentFragment();
     const start = performance.now();
     let created = 0;
@@ -4241,13 +5489,13 @@
       appendTilesToMasonry([...fragment.childNodes]);
       observeDeferredImages();
     }
-    syncTileIndexes();
     updateCounter();
-    scheduleRestoreViewerPosition();
     if (state.renderQueue.length) {
       scheduleRenderQueue();
     } else {
       state.renderStartedAt = 0;
+      syncTileIndexes();
+      scheduleRestoreViewerPosition();
       window.dispatchEvent(new CustomEvent("flowlens:gallery-items-rendered"));
     }
   }
@@ -4284,9 +5532,10 @@
   }
 
   function syncTileIndexes() {
+    const indexByKey = new Map(state.images.map((url, index) => [keyForUrl(url), index]));
     allTiles().forEach((tile) => {
-      const i = state.images.indexOf(tile.dataset.url || "");
-      if (i < 0) return;
+      const i = indexByKey.get(tile.dataset.urlKey || keyForUrl(tile.dataset.url || ""));
+      if (!Number.isInteger(i) || i < 0) return;
       tile.dataset.index = String(i);
       const label = tile.querySelector("span");
       if (label) label.textContent = String(i + 1).padStart(2, "0");
@@ -4329,6 +5578,7 @@
     tiles.forEach((tile) => { tile.dataset.estimatedHeight = ""; });
     state.grid.replaceChildren();
     state.masonryColumns = [];
+    state.masonryColumnHeights = [];
     ensureMasonryColumns();
     appendTilesToMasonry(tiles);
     applyMediaFilter();
@@ -4348,6 +5598,7 @@
       state.grid.appendChild(column);
       return column;
     });
+    state.masonryColumnHeights = new Array(count).fill(0);
     appendTilesToMasonry(tiles);
     return state.masonryColumns;
   }
@@ -4355,7 +5606,10 @@
   function appendTilesToMasonry(tiles) {
     if (!tiles.length) return;
     const columns = ensureMasonryColumns();
-    const columnHeights = columns.map((column) => columnHeight(column));
+    if (state.masonryColumnHeights.length !== columns.length) {
+      state.masonryColumnHeights = columns.map((column) => columnHeight(column));
+    }
+    const columnHeights = state.masonryColumnHeights;
     for (const tile of tiles) {
       const index = shortestColumnIndex(columnHeights);
       columns[index]?.appendChild(tile);
@@ -4378,13 +5632,6 @@
   function estimatedTileHeight(tile, column) {
     const cached = Number(tile.dataset.estimatedHeight || 0);
     if (cached > 20) return cached;
-    const rect = tile.getBoundingClientRect?.();
-    if (rect?.height > 20) {
-      const measured = rect.height + masonryGap();
-      tile.dataset.estimatedHeight = String(Math.round(measured));
-      return measured;
-    }
-
     const url = tile.dataset.url || "";
     const media = tile.querySelector("img, video");
     const naturalWidth = media?.naturalWidth || media?.videoWidth || 0;
@@ -4396,9 +5643,17 @@
       || ratioFromStyle(media)
       || ratioFromSize(sizeFromUrl(url))
       || ratioFromSize(sizeFromUrl(media?.currentSrc || media?.src || ""))
-      || 0.72;
+      || 0;
     const columnWidth = column?.clientWidth || tile.clientWidth || Math.max(160, Math.floor((state.stage?.clientWidth || window.innerWidth || 1000) / Math.max(1, state.columns)));
-    const estimated = Math.max(80, columnWidth / ratio) + masonryGap();
+    if (!ratio) {
+      const rect = tile.getBoundingClientRect?.();
+      if (rect?.height > 20) {
+        const measured = rect.height + masonryGap();
+        tile.dataset.estimatedHeight = String(Math.round(measured));
+        return measured;
+      }
+    }
+    const estimated = Math.max(80, columnWidth / (ratio || 0.72)) + masonryGap();
     tile.dataset.estimatedHeight = String(Math.round(estimated));
     return estimated;
   }
@@ -4430,6 +5685,7 @@
       tiles.forEach((tile) => { tile.dataset.estimatedHeight = ""; });
       state.grid.replaceChildren();
       state.masonryColumns = [];
+      state.masonryColumnHeights = [];
       ensureMasonryColumns();
       appendTilesToMasonry(tiles);
     });
@@ -4453,7 +5709,7 @@
     if (!state.active) return;
     clearTimeout(state.masonryLayoutTimer);
     const scrolling = Date.now() - state.lastStageScrollAt < 220;
-    const delay = state.renderQueue.length ? 360 : scrolling ? 280 : 160;
+    const delay = state.renderQueue.length ? 700 : scrolling ? 520 : 240;
     state.masonryLayoutTimer = setTimeout(layoutMasonry, delay);
   }
 
@@ -4685,11 +5941,18 @@
   function runAutoScroll() {
     cancelAnimationFrame(state.autoScrollFrame);
     if (!state.autoScroll || !state.active || !state.stage) return;
-    const step = () => {
+    state.autoScrollLastTime = 0;
+    state.autoScrollRemainder = 0;
+    const step = (timestamp) => {
       if (!state.autoScroll || !state.active || !state.stage) return;
       if (state.lightbox?.dataset.active === "true") return;
       const before = state.stage.scrollTop;
-      state.stage.scrollTop += state.autoScrollSpeed;
+      const elapsed = state.autoScrollLastTime ? Math.min(34, Math.max(0, timestamp - state.autoScrollLastTime)) : 16.67;
+      state.autoScrollLastTime = timestamp;
+      const distance = state.autoScrollSpeed * 60 * elapsed / 1000 + state.autoScrollRemainder;
+      const pixels = Math.max(1, Math.floor(distance));
+      state.autoScrollRemainder = distance - pixels;
+      state.stage.scrollTop += pixels;
       const nearBottom = state.stage.scrollTop + state.stage.clientHeight > state.stage.scrollHeight - 12;
       if (nearBottom) {
         fetchRemainingPages();
@@ -5205,7 +6468,7 @@
     startViewerPositionRestore();
     closeHostPhotoViewer();
     state.active = true;
-    state.suppressLightboxUntil = Date.now() + 900;
+    state.suppressLightboxUntil = Date.now() + 120;
     document.documentElement.classList.add("xiv-active");
     startHostOverlayGuard();
     state.root.dataset.active = "true";
@@ -5246,6 +6509,7 @@
 
   async function closeViewer() {
     if (!state.root) return;
+    closePanels();
     saveViewerPosition();
     closeLightbox(false);
     state.autoScrollPausedForLightbox = false;
@@ -5314,6 +6578,7 @@
     }
     const img = new Image();
     img.decoding = "async";
+    try { img.fetchPriority = "high"; } catch {}
     img.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
     img.src = url;
     state.mediaPreloadCache.set(key, { media: img, time: Date.now() });
@@ -5324,7 +6589,7 @@
     clearTimeout(state.mediaPreloadTimer);
     state.mediaPreloadTimer = setTimeout(() => {
       if (state.lightbox?.dataset.active !== "true" || !state.images.length) return;
-      const offsets = [1, 2, 3, -1];
+      const offsets = [1, 2, 3, 4, 5, -1, -2];
       const urls = [];
       const seen = new Set();
       for (const offset of offsets) {
@@ -5345,7 +6610,28 @@
       for (const url of urls) {
         videoBudget = preloadMediaUrl(url, videoBudget);
       }
-    }, 90);
+    }, 30);
+  }
+
+  function scheduleLightboxHighResUpgrade(index, thumbUrl, openToken) {
+    clearTimeout(state.highResResolveTimer);
+    if (!thumbUrl || isVideoUrl(thumbUrl)) return;
+    state.highResResolveTimer = setTimeout(async () => {
+      if (state.lightbox?.dataset.active !== "true" || state.index !== index || state.lightbox.dataset.openToken !== openToken) return;
+      const highResUrl = await resolveHighResUrl(thumbUrl, true);
+      if (!highResUrl || highResUrl === thumbUrl) return;
+      if (state.lightbox?.dataset.active !== "true" || state.index !== index || state.lightbox.dataset.openToken !== openToken) return;
+      if (isVideoUrl(highResUrl)) {
+        setLightboxVideo(highResUrl);
+      } else {
+        const img = ensureLightboxImage();
+        img.dataset.xivCanZoom = "false";
+        img.addEventListener("load", () => updateLightboxZoomHint(img), { once: true });
+        setImageSourceWithFallback(img, highResUrl);
+        updateFavoriteButton(highResUrl, thumbUrl);
+      }
+      scheduleLightboxMediaPreload(index);
+    }, state.highResByImage.has(keyForUrl(thumbUrl)) ? 40 : 420);
   }
 
   async function openLightbox(index) {
@@ -5353,49 +6639,46 @@
       closeHostPhotoViewer();
       return;
     }
+    if (state.renderFrame) {
+      cancelAnimationFrame(state.renderFrame);
+      state.renderFrame = 0;
+    }
+    clearTimeout(state.masonryLayoutTimer);
     pauseAutoScrollForLightbox();
     state.index = index;
     const openToken = `${Date.now()}:${index}:${Math.random()}`;
     state.lightbox.dataset.openToken = openToken;
     state.lightbox.dataset.zoom = "fit";
+    delete state.lightbox.dataset.wheelZoom;
+    state.lightbox.querySelectorAll(":scope > img, :scope > video").forEach((media) => {
+      delete media.dataset.xivWheelBaseWidth;
+      delete media.dataset.xivWheelBaseHeight;
+      delete media.dataset.xivWheelZoomKey;
+      media.style.removeProperty("--xiv-actual-width");
+      media.style.removeProperty("--xiv-actual-height");
+    });
     state.root.dataset.lightboxActive = "true";
     state.lightbox.dataset.flVideoEnded = "false";
     state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+    clearTimeout(state.highResResolveTimer);
     const thumbUrl = state.images[index];
+    ensureLightboxChrome();
+    state.lightbox.dataset.active = "true";
     if (isVideoUrl(thumbUrl)) {
       setLightboxVideo(thumbUrl);
-      state.lightbox.dataset.active = "true";
       state.root.dataset.lightboxActive = "true";
       scheduleLightboxMediaPreload(index);
       return;
     } else {
-      state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
-      const img = state.lightbox.querySelector("img");
+      const img = ensureLightboxImage();
       img.dataset.xivCanZoom = "false";
-      img.addEventListener("load", () => updateLightboxZoomHint(img));
+      img.addEventListener("load", () => updateLightboxZoomHint(img), { once: true });
       setImageSourceWithFallback(img, thumbUrl);
       updateFavoriteButton(thumbUrl);
     }
-    state.lightbox.dataset.active = "true";
     state.root.dataset.lightboxActive = "true";
     scheduleLightboxMediaPreload(index);
-    const highResUrl = await resolveHighResUrl(thumbUrl);
-    if (state.lightbox.dataset.active === "true" && state.index === index && state.lightbox.dataset.openToken === openToken) {
-      if (isVideoUrl(highResUrl)) {
-        setLightboxVideo(highResUrl);
-      } else {
-        let img = state.lightbox.querySelector("img");
-        if (!img) {
-          state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
-          img = state.lightbox.querySelector("img");
-        }
-        img.dataset.xivCanZoom = "false";
-        img.addEventListener("load", () => updateLightboxZoomHint(img));
-        setImageSourceWithFallback(img, highResUrl);
-        updateFavoriteButton(highResUrl, thumbUrl);
-      }
-      scheduleLightboxMediaPreload(index);
-    }
+    scheduleLightboxHighResUpgrade(index, thumbUrl, openToken);
   }
 
   function closeLightbox(resumeAutoScroll = true) {
@@ -5407,11 +6690,48 @@
     state.root.dataset.lightboxActive = "false";
     state.lightbox.dataset.zoom = "fit";
     clearTimeout(state.mediaPreloadTimer);
+    clearTimeout(state.highResResolveTimer);
+    if (state.renderQueue.length) scheduleRenderQueue();
     if (resumeAutoScroll) resumeAutoScrollAfterLightbox();
   }
 
   function lightboxArrows() {
-    return `<button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
+    return `<button class="xiv-lightbox-zoom" type="button" title="放大（之后可滚轮缩放、拖动查看）">${zoomInIcon()}</button><button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
+  }
+
+  function ensureLightboxChrome() {
+    const box = state.lightbox;
+    if (!box) return;
+    const template = document.createElement("template");
+    template.innerHTML = lightboxArrows();
+    [...template.content.children].forEach((node) => {
+      const selector = node.classList.contains("xiv-lightbox-arrow")
+        ? `.xiv-lightbox-arrow[data-side="${node.dataset.side}"]`
+        : `.${node.className}`;
+      if (!box.querySelector(`:scope > ${selector}`)) box.appendChild(node);
+    });
+    syncLightboxZoomButton();
+  }
+
+  function removeDirectLightboxMedia(except = null) {
+    state.lightbox?.querySelectorAll(":scope > img, :scope > video, :scope > iframe, :scope > .xiv-video-frame").forEach((node) => {
+      if (node !== except) node.remove();
+    });
+  }
+
+  function ensureLightboxImage() {
+    ensureLightboxChrome();
+    let img = state.lightbox?.querySelector(":scope > img");
+    if (!img) {
+      pauseLightboxMedia();
+      removeDirectLightboxMedia();
+      img = document.createElement("img");
+      img.alt = "";
+      state.lightbox.appendChild(img);
+    } else {
+      removeDirectLightboxMedia(img);
+    }
+    return img;
   }
 
   function heartIcon() {
@@ -5806,7 +7126,8 @@
   function setLightboxFrameVideo(url) {
     url = normalizeMediaUrl(url);
     pauseLightboxMedia();
-    state.lightbox.innerHTML = lightboxArrows();
+    ensureLightboxChrome();
+    removeDirectLightboxMedia();
     updateFavoriteButton(url);
     const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
     const iframe = document.createElement("iframe");
@@ -5829,7 +7150,8 @@
       return;
     }
     pauseLightboxMedia();
-    state.lightbox.innerHTML = lightboxArrows();
+    ensureLightboxChrome();
+    removeDirectLightboxMedia();
     updateFavoriteButton(url);
     const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
     const video = createVideoElement(url, {
@@ -5937,6 +7259,23 @@
     media.title = zoomable ? "1:1 放大" : "";
   }
 
+  function syncLightboxZoomButton() {
+    const button = state.lightbox?.querySelector(".xiv-lightbox-zoom");
+    if (!button) return;
+    const active = state.lightbox?.dataset.zoom === "actual";
+    const percent = Math.max(100, Math.round(Number(state.lightbox?.dataset.wheelZoom || 1) * 100));
+    button.dataset.active = active ? "true" : "false";
+    button.title = active
+      ? `恢复适应屏幕（当前 ${percent}%）`
+      : "放大（之后可滚轮缩放、拖动查看）";
+    button.setAttribute("aria-label", button.title);
+    const wanted = active ? "out" : "in";
+    if (button.dataset.zoomIcon !== wanted) {
+      button.dataset.zoomIcon = wanted;
+      button.innerHTML = active ? zoomOutIcon() : zoomInIcon();
+    }
+  }
+
   function waitForVideoActualZoom(video) {
     if (!video || video.tagName !== "VIDEO" || video.dataset.xivPendingActual === "true") return;
     video.dataset.xivPendingActual = "true";
@@ -5995,24 +7334,42 @@
     const zoomed = state.lightbox.dataset.zoom === "actual";
     if (zoomed) {
       state.lightbox.dataset.zoom = "fit";
+      delete state.lightbox.dataset.wheelZoom;
       state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     } else {
       const media = state.lightbox.querySelector("img, video");
       if (!prepareActualZoomMedia(media)) {
-        waitForVideoActualZoom(media);
-        return;
+        if (media?.tagName === "VIDEO" && !(media.videoWidth && media.videoHeight)) {
+          waitForVideoActualZoom(media);
+          return;
+        }
+        const rect = media?.getBoundingClientRect?.();
+        if (!media || !rect?.width || !rect?.height) return;
+        const factor = 1.5;
+        media.dataset.xivWheelBaseWidth = String(Math.max(1, Math.round(rect.width)));
+        media.dataset.xivWheelBaseHeight = String(Math.max(1, Math.round(rect.height)));
+        media.dataset.xivWheelZoomKey = `${media.currentSrc || media.src || media.dataset?.mediaUrl || ""}|${media.naturalWidth || media.videoWidth || 0}x${media.naturalHeight || media.videoHeight || 0}`;
+        media.style.setProperty("--xiv-actual-width", `${Math.round(rect.width * factor)}px`);
+        media.style.setProperty("--xiv-actual-height", `${Math.round(rect.height * factor)}px`);
+        state.lightbox.dataset.wheelZoom = String(factor);
       }
       state.lightbox.dataset.zoom = "actual";
       centerActualLightboxMedia();
     }
+    syncLightboxZoomButton();
   }
 
   function onLightboxClick(event) {
     if (state.lightbox?.dataset.active !== "true") return;
     if (!state.lightbox.contains(event.target)) return;
+    if (event.target?.closest?.(".xiv-lightbox-slideshow")) return;
     if (event.target?.closest?.("#xiv-lightbox video") && !isMobilePointerEvent(event)) return;
     claimEvent(event);
     if (Date.now() < state.lightboxSuppressClickUntil) return;
+    if (event.target?.closest?.(".xiv-lightbox-zoom")) {
+      toggleLightboxZoom();
+      return;
+    }
     if (event.target?.closest?.(".xiv-lightbox-fav")) {
       favoriteCurrentImage();
       return;
@@ -6035,7 +7392,7 @@
 
   function onLightboxPointerDown(event) {
     if (state.lightbox?.dataset.active !== "true" || event.button !== 0) return;
-    if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow")) return;
+    if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow, .xiv-lightbox-zoom")) return;
     if (state.lightbox.dataset.zoom === "actual" && event.target?.matches?.("img, video")) {
       claimEvent(event);
       state.lightboxDrag = {
@@ -6123,10 +7480,74 @@
     state.viewerSwipe = null;
   }
 
+  function zoomInIcon() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M10.5 7.5v6M7.5 10.5h6"/></svg>';
+  }
+
+  function zoomOutIcon() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M7.5 10.5h6"/></svg>';
+  }
+
+  function lightboxWheelZoom(event) {
+    const lb = state.lightbox;
+    const media = lb?.querySelector("img, video");
+    if (!lb || !media) return false;
+    const rect = media.getBoundingClientRect?.();
+    if (!rect?.width || !rect?.height) return false;
+
+    const sourceKey = media.currentSrc || media.src || media.dataset?.mediaUrl || "";
+    const zoomKey = `${sourceKey}|${media.naturalWidth || media.videoWidth || 0}x${media.naturalHeight || media.videoHeight || 0}`;
+    if (media.dataset.xivWheelZoomKey !== zoomKey || !media.dataset.xivWheelBaseWidth) {
+      media.dataset.xivWheelZoomKey = zoomKey;
+      media.dataset.xivWheelBaseWidth = String(Math.max(1, Math.round(rect.width)));
+      media.dataset.xivWheelBaseHeight = String(Math.max(1, Math.round(rect.height)));
+      lb.dataset.wheelZoom = "1";
+    }
+
+    const current = Number(lb.dataset.wheelZoom || 1);
+    const direction = event.deltaY < 0 || event.deltaX < 0 ? 1 : -1;
+    const next = Math.max(1, Math.min(4, current * (direction > 0 ? 1.12 : 0.89)));
+    const anchorX = (event.clientX + lb.scrollLeft) / Math.max(1, lb.scrollWidth);
+    const anchorY = (event.clientY + lb.scrollTop) / Math.max(1, lb.scrollHeight);
+
+    if (next <= 1.03) {
+      lb.dataset.zoom = "fit";
+      delete lb.dataset.wheelZoom;
+      delete media.dataset.xivWheelBaseWidth;
+      delete media.dataset.xivWheelBaseHeight;
+      delete media.dataset.xivWheelZoomKey;
+      media.style.removeProperty("--xiv-actual-width");
+      media.style.removeProperty("--xiv-actual-height");
+      lb.scrollTo?.({ left: 0, top: 0, behavior: "auto" });
+      updateStatus("适应屏幕");
+      syncLightboxZoomButton();
+      return true;
+    }
+
+    const baseWidth = Number(media.dataset.xivWheelBaseWidth || rect.width);
+    const baseHeight = Number(media.dataset.xivWheelBaseHeight || rect.height);
+    media.style.setProperty("--xiv-actual-width", `${Math.round(baseWidth * next)}px`);
+    media.style.setProperty("--xiv-actual-height", `${Math.round(baseHeight * next)}px`);
+    lb.dataset.zoom = "actual";
+    lb.dataset.wheelZoom = String(next);
+    media.dataset.xivCanZoom = "true";
+    updateStatus(`${Math.round(next * 100)}%`);
+    syncLightboxZoomButton();
+    requestAnimationFrame(() => {
+      lb.scrollLeft = Math.max(0, Math.round(anchorX * lb.scrollWidth - event.clientX));
+      lb.scrollTop = Math.max(0, Math.round(anchorY * lb.scrollHeight - event.clientY));
+    });
+    return true;
+  }
+
   function onLightboxWheel(event) {
     if (state.lightbox?.dataset.active !== "true") return;
     if (!state.lightbox.contains(event.target)) return;
     claimEvent(event);
+    if (state.lightbox.dataset.zoom === "actual" || event.ctrlKey || event.altKey) {
+      lightboxWheelZoom(event);
+      return;
+    }
     const now = Date.now();
     if (now - state.lastLightboxWheelAt < 220) return;
     const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
@@ -6134,6 +7555,8 @@
     state.lastLightboxWheelAt = now;
     showAdjacentImage(delta > 0 ? 1 : -1);
   }
+
+  window.__flowLensHandleLightboxZoomWheel = lightboxWheelZoom;
 
   function claimEvent(event) {
     event.preventDefault();
@@ -6172,6 +7595,11 @@
       showAdjacentImage(event.key === "ArrowRight" ? 1 : -1);
       return;
     }
+    if (!isTyping && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "m") {
+      claimEvent(event);
+      if (!event.repeat) toggleLinkGrabberPanel();
+      return;
+    }
     const queuePrevKey = event.key === "ArrowLeft";
     const queueNextKey = event.key === "ArrowRight";
     if (!isTyping && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && (queuePrevKey || queueNextKey)) {
@@ -6182,7 +7610,10 @@
     }
     if (event.key === "Escape") {
       claimEvent(event);
-      if (state.lightbox?.dataset.active === "true") closeLightbox();
+      const openPanel = [state.galleryQueuePanel, state.linkGrabberPanel, state.settingsPanel, state.diagnosticsPanel]
+        .find((panel) => panel?.dataset.open === "true");
+      if (openPanel) openPanel.dataset.open = "false";
+      else if (state.lightbox?.dataset.active === "true") closeLightbox();
       else closeViewer();
     } else if (!isTyping && event.key.toLowerCase() === "g") {
       claimEvent(event);
