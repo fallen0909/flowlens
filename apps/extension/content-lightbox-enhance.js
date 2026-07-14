@@ -168,7 +168,11 @@
 
   function goNext() {
     resetZoom(false);
-    if (coreApi()?.showAdjacent?.(1)) return true;
+    const api = coreApi();
+    if (typeof api?.showAdjacent === "function") {
+      const moved = api.showAdjacent(1);
+      return moved !== false;
+    }
     const arrow = lightbox()?.querySelector?.('.xiv-lightbox-arrow[data-side="right"]');
     if (arrow) {
       arrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
@@ -207,7 +211,7 @@
     slideshowActive = true;
     const video = activeVideo();
     if (video) playVideo(video);
-    scheduleSlideshow(video ? 650 : slideshowDelay());
+    scheduleSlideshow(video ? 650 : Math.min(480, slideshowDelay()));
     ensureButton();
     window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: true } }));
   }

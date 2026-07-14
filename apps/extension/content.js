@@ -172,7 +172,10 @@
     galleryQueueCurrentUrl: "",
     galleryQueueCurrentTitle: "",
     galleryQueueTitles: new Map(),
+    galleryQueueCovers: new Map(),
     galleryQueuePanel: null,
+    linkGrabberPanel: null,
+    grabbedDownloadLinks: [],
     x810114RecentQueue: [],
     x810114ActiveSidebarQueue: []
   };
@@ -535,7 +538,7 @@
     #xiv-root[data-theme="light"] .xiv-queue-count { color: rgba(0,0,0,.5); }
     .xiv-queue-list { max-height: min(62vh, 520px); overflow: auto; padding: 8px; overscroll-behavior: contain; }
     .xiv-queue-item {
-      width: 100%; min-height: 54px; display: grid; grid-template-columns: 32px minmax(0,1fr) 18px;
+      width: 100%; min-height: 66px; display: grid; grid-template-columns: 52px minmax(0,1fr) 18px;
       align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 12px;
       background: transparent; color: inherit; text-align: left; cursor: pointer;
     }
@@ -543,11 +546,17 @@
     #xiv-root[data-theme="light"] .xiv-queue-item:hover { background: rgba(0,0,0,.055); }
     .xiv-queue-item[data-current="true"] { background: rgba(89,126,255,.18); }
     #xiv-root[data-theme="light"] .xiv-queue-item[data-current="true"] { background: rgba(43,91,222,.1); }
-    .xiv-queue-number {
-      width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px;
-      background: rgba(255,255,255,.09); color: rgba(255,255,255,.72); font: 850 11px/1 system-ui, sans-serif;
+    .xiv-queue-cover {
+      position: relative; width: 52px; height: 52px; overflow: hidden; border-radius: 11px;
+      background: linear-gradient(145deg, rgba(108,128,188,.28), rgba(255,255,255,.06));
     }
-    #xiv-root[data-theme="light"] .xiv-queue-number { background: rgba(0,0,0,.06); color: rgba(0,0,0,.58); }
+    #xiv-root[data-theme="light"] .xiv-queue-cover { background: linear-gradient(145deg, rgba(76,104,184,.14), rgba(0,0,0,.035)); }
+    .xiv-queue-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .xiv-queue-number {
+      position: absolute; left: 4px; bottom: 4px; min-width: 20px; height: 20px; display: grid; place-items: center;
+      padding: 0 4px; border-radius: 7px; background: rgba(0,0,0,.66); color: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.24); font: 850 10px/1 system-ui, sans-serif;
+    }
     .xiv-queue-copy { min-width: 0; }
     .xiv-queue-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 13px/1.3 system-ui, sans-serif; }
     .xiv-queue-url { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,.5); font: 600 11px/1.2 system-ui, sans-serif; }
@@ -555,6 +564,24 @@
     .xiv-queue-arrow { opacity: .5; font-size: 18px; }
     .xiv-queue-empty { padding: 28px 16px; color: rgba(255,255,255,.58); text-align: center; font: 700 13px/1.5 system-ui, sans-serif; }
     #xiv-root[data-theme="light"] .xiv-queue-empty { color: rgba(0,0,0,.5); }
+    .xiv-link-panel { width: min(440px, calc(100vw - 24px)); padding: 0; overflow: hidden; border-radius: 18px; }
+    .xiv-link-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 15px 10px; border-bottom: 1px solid rgba(127,127,127,.18); }
+    .xiv-link-head h3 { margin: 0; font-size: 16px; }
+    .xiv-link-count { color: rgba(127,127,127,.76); font: 800 12px/1 system-ui, sans-serif; }
+    .xiv-link-actions { display: flex; gap: 7px; padding: 9px 10px; border-bottom: 1px solid rgba(127,127,127,.14); }
+    .xiv-link-actions button, .xiv-link-copy { border: 0; border-radius: 9px; background: rgba(127,127,127,.13); color: inherit; cursor: pointer; font: 800 11px/1 system-ui, sans-serif; }
+    .xiv-link-actions button { min-height: 32px; padding: 0 11px; }
+    .xiv-link-list { max-height: min(58vh, 470px); overflow: auto; padding: 7px; overscroll-behavior: contain; }
+    .xiv-link-row { display: grid; grid-template-columns: 48px minmax(0,1fr) 46px; align-items: center; gap: 9px; min-height: 54px; padding: 7px 8px; border-radius: 11px; }
+    .xiv-link-row:hover { background: rgba(127,127,127,.09); }
+    .xiv-link-type { display: grid; place-items: center; min-height: 24px; border-radius: 7px; background: rgba(56,112,255,.14); color: #6388ff; font: 900 9px/1 system-ui, sans-serif; letter-spacing: .04em; }
+    #xiv-root[data-theme="light"] .xiv-link-type { color: #315bd8; }
+    .xiv-link-copy { width: 44px; height: 30px; }
+    .xiv-link-copy:hover, .xiv-link-actions button:hover { background: rgba(90,120,220,.2); }
+    .xiv-link-copy-text { min-width: 0; }
+    .xiv-link-name, .xiv-link-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xiv-link-name { font: 800 12px/1.3 system-ui, sans-serif; }
+    .xiv-link-value { margin-top: 4px; color: rgba(127,127,127,.76); font: 600 10px/1.2 ui-monospace, Consolas, monospace; }
     .xiv-diagnostics pre {
       max-height: 48vh; overflow: auto; margin: 8px 0 0; white-space: pre-wrap;
       font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -629,7 +656,9 @@
     }
     .xiv-lightbox-close:hover { transform: translateY(-1px) scale(1.04); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.28), rgba(42,42,46,.82)); }
     .xiv-lightbox-close:active { transform: scale(.96); }
-    .xiv-lightbox-fav {
+    .xiv-lightbox-fav,
+    .xiv-lightbox-link-grabber,
+    .xiv-lightbox-zoom {
       position: fixed; right: 68px; top: 18px; z-index: 6;
       width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26);
       background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72));
@@ -638,10 +667,19 @@
       box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18);
       backdrop-filter: blur(12px); transition: transform .14s ease, background .14s ease, border-color .14s ease, color .14s ease;
     }
-    .xiv-lightbox-fav:hover { transform: translateY(-1px) scale(1.04); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.28), rgba(42,42,46,.82)); }
-    .xiv-lightbox-fav:active { transform: scale(.96); }
+    .xiv-lightbox-zoom { right: 168px; }
+    .xiv-lightbox-link-grabber { right: 218px; }
+    .xiv-lightbox-fav:hover,
+    .xiv-lightbox-link-grabber:hover,
+    .xiv-lightbox-zoom:hover { transform: translateY(-1px) scale(1.04); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.28), rgba(42,42,46,.82)); }
+    .xiv-lightbox-fav:active,
+    .xiv-lightbox-link-grabber:active,
+    .xiv-lightbox-zoom:active { transform: scale(.96); }
     .xiv-lightbox-fav svg,
-    .xiv-lightbox-close svg { width: 21px; height: 21px; display: block; filter: drop-shadow(0 5px 10px rgba(0,0,0,.28)); }
+    .xiv-lightbox-close svg,
+    .xiv-lightbox-link-grabber svg,
+    .xiv-lightbox-zoom svg { width: 21px; height: 21px; display: block; filter: drop-shadow(0 5px 10px rgba(0,0,0,.28)); }
+    .xiv-lightbox-zoom[data-active="true"] { color: #315bd8; border-color: rgba(49,91,216,.34); background: rgba(255,255,255,.98); }
     .xiv-lightbox-fav[data-favorited="true"] {
       color: #ff3b6b; border-color: rgba(255,59,107,.68);
       background: radial-gradient(circle at 32% 24%, rgba(255,119,149,.36), rgba(82,10,28,.78));
@@ -673,7 +711,8 @@
     play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
     prevSet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6 9 12l6 6"/><path d="M20 6 14 12l6 6"/><path d="M4 5v14"/></svg>',
     nextSet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/><path d="M4 6l6 6-6 6"/><path d="M20 5v14"/></svg>',
-    queueList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none"/></svg>',
+    queueList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="14" height="12" rx="2"/><path d="m6 15 3.1-3.2a1.4 1.4 0 0 1 2 0L14 15"/><circle cx="13.5" cy="10" r="1"/><path d="M7 3h12a2 2 0 0 1 2 2v10"/></svg>',
+    magnet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v8a6 6 0 0 0 12 0V4"/><path d="M6 8h4M14 8h4M6 4h4M14 4h4"/></svg>',
     slow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M8 8l-4 4 4 4"/></svg>',
     fast: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M16 8l4 4-4 4"/></svg>',
     top: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M6 15l6-6 6 6M12 9v10"/></svg>',
@@ -1310,6 +1349,18 @@
       if (!title || /^(上一组|下一组|上一页|下一页|previous|next)$/i.test(title)) return;
       const previous = state.galleryQueueTitles.get(url);
       if (!previous || title.length > previous.length) state.galleryQueueTitles.set(url, title.slice(0, 100));
+      if (!state.galleryQueueCovers.has(url)) {
+        const nearby = anchor.querySelector("img")
+          || anchor.closest("article, li, [class*='card' i], [class*='item' i]")?.querySelector?.("img");
+        const rawCover = nearby?.currentSrc
+          || nearby?.getAttribute?.("src")
+          || nearby?.getAttribute?.("data-src")
+          || nearby?.getAttribute?.("data-original")
+          || nearby?.getAttribute?.("data-lazy-src")
+          || "";
+        const cover = absoluteUrl(String(rawCover).split(/\s+/)[0], base);
+        if (cover && /^(?:https?:|data:|blob:)/i.test(cover)) state.galleryQueueCovers.set(url, cover);
+      }
     });
     const currentUrl = normalizedPageUrl(doc?.documentElement?.dataset?.xivBase || base);
     const currentTitle = pageTitleFromDocument(doc, currentUrl);
@@ -1368,9 +1419,23 @@
       item.dataset.current = index === activeIndex ? "true" : "false";
       item.title = galleryQueueDisplayTitle(url, index);
 
+      const cover = document.createElement("span");
+      cover.className = "xiv-queue-cover";
+      const coverUrl = state.galleryQueueCovers.get(normalizedPageUrl(url));
+      if (coverUrl) {
+        const image = document.createElement("img");
+        image.loading = "lazy";
+        image.decoding = "async";
+        image.referrerPolicy = "no-referrer";
+        image.alt = "";
+        image.src = coverUrl;
+        image.addEventListener("error", () => image.remove(), { once: true });
+        cover.appendChild(image);
+      }
       const number = document.createElement("span");
       number.className = "xiv-queue-number";
       number.textContent = String(index + 1);
+      cover.appendChild(number);
       const copy = document.createElement("span");
       copy.className = "xiv-queue-copy";
       const title = document.createElement("span");
@@ -1383,7 +1448,7 @@
       arrow.className = "xiv-queue-arrow";
       arrow.textContent = index === activeIndex ? "•" : "›";
       copy.append(title, path);
-      item.append(number, copy, arrow);
+      item.append(cover, copy, arrow);
       list.appendChild(item);
     });
   }
@@ -1428,6 +1493,127 @@
     if (selfieTarget) return;
     if (samePageUrl(target, location.href)) location.reload();
     else location.href = target;
+  }
+
+  function decodeCapturedLink(value) {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = String(value || "");
+    return textarea.value.replace(/&amp;/gi, "&").trim();
+  }
+
+  function capturedLinkName(item) {
+    try {
+      if (item.type === "MAGNET") {
+        const name = new URL(item.url).searchParams.get("dn");
+        if (name) return decodeURIComponent(name.replace(/\+/g, " "));
+        const hash = new URL(item.url).searchParams.get("xt") || "";
+        return hash.replace(/^urn:btih:/i, "") || "磁力链接";
+      }
+      const parts = item.url.split("|");
+      return decodeURIComponent(parts[2] || "ED2K 链接");
+    } catch {
+      return item.type === "MAGNET" ? "磁力链接" : "ED2K 链接";
+    }
+  }
+
+  function collectPageDownloadLinks() {
+    const found = new Map();
+    const remember = (raw) => {
+      const url = decodeCapturedLink(raw).replace(/[\u200b\u200c\u200d]/g, "");
+      if (!/^(?:magnet:\?|ed2k:\/\/)/i.test(url)) return;
+      const type = /^magnet:/i.test(url) ? "MAGNET" : "ED2K";
+      const key = url.toLowerCase();
+      if (!found.has(key)) found.set(key, { type, url });
+    };
+
+    document.querySelectorAll("a[href], [data-url], [data-href], [data-link]").forEach((node) => {
+      ["href", "data-url", "data-href", "data-link"].forEach((attr) => remember(node.getAttribute?.(attr) || ""));
+    });
+
+    const source = `${document.documentElement?.innerHTML || ""}\n${document.body?.innerText || ""}`.slice(0, 12 * 1024 * 1024);
+    for (const match of source.matchAll(/magnet:\?[^"'<>\\\s]+/gi)) remember(match[0]);
+    for (const match of source.matchAll(/ed2k:\/\/\|(?:file|server)\|[^"'<>\\\s]+/gi)) remember(match[0]);
+    return [...found.values()].slice(0, 1000);
+  }
+
+  async function copyCapturedText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0;";
+      document.documentElement.appendChild(textarea);
+      textarea.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch {}
+      textarea.remove();
+      return ok;
+    }
+  }
+
+  function renderLinkGrabberPanel() {
+    const panel = state.linkGrabberPanel;
+    if (!panel) return;
+    const list = panel.querySelector(".xiv-link-list");
+    const count = panel.querySelector(".xiv-link-count");
+    if (!list || !count) return;
+    const items = state.grabbedDownloadLinks;
+    const magnets = items.filter((item) => item.type === "MAGNET").length;
+    const ed2k = items.length - magnets;
+    count.textContent = `${magnets} 磁力 · ${ed2k} ED2K`;
+    list.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "xiv-queue-empty";
+      empty.textContent = "当前页面没有识别到 magnet 或 ed2k 链接。";
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "xiv-link-row";
+      const type = document.createElement("span");
+      type.className = "xiv-link-type";
+      type.textContent = item.type;
+      const copy = document.createElement("span");
+      copy.className = "xiv-link-copy-text";
+      const name = document.createElement("span");
+      name.className = "xiv-link-name";
+      name.textContent = capturedLinkName(item);
+      const value = document.createElement("span");
+      value.className = "xiv-link-value";
+      value.textContent = item.url;
+      copy.append(name, value);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "xiv-link-copy";
+      button.dataset.linkIndex = String(index);
+      button.textContent = "复制";
+      row.append(type, copy, button);
+      list.appendChild(row);
+    });
+  }
+
+  function scanPageDownloadLinks() {
+    state.grabbedDownloadLinks = collectPageDownloadLinks();
+    renderLinkGrabberPanel();
+    updateStatus(state.grabbedDownloadLinks.length
+      ? `找到 ${state.grabbedDownloadLinks.length} 条下载链接`
+      : "未找到磁力或 ED2K 链接");
+  }
+
+  function toggleLinkGrabberPanel() {
+    if (!state.linkGrabberPanel) return;
+    const open = state.linkGrabberPanel.dataset.open === "true";
+    if (open) {
+      state.linkGrabberPanel.dataset.open = "false";
+      return;
+    }
+    closePanels("link-grabber");
+    scanPageDownloadLinks();
+    state.linkGrabberPanel.dataset.open = "true";
   }
 
   function fetchSameOriginDocumentViaFrame(targetUrl, timeoutMs = 18000) {
@@ -2934,10 +3120,10 @@
     const previousSrc = img.currentSrc || img.src || "";
     img.dataset.fallbackTried = "";
     img.dataset.awaitingFallback = "";
-    img.addEventListener("load", () => {
+    img.onload = () => {
       img.dataset.awaitingFallback = "";
-    });
-    img.addEventListener("error", () => {
+    };
+    img.onerror = () => {
       if (img.dataset.fallbackTried === "true") {
         img.dataset.awaitingFallback = "";
         return;
@@ -2951,7 +3137,7 @@
       img.dataset.fallbackTried = "true";
       img.dataset.awaitingFallback = "true";
       img.src = fallback;
-    });
+    };
     img.src = url;
   }
 
@@ -4048,7 +4234,7 @@
   }
 
   function closePanels(except = "") {
-    [state.settingsPanel, state.diagnosticsPanel, state.galleryQueuePanel].forEach((panel) => {
+    [state.settingsPanel, state.diagnosticsPanel, state.galleryQueuePanel, state.linkGrabberPanel].forEach((panel) => {
       if (!panel) return;
       if (panel.dataset.panel === except) return;
       panel.dataset.open = "false";
@@ -4262,6 +4448,7 @@
           <button class="xiv-btn" type="button" data-xiv="theme" title="切换主题">${icons.theme}<span>主题</span></button>
           <button class="xiv-btn" type="button" data-xiv="full" title="全屏">${icons.fullscreen}<span>全屏</span></button>
           <button class="xiv-btn" type="button" data-xiv="download" title="下载 ZIP">${icons.download}<span>下载</span></button>
+          <button class="xiv-btn" type="button" data-xiv="link-grabber" title="抓取磁力 / ED2K 链接">${icons.magnet}<span>抓取链接</span></button>
           <button class="xiv-btn" type="button" data-xiv="favzip" title="下载收藏 ZIP">${icons.heart}<span>收藏</span></button>
           <button class="xiv-btn" type="button" data-xiv="links" title="导出链接">${icons.link}<span>链接</span></button>
           <button class="xiv-btn" type="button" data-xiv="auto" title="自动滚动">${icons.play}<span>自动</span></button>
@@ -4296,6 +4483,11 @@
         <div class="xiv-queue-head"><h3>后续组</h3><span class="xiv-queue-count">0 组</span></div>
         <div class="xiv-queue-list"></div>
       </div>
+      <div class="xiv-panel xiv-link-panel" data-panel="link-grabber" aria-label="下载链接抓取">
+        <div class="xiv-link-head"><h3>页面下载链接</h3><span class="xiv-link-count">0 磁力 · 0 ED2K</span></div>
+        <div class="xiv-link-actions"><button type="button" data-link-action="rescan">重新扫描</button><button type="button" data-link-action="copy-all">复制全部</button><button type="button" data-link-action="export">导出 TXT</button></div>
+        <div class="xiv-link-list"></div>
+      </div>
       <div id="xiv-lightbox"><img alt=""></div>
     `;
     document.documentElement.appendChild(state.root);
@@ -4311,6 +4503,7 @@
     state.settingsPanel = state.root.querySelector('[data-panel="settings"]');
     state.diagnosticsPanel = state.root.querySelector('[data-panel="diagnostics"]');
     state.galleryQueuePanel = state.root.querySelector('[data-panel="queue"]');
+    state.linkGrabberPanel = state.root.querySelector('[data-panel="link-grabber"]');
 
     state.root.querySelector('[data-xiv="close"]').addEventListener("click", closeViewer);
     state.root.querySelector('[data-xiv="filter"]').addEventListener("change", (event) => setMediaFilter(event.target.value));
@@ -4319,6 +4512,7 @@
     state.root.querySelector('[data-xiv="theme"]').addEventListener("click", toggleTheme);
     state.root.querySelector('[data-xiv="full"]').addEventListener("click", toggleFullscreen);
     state.root.querySelector('[data-xiv="download"]').addEventListener("click", downloadZip);
+    state.root.querySelector('[data-xiv="link-grabber"]').addEventListener("click", toggleLinkGrabberPanel);
     state.root.querySelector('[data-xiv="favzip"]').addEventListener("click", () => downloadZip("favorites"));
     state.root.querySelector('[data-xiv="links"]').addEventListener("click", exportLinks);
     state.root.querySelector('[data-xiv="auto"]').addEventListener("click", toggleAutoScroll);
@@ -4328,6 +4522,26 @@
     state.galleryQueuePanel.addEventListener("click", (event) => {
       const item = event.target?.closest?.(".xiv-queue-item[data-queue-index]");
       if (item) void jumpToGalleryQueueIndex(item.dataset.queueIndex);
+    });
+    state.linkGrabberPanel.addEventListener("click", async (event) => {
+      const copyButton = event.target?.closest?.("[data-link-index]");
+      if (copyButton) {
+        const item = state.grabbedDownloadLinks[Number(copyButton.dataset.linkIndex)];
+        if (item && await copyCapturedText(item.url)) {
+          copyButton.textContent = "已复制";
+          window.setTimeout(() => { if (copyButton.isConnected) copyButton.textContent = "复制"; }, 900);
+        }
+        return;
+      }
+      const action = event.target?.closest?.("[data-link-action]")?.dataset.linkAction;
+      if (action === "rescan") scanPageDownloadLinks();
+      if (action === "copy-all" && state.grabbedDownloadLinks.length) {
+        const ok = await copyCapturedText(state.grabbedDownloadLinks.map((item) => item.url).join("\n"));
+        updateStatus(ok ? `已复制 ${state.grabbedDownloadLinks.length} 条链接` : "复制失败");
+      }
+      if (action === "export" && state.grabbedDownloadLinks.length) {
+        downloadTextFile(state.grabbedDownloadLinks.map((item) => item.url).join("\n"), `flowlens-download-links-${state.grabbedDownloadLinks.length}.txt`);
+      }
     });
     state.root.querySelector('[data-xiv="slower"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed - 1));
     state.root.querySelector('[data-xiv="faster"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed + 1));
@@ -4369,9 +4583,12 @@
       if (document.visibilityState === "hidden") saveViewerPosition();
     });
     state.root.addEventListener("pointerdown", (event) => {
-      if (state.galleryQueuePanel?.dataset.open !== "true") return;
-      if (event.target?.closest?.('[data-panel="queue"], [data-xiv="queue-list"]')) return;
-      state.galleryQueuePanel.dataset.open = "false";
+      const queueOpen = state.galleryQueuePanel?.dataset.open === "true";
+      const linksOpen = state.linkGrabberPanel?.dataset.open === "true";
+      if (!queueOpen && !linksOpen) return;
+      if (event.target?.closest?.('[data-panel="queue"], [data-xiv="queue-list"], [data-panel="link-grabber"], [data-xiv="link-grabber"]')) return;
+      if (state.galleryQueuePanel) state.galleryQueuePanel.dataset.open = "false";
+      if (state.linkGrabberPanel) state.linkGrabberPanel.dataset.open = "false";
     });
     watchSystemTheme();
     syncSettingsPanel();
@@ -5621,11 +5838,7 @@
       if (isVideoUrl(highResUrl)) {
         setLightboxVideo(highResUrl);
       } else {
-        let img = state.lightbox.querySelector(":scope > img");
-        if (!img) {
-          state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
-          img = state.lightbox.querySelector("img");
-        }
+        const img = ensureLightboxImage();
         img.dataset.xivCanZoom = "false";
         img.addEventListener("load", () => updateLightboxZoomHint(img), { once: true });
         setImageSourceWithFallback(img, highResUrl);
@@ -5650,26 +5863,33 @@
     const openToken = `${Date.now()}:${index}:${Math.random()}`;
     state.lightbox.dataset.openToken = openToken;
     state.lightbox.dataset.zoom = "fit";
+    delete state.lightbox.dataset.wheelZoom;
+    state.lightbox.querySelectorAll(":scope > img, :scope > video").forEach((media) => {
+      delete media.dataset.xivWheelBaseWidth;
+      delete media.dataset.xivWheelBaseHeight;
+      delete media.dataset.xivWheelZoomKey;
+      media.style.removeProperty("--xiv-actual-width");
+      media.style.removeProperty("--xiv-actual-height");
+    });
     state.root.dataset.lightboxActive = "true";
     state.lightbox.dataset.flVideoEnded = "false";
     state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     clearTimeout(state.highResResolveTimer);
     const thumbUrl = state.images[index];
+    ensureLightboxChrome();
+    state.lightbox.dataset.active = "true";
     if (isVideoUrl(thumbUrl)) {
       setLightboxVideo(thumbUrl);
-      state.lightbox.dataset.active = "true";
       state.root.dataset.lightboxActive = "true";
       scheduleLightboxMediaPreload(index);
       return;
     } else {
-      state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
-      const img = state.lightbox.querySelector("img");
+      const img = ensureLightboxImage();
       img.dataset.xivCanZoom = "false";
-      img.addEventListener("load", () => updateLightboxZoomHint(img));
+      img.addEventListener("load", () => updateLightboxZoomHint(img), { once: true });
       setImageSourceWithFallback(img, thumbUrl);
       updateFavoriteButton(thumbUrl);
     }
-    state.lightbox.dataset.active = "true";
     state.root.dataset.lightboxActive = "true";
     scheduleLightboxMediaPreload(index);
     scheduleLightboxHighResUpgrade(index, thumbUrl, openToken);
@@ -5690,7 +5910,42 @@
   }
 
   function lightboxArrows() {
-    return `<button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
+    return `<button class="xiv-lightbox-link-grabber" type="button" title="抓取磁力 / ED2K 链接">${icons.magnet}</button><button class="xiv-lightbox-zoom" type="button" title="放大（之后可滚轮缩放、拖动查看）">${zoomInIcon()}</button><button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
+  }
+
+  function ensureLightboxChrome() {
+    const box = state.lightbox;
+    if (!box) return;
+    const template = document.createElement("template");
+    template.innerHTML = lightboxArrows();
+    [...template.content.children].forEach((node) => {
+      const selector = node.classList.contains("xiv-lightbox-arrow")
+        ? `.xiv-lightbox-arrow[data-side="${node.dataset.side}"]`
+        : `.${node.className}`;
+      if (!box.querySelector(`:scope > ${selector}`)) box.appendChild(node);
+    });
+    syncLightboxZoomButton();
+  }
+
+  function removeDirectLightboxMedia(except = null) {
+    state.lightbox?.querySelectorAll(":scope > img, :scope > video, :scope > iframe, :scope > .xiv-video-frame").forEach((node) => {
+      if (node !== except) node.remove();
+    });
+  }
+
+  function ensureLightboxImage() {
+    ensureLightboxChrome();
+    let img = state.lightbox?.querySelector(":scope > img");
+    if (!img) {
+      pauseLightboxMedia();
+      removeDirectLightboxMedia();
+      img = document.createElement("img");
+      img.alt = "";
+      state.lightbox.appendChild(img);
+    } else {
+      removeDirectLightboxMedia(img);
+    }
+    return img;
   }
 
   function heartIcon() {
@@ -6085,7 +6340,8 @@
   function setLightboxFrameVideo(url) {
     url = normalizeMediaUrl(url);
     pauseLightboxMedia();
-    state.lightbox.innerHTML = lightboxArrows();
+    ensureLightboxChrome();
+    removeDirectLightboxMedia();
     updateFavoriteButton(url);
     const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
     const iframe = document.createElement("iframe");
@@ -6108,7 +6364,8 @@
       return;
     }
     pauseLightboxMedia();
-    state.lightbox.innerHTML = lightboxArrows();
+    ensureLightboxChrome();
+    removeDirectLightboxMedia();
     updateFavoriteButton(url);
     const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
     const video = createVideoElement(url, {
@@ -6216,6 +6473,23 @@
     media.title = zoomable ? "1:1 放大" : "";
   }
 
+  function syncLightboxZoomButton() {
+    const button = state.lightbox?.querySelector(".xiv-lightbox-zoom");
+    if (!button) return;
+    const active = state.lightbox?.dataset.zoom === "actual";
+    const percent = Math.max(100, Math.round(Number(state.lightbox?.dataset.wheelZoom || 1) * 100));
+    button.dataset.active = active ? "true" : "false";
+    button.title = active
+      ? `恢复适应屏幕（当前 ${percent}%）`
+      : "放大（之后可滚轮缩放、拖动查看）";
+    button.setAttribute("aria-label", button.title);
+    const wanted = active ? "out" : "in";
+    if (button.dataset.zoomIcon !== wanted) {
+      button.dataset.zoomIcon = wanted;
+      button.innerHTML = active ? zoomOutIcon() : zoomInIcon();
+    }
+  }
+
   function waitForVideoActualZoom(video) {
     if (!video || video.tagName !== "VIDEO" || video.dataset.xivPendingActual === "true") return;
     video.dataset.xivPendingActual = "true";
@@ -6274,16 +6548,29 @@
     const zoomed = state.lightbox.dataset.zoom === "actual";
     if (zoomed) {
       state.lightbox.dataset.zoom = "fit";
+      delete state.lightbox.dataset.wheelZoom;
       state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     } else {
       const media = state.lightbox.querySelector("img, video");
       if (!prepareActualZoomMedia(media)) {
-        waitForVideoActualZoom(media);
-        return;
+        if (media?.tagName === "VIDEO" && !(media.videoWidth && media.videoHeight)) {
+          waitForVideoActualZoom(media);
+          return;
+        }
+        const rect = media?.getBoundingClientRect?.();
+        if (!media || !rect?.width || !rect?.height) return;
+        const factor = 1.5;
+        media.dataset.xivWheelBaseWidth = String(Math.max(1, Math.round(rect.width)));
+        media.dataset.xivWheelBaseHeight = String(Math.max(1, Math.round(rect.height)));
+        media.dataset.xivWheelZoomKey = `${media.currentSrc || media.src || media.dataset?.mediaUrl || ""}|${media.naturalWidth || media.videoWidth || 0}x${media.naturalHeight || media.videoHeight || 0}`;
+        media.style.setProperty("--xiv-actual-width", `${Math.round(rect.width * factor)}px`);
+        media.style.setProperty("--xiv-actual-height", `${Math.round(rect.height * factor)}px`);
+        state.lightbox.dataset.wheelZoom = String(factor);
       }
       state.lightbox.dataset.zoom = "actual";
       centerActualLightboxMedia();
     }
+    syncLightboxZoomButton();
   }
 
   function onLightboxClick(event) {
@@ -6293,6 +6580,14 @@
     if (event.target?.closest?.("#xiv-lightbox video") && !isMobilePointerEvent(event)) return;
     claimEvent(event);
     if (Date.now() < state.lightboxSuppressClickUntil) return;
+    if (event.target?.closest?.(".xiv-lightbox-link-grabber")) {
+      toggleLinkGrabberPanel();
+      return;
+    }
+    if (event.target?.closest?.(".xiv-lightbox-zoom")) {
+      toggleLightboxZoom();
+      return;
+    }
     if (event.target?.closest?.(".xiv-lightbox-fav")) {
       favoriteCurrentImage();
       return;
@@ -6315,7 +6610,7 @@
 
   function onLightboxPointerDown(event) {
     if (state.lightbox?.dataset.active !== "true" || event.button !== 0) return;
-    if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow")) return;
+    if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow, .xiv-lightbox-zoom, .xiv-lightbox-link-grabber")) return;
     if (state.lightbox.dataset.zoom === "actual" && event.target?.matches?.("img, video")) {
       claimEvent(event);
       state.lightboxDrag = {
@@ -6403,6 +6698,14 @@
     state.viewerSwipe = null;
   }
 
+  function zoomInIcon() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M10.5 7.5v6M7.5 10.5h6"/></svg>';
+  }
+
+  function zoomOutIcon() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M7.5 10.5h6"/></svg>';
+  }
+
   function lightboxWheelZoom(event) {
     const lb = state.lightbox;
     const media = lb?.querySelector("img, video");
@@ -6435,6 +6738,7 @@
       media.style.removeProperty("--xiv-actual-height");
       lb.scrollTo?.({ left: 0, top: 0, behavior: "auto" });
       updateStatus("适应屏幕");
+      syncLightboxZoomButton();
       return true;
     }
 
@@ -6446,6 +6750,7 @@
     lb.dataset.wheelZoom = String(next);
     media.dataset.xivCanZoom = "true";
     updateStatus(`${Math.round(next * 100)}%`);
+    syncLightboxZoomButton();
     requestAnimationFrame(() => {
       lb.scrollLeft = Math.max(0, Math.round(anchorX * lb.scrollWidth - event.clientX));
       lb.scrollTop = Math.max(0, Math.round(anchorY * lb.scrollHeight - event.clientY));
@@ -6457,7 +6762,7 @@
     if (state.lightbox?.dataset.active !== "true") return;
     if (!state.lightbox.contains(event.target)) return;
     claimEvent(event);
-    if (event.ctrlKey || event.altKey) {
+    if (state.lightbox.dataset.zoom === "actual" || event.ctrlKey || event.altKey) {
       lightboxWheelZoom(event);
       return;
     }
@@ -6468,6 +6773,8 @@
     state.lastLightboxWheelAt = now;
     showAdjacentImage(delta > 0 ? 1 : -1);
   }
+
+  window.__flowLensHandleLightboxZoomWheel = lightboxWheelZoom;
 
   function claimEvent(event) {
     event.preventDefault();
@@ -6516,7 +6823,7 @@
     }
     if (event.key === "Escape") {
       claimEvent(event);
-      const openPanel = [state.galleryQueuePanel, state.settingsPanel, state.diagnosticsPanel]
+      const openPanel = [state.galleryQueuePanel, state.linkGrabberPanel, state.settingsPanel, state.diagnosticsPanel]
         .find((panel) => panel?.dataset.open === "true");
       if (openPanel) openPanel.dataset.open = "false";
       else if (state.lightbox?.dataset.active === "true") closeLightbox();
