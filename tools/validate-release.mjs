@@ -58,6 +58,11 @@ assert(!extensionManifest.permissions?.includes("alarms"), "release manifest con
 const staticScripts = extensionManifest.content_scripts?.flatMap((entry) => entry.js || []) || [];
 assert(staticScripts.length === 1 && staticScripts[0] === "content-bootstrap.js", "extension should only inject the lightweight bootstrap globally");
 
+const optionsHtml = await text("apps/extension/options.html");
+const optionsJs = await text("apps/extension/options.js");
+assert(optionsHtml.includes('id="extensionVersion"') && !/class="badge">v\d/.test(optionsHtml), "extension options version badge is hard-coded");
+assert(optionsJs.includes("runtime?.getManifest?.().version"), "extension options does not read the manifest version");
+
 const background = await text("apps/extension/background.js");
 const featureScripts = [...new Set(background.match(/content-[a-z0-9-]+\.js/g) || [])];
 for (const script of [...staticScripts, ...featureScripts]) {
@@ -73,6 +78,7 @@ assert(lightboxEnhance.includes('window.__flowLensSlideshowOwner = "lightbox-enh
 const core = await text("src/core/flowlens-core.js");
 const syncIndexesBody = core.match(/function syncTileIndexes\(\) \{([\s\S]*?)\n  \}/)?.[1] || "";
 assert(syncIndexesBody.includes("indexByKey") && !syncIndexesBody.includes("state.images.indexOf"), "tile index synchronization regressed to quadratic scanning");
+assert(core.includes('data-xiv="queue-list"') && core.includes("jumpToGalleryQueueIndex"), "gallery queue list navigation is missing");
 
 const sourceSync = await text("tools/sync-extension-sources.mjs");
 const sourcePairs = [...sourceSync.matchAll(/"([^"]+\.js)"\s*:\s*"([^"]+\.js)"/g)].map((match) => [match[1], match[2]]);

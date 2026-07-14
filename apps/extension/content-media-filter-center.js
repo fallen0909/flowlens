@@ -178,12 +178,21 @@
     const style = document.createElement("style");
     style.id = "fl-media-filter-style";
     style.textContent = `
-      .fl-mf-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.14); }
-      .fl-mf-section h4 { margin: 0 0 8px; font-size: 14px; }
-      .fl-mf-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0; font-size: 13px; }
-      .fl-mf-section textarea { width: 100%; min-height: 54px; resize: vertical; box-sizing: border-box; border-radius: 10px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.18); color: inherit; padding: 8px; }
+      .fl-mf-section { margin-top: 12px; border-radius: 12px; background: rgba(255,255,255,.055); overflow: hidden; }
+      #xiv-root[data-theme='light'] .fl-mf-section { background: rgba(0,0,0,.035); }
+      .fl-mf-section summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; cursor: pointer; list-style: none; font: 850 12px/1.3 system-ui, sans-serif; }
+      .fl-mf-section summary::-webkit-details-marker { display: none; }
+      .fl-mf-section summary::after { content: '›'; transform: rotate(90deg); font-size: 18px; opacity: .55; transition: transform .18s ease; }
+      .fl-mf-section details[open] summary::after { transform: rotate(-90deg); }
+      .fl-mf-body { padding: 0 12px 12px; }
+      .fl-mf-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; margin: 2px 0; font-size: 12px; }
+      .fl-mf-row input[type='checkbox'] { appearance: none; width: 36px; height: 20px; margin: 0; border: 1px solid rgba(127,127,127,.28); border-radius: 999px; background: radial-gradient(circle at 10px 50%, #fff 0 6px, transparent 6.5px), rgba(127,127,127,.3); cursor: pointer; }
+      .fl-mf-row input[type='checkbox']:checked { border-color: #4f72ff; background: radial-gradient(circle at 25px 50%, #fff 0 6px, transparent 6.5px), #4f72ff; }
+      .fl-mf-hint { margin: 8px 0 5px; color: rgba(255,255,255,.56); font-size: 11px; line-height: 1.35; }
+      #xiv-root[data-theme='light'] .fl-mf-hint { color: rgba(0,0,0,.5); }
+      .fl-mf-section textarea { width: 100%; min-height: 48px; max-height: 110px; resize: vertical; box-sizing: border-box; border-radius: 9px; border: 1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.16); color: inherit; padding: 8px; font: 12px/1.4 ui-monospace, monospace; }
       .fl-mf-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-      .fl-mf-actions button, .fl-mf-section button { border: 0; border-radius: 999px; padding: 7px 10px; font-weight: 800; cursor: pointer; }
+      .fl-mf-actions button { width: auto !important; min-width: 0 !important; height: 32px !important; border: 0; border-radius: 9px; padding: 0 10px !important; font-size: 11px !important; font-weight: 800; cursor: pointer; }
       .fl-mf-log { max-height: 120px; overflow: auto; margin-top: 8px; font-size: 11px; opacity: .86; white-space: pre-wrap; }
       .fl-mf-block { position: absolute; top: 7px; right: 7px; z-index: 5; width: 25px; height: 25px; border-radius: 999px; border: 0; background: rgba(0,0,0,.56); color: white; font: 900 18px/1 system-ui; opacity: 0; pointer-events: auto; }
       .xiv-tile:hover .fl-mf-block, .fl-mf-block:focus { opacity: 1; }
@@ -198,18 +207,22 @@
     const section = document.createElement("section");
     section.className = "fl-mf-section";
     section.innerHTML = `
-      <h4>广告识别中心</h4>
-      <label class="fl-mf-row"><span>启用识别过滤</span><input type="checkbox" data-fl-mf="enabled"></label>
-      <label class="fl-mf-row"><span>智能识别</span><input type="checkbox" data-fl-mf="smart"></label>
-      <label class="fl-mf-row"><span>显示拉黑按钮</span><input type="checkbox" data-fl-mf="showTileButton"></label>
-      <label class="fl-mf-row"><span>记录过滤原因</span><input type="checkbox" data-fl-mf="diagnostics"></label>
-      <small>来源域名过滤（一行一个）</small>
-      <textarea data-fl-mf="hosts" placeholder="例如：example.com"></textarea>
-      <small>图片黑名单/关键词（一行一个，可填文件名或 URL 片段）</small>
-      <textarea data-fl-mf="terms"></textarea>
-      <div class="fl-mf-actions"><button type="button" data-fl-mf-action="block-current">拉黑当前大图</button><button type="button" data-fl-mf-action="apply">立即重新过滤</button><button type="button" data-fl-mf-action="clear-log">清空日志</button></div>
-      <small data-fl-mf-adapter></small>
-      <div class="fl-mf-log" data-fl-mf-log></div>
+      <details>
+        <summary>高级广告过滤</summary>
+        <div class="fl-mf-body">
+          <label class="fl-mf-row"><span>启用识别过滤</span><input type="checkbox" data-fl-mf="enabled"></label>
+          <label class="fl-mf-row"><span>智能识别</span><input type="checkbox" data-fl-mf="smart"></label>
+          <label class="fl-mf-row"><span>显示拉黑按钮</span><input type="checkbox" data-fl-mf="showTileButton"></label>
+          <label class="fl-mf-row"><span>记录过滤原因</span><input type="checkbox" data-fl-mf="diagnostics"></label>
+          <div class="fl-mf-hint">来源域名过滤（一行一个）</div>
+          <textarea data-fl-mf="hosts" placeholder="例如：example.com"></textarea>
+          <div class="fl-mf-hint">图片黑名单或关键词（一行一个）</div>
+          <textarea data-fl-mf="terms"></textarea>
+          <div class="fl-mf-actions"><button type="button" data-fl-mf-action="block-current">拉黑当前大图</button><button type="button" data-fl-mf-action="apply">重新过滤</button><button type="button" data-fl-mf-action="clear-log">清空日志</button></div>
+          <div class="fl-mf-hint" data-fl-mf-adapter></div>
+          <div class="fl-mf-log" data-fl-mf-log></div>
+        </div>
+      </details>
     `;
     panel.appendChild(section);
     section.addEventListener("change", onUiChange);

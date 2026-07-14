@@ -78,24 +78,25 @@
       #xiv-root .xiv-media-switch { display: none !important; }
       #xiv-root .fl-top-filter-btn { display: inline-grid !important; place-items: center !important; align-items: center !important; justify-content: center !important; padding: 0 !important; font-size: 0 !important; letter-spacing: 0 !important; }
       #xiv-root .fl-top-filter-btn svg { width: 23px; height: 23px; display: block; pointer-events: none; margin: 0 auto; }
-      #xiv-root .fl-version-row { display: flex; align-items: center; justify-content: space-between; min-height: 30px; padding: 0 0 10px; margin: -4px 0 4px; border-bottom: 1px solid rgba(0,0,0,.08); color: rgba(0,0,0,.58); font: 750 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      #xiv-root .fl-version-row { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: 0 0 8px; margin: -2px 0 2px; border-bottom: 1px solid rgba(0,0,0,.08); color: rgba(0,0,0,.52); font: 700 12px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       #xiv-root[data-theme="dark"] .fl-version-row, #xiv-root:not([data-theme="light"]) .fl-version-row { border-bottom-color: rgba(255,255,255,.12); color: rgba(255,255,255,.66); }
-      #xiv-root .fl-version-row strong { color: inherit; font-weight: 900; }
+      #xiv-root .fl-version-row strong { padding: 4px 8px; border-radius: 999px; background: rgba(79,114,255,.1); color: #4668df; font-weight: 850; }
+      #xiv-root[data-theme="dark"] .fl-version-row strong, #xiv-root:not([data-theme="light"]) .fl-version-row strong { background: rgba(117,145,255,.16); color: #aebdff; }
       #xiv-root .fl-slideshow-speed { min-width: 120px; }
       #xiv-root .xiv-lightbox-slideshow { position: fixed; right: 118px; top: 18px; z-index: 2147483647; width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.26); background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.22), rgba(18,18,20,.72)); color: #fff; display: none; place-items: center; pointer-events: auto; cursor: pointer; padding: 0; box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.18); backdrop-filter: blur(12px); }
       #xiv-root[data-fl-lightbox="true"] .xiv-lightbox-slideshow { display: grid; }
       #xiv-root .xiv-lightbox-slideshow[data-active="true"] { color: #111; background: radial-gradient(circle at 32% 24%, rgba(255,255,255,.95), rgba(255,255,255,.76)); border-color: rgba(255,255,255,.7); }
       #xiv-root .xiv-lightbox-slideshow svg { width: 20px; height: 20px; display: block; }
       @media (max-width: 820px) {
-        #xiv-root .xiv-panel[data-panel="settings"] { position: fixed !important; top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px)) !important; right: max(8px, env(safe-area-inset-right, 0px)) !important; left: auto !important; bottom: auto !important; width: min(356px, calc(100vw - 16px)) !important; max-width: calc(100vw - 16px) !important; height: auto !important; max-height: min(68vh, calc(100vh - 74px - env(safe-area-inset-bottom, 0px))) !important; padding: 10px !important; border-radius: 12px !important; overflow-y: auto !important; overscroll-behavior: contain !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] h3 { font-size: 18px !important; margin: 0 0 6px !important; line-height: 1.2 !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row { min-height: 42px !important; padding: 7px 0 !important; gap: 10px !important; font-size: 14px !important; line-height: 1.25 !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row > span { font-size: 14px !important; font-weight: 800 !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] input[type="checkbox"] { width: 24px !important; height: 24px !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] .xiv-select { min-height: 38px !important; padding: 0 32px 0 12px !important; border-radius: 19px !important; font-size: 14px !important; font-weight: 850 !important; }
-        #xiv-root .xiv-panel[data-panel="settings"] button { width: 40px !important; height: 40px !important; min-width: 40px !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] { position: fixed !important; top: max(54px, calc(env(safe-area-inset-top, 0px) + 48px)) !important; right: max(8px, env(safe-area-inset-right, 0px)) !important; left: auto !important; bottom: auto !important; width: min(420px, calc(100vw - 16px)) !important; max-width: calc(100vw - 16px) !important; height: auto !important; max-height: min(76vh, calc(100vh - 74px - env(safe-area-inset-bottom, 0px))) !important; padding: 12px !important; border-radius: 18px !important; overflow-y: auto !important; overscroll-behavior: contain !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] h3 { font-size: 20px !important; margin: 0 0 6px !important; line-height: 1.2 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row { min-height: 38px !important; padding: 7px 2px !important; gap: 10px !important; font-size: 13px !important; line-height: 1.25 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row > span { font-size: 13px !important; font-weight: 750 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row input[type="checkbox"] { width: 38px !important; height: 22px !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] .xiv-select { min-height: 36px !important; padding: 0 32px 0 12px !important; border-radius: 18px !important; font-size: 13px !important; font-weight: 800 !important; }
+        #xiv-root .xiv-panel[data-panel="settings"] .xiv-setting-row button { width: 36px !important; height: 36px !important; min-width: 36px !important; }
         #xiv-root .xiv-panel[data-panel="settings"] small { display: block !important; margin-top: 6px !important; font-size: 11px !important; line-height: 1.35 !important; opacity: .66 !important; }
-        #xiv-root .fl-version-row { min-height: 26px !important; padding-bottom: 8px !important; margin-bottom: 4px !important; font-size: 12px !important; }
+        #xiv-root .fl-version-row { min-height: 24px !important; padding-bottom: 7px !important; margin-bottom: 2px !important; font-size: 11px !important; }
         #xiv-root .xiv-lightbox-slideshow { right: 118px; top: 18px; width: 42px; height: 42px; }
       }
     `;

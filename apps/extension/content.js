@@ -171,6 +171,8 @@
     galleryQueueIndex: -1,
     galleryQueueCurrentUrl: "",
     galleryQueueCurrentTitle: "",
+    galleryQueueTitles: new Map(),
+    galleryQueuePanel: null,
     x810114RecentQueue: [],
     x810114ActiveSidebarQueue: []
   };
@@ -473,6 +475,7 @@
     }
     #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="prev-set"],
     #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="next-set"],
+    #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="queue-list"],
     #xiv-root[data-lightbox-active="true"] .xiv-btn[data-xiv="top"] {
       display: none;
     }
@@ -517,6 +520,41 @@
       display: block; margin-top: 8px; color: rgba(255,255,255,.62); line-height: 1.45;
     }
     #xiv-root[data-theme="light"] .xiv-panel small { color: rgba(0,0,0,.58); }
+    .xiv-queue-panel {
+      width: min(390px, calc(100vw - 24px)); padding: 0; overflow: hidden;
+      border-radius: 18px; background: rgba(16,17,20,.94); box-shadow: 0 24px 70px rgba(0,0,0,.46);
+    }
+    #xiv-root[data-theme="light"] .xiv-queue-panel { background: rgba(250,250,248,.96); }
+    .xiv-queue-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 15px 16px 12px; border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    #xiv-root[data-theme="light"] .xiv-queue-head { border-bottom-color: rgba(0,0,0,.08); }
+    .xiv-queue-head h3 { margin: 0; font-size: 16px; }
+    .xiv-queue-count { color: rgba(255,255,255,.58); font: 750 12px/1 system-ui, sans-serif; }
+    #xiv-root[data-theme="light"] .xiv-queue-count { color: rgba(0,0,0,.5); }
+    .xiv-queue-list { max-height: min(62vh, 520px); overflow: auto; padding: 8px; overscroll-behavior: contain; }
+    .xiv-queue-item {
+      width: 100%; min-height: 54px; display: grid; grid-template-columns: 32px minmax(0,1fr) 18px;
+      align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 12px;
+      background: transparent; color: inherit; text-align: left; cursor: pointer;
+    }
+    .xiv-queue-item:hover { background: rgba(255,255,255,.08); }
+    #xiv-root[data-theme="light"] .xiv-queue-item:hover { background: rgba(0,0,0,.055); }
+    .xiv-queue-item[data-current="true"] { background: rgba(89,126,255,.18); }
+    #xiv-root[data-theme="light"] .xiv-queue-item[data-current="true"] { background: rgba(43,91,222,.1); }
+    .xiv-queue-number {
+      width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px;
+      background: rgba(255,255,255,.09); color: rgba(255,255,255,.72); font: 850 11px/1 system-ui, sans-serif;
+    }
+    #xiv-root[data-theme="light"] .xiv-queue-number { background: rgba(0,0,0,.06); color: rgba(0,0,0,.58); }
+    .xiv-queue-copy { min-width: 0; }
+    .xiv-queue-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 13px/1.3 system-ui, sans-serif; }
+    .xiv-queue-url { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,.5); font: 600 11px/1.2 system-ui, sans-serif; }
+    #xiv-root[data-theme="light"] .xiv-queue-url { color: rgba(0,0,0,.46); }
+    .xiv-queue-arrow { opacity: .5; font-size: 18px; }
+    .xiv-queue-empty { padding: 28px 16px; color: rgba(255,255,255,.58); text-align: center; font: 700 13px/1.5 system-ui, sans-serif; }
+    #xiv-root[data-theme="light"] .xiv-queue-empty { color: rgba(0,0,0,.5); }
     .xiv-diagnostics pre {
       max-height: 48vh; overflow: auto; margin: 8px 0 0; white-space: pre-wrap;
       font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -635,6 +673,7 @@
     play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
     prevSet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6 9 12l6 6"/><path d="M20 6 14 12l6 6"/><path d="M4 5v14"/></svg>',
     nextSet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/><path d="M4 6l6 6-6 6"/><path d="M20 5v14"/></svg>',
+    queueList: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none"/></svg>',
     slow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M8 8l-4 4 4 4"/></svg>',
     fast: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M16 8l4 4-4 4"/></svg>',
     top: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M6 15l6-6 6 6M12 9v10"/></svg>',
@@ -1020,6 +1059,7 @@
   }
 
   function refreshGalleryQueue(doc = document, base = location.href) {
+    rememberGalleryQueueTitles(doc, base);
     const stored = readStoredGalleryQueue();
     const discovered = collectGalleryQueueFromDocument(doc, base);
     const current = isX810114Url(base) ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
@@ -1075,6 +1115,7 @@
 
   function rebuildGalleryQueueFromVisiblePage() {
     const visibleBase = state.collectionBase || location.href;
+    rememberGalleryQueueTitles(document, visibleBase);
     const current = isX810114Url(visibleBase) ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
     const discovered = collectGalleryQueueFromDocument(document, visibleBase);
     const stored = readStoredGalleryQueue();
@@ -1250,6 +1291,143 @@
       const shortcut = button.dataset.xiv === "prev-set" ? "," : ".";
       button.title = hasQueue && index ? `${label}（${index}/${total}，${shortcut}）` : `${label}（未识别到队列，${shortcut}）`;
     });
+    const listButton = state.root?.querySelector('[data-xiv="queue-list"]');
+    if (listButton) {
+      listButton.disabled = !total && !allowRefreshClick;
+      listButton.dataset.enabled = total ? "true" : "false";
+      listButton.title = total ? `组列表（${index || 0}/${total}）` : "组列表（尚未识别到内容）";
+    }
+    renderGalleryQueuePanel();
+  }
+
+  function rememberGalleryQueueTitles(doc = document, base = location.href) {
+    if (!doc?.querySelectorAll) return;
+    doc.querySelectorAll("a[href]").forEach((anchor) => {
+      const url = normalizedPageUrl(absoluteUrl(anchor.getAttribute("href"), base));
+      if (!isQueueCandidateUrl(url)) return;
+      const raw = anchor.getAttribute("title") || anchor.getAttribute("aria-label") || anchor.textContent || "";
+      const title = String(raw).replace(/\s+/g, " ").trim();
+      if (!title || /^(上一组|下一组|上一页|下一页|previous|next)$/i.test(title)) return;
+      const previous = state.galleryQueueTitles.get(url);
+      if (!previous || title.length > previous.length) state.galleryQueueTitles.set(url, title.slice(0, 100));
+    });
+    const currentUrl = normalizedPageUrl(doc?.documentElement?.dataset?.xivBase || base);
+    const currentTitle = pageTitleFromDocument(doc, currentUrl);
+    if (isQueueCandidateUrl(currentUrl) && currentTitle) state.galleryQueueTitles.set(currentUrl, currentTitle.slice(0, 100));
+  }
+
+  function galleryQueueDisplayTitle(url, index) {
+    const stored = state.galleryQueueTitles.get(normalizedPageUrl(url));
+    if (stored) return stored;
+    try {
+      const parsed = new URL(url, location.href);
+      const tail = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).pop() || "")
+        .replace(/\.(?:html?|php)$/i, "")
+        .replace(/[-_]+/g, " ")
+        .trim();
+      return tail || parsed.hostname || `第 ${index + 1} 组`;
+    } catch {
+      return `第 ${index + 1} 组`;
+    }
+  }
+
+  function galleryQueueDisplayUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return `${parsed.hostname}${decodeURIComponent(parsed.pathname)}`;
+    } catch {
+      return String(url || "");
+    }
+  }
+
+  function renderGalleryQueuePanel() {
+    const panel = state.galleryQueuePanel;
+    if (!panel) return;
+    const list = panel.querySelector(".xiv-queue-list");
+    const count = panel.querySelector(".xiv-queue-count");
+    if (!list || !count) return;
+    const queue = state.galleryQueue;
+    const activeUrl = activeGalleryQueueUrl();
+    const activeIndex = galleryQueueIndexForUrl(queue, activeUrl) >= 0
+      ? galleryQueueIndexForUrl(queue, activeUrl)
+      : state.galleryQueueIndex;
+    count.textContent = queue.length ? `${activeIndex >= 0 ? activeIndex + 1 : 0} / ${queue.length}` : "0 组";
+    list.replaceChildren();
+    if (!queue.length) {
+      const empty = document.createElement("div");
+      empty.className = "xiv-queue-empty";
+      empty.textContent = "暂未识别到后续组，稍后打开列表会自动重试。";
+      list.appendChild(empty);
+      return;
+    }
+    queue.forEach((url, index) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "xiv-queue-item";
+      item.dataset.queueIndex = String(index);
+      item.dataset.current = index === activeIndex ? "true" : "false";
+      item.title = galleryQueueDisplayTitle(url, index);
+
+      const number = document.createElement("span");
+      number.className = "xiv-queue-number";
+      number.textContent = String(index + 1);
+      const copy = document.createElement("span");
+      copy.className = "xiv-queue-copy";
+      const title = document.createElement("span");
+      title.className = "xiv-queue-title";
+      title.textContent = galleryQueueDisplayTitle(url, index);
+      const path = document.createElement("span");
+      path.className = "xiv-queue-url";
+      path.textContent = galleryQueueDisplayUrl(url);
+      const arrow = document.createElement("span");
+      arrow.className = "xiv-queue-arrow";
+      arrow.textContent = index === activeIndex ? "•" : "›";
+      copy.append(title, path);
+      item.append(number, copy, arrow);
+      list.appendChild(item);
+    });
+  }
+
+  function toggleGalleryQueuePanel() {
+    if (!state.galleryQueuePanel) return;
+    const open = state.galleryQueuePanel.dataset.open === "true";
+    if (open) {
+      state.galleryQueuePanel.dataset.open = "false";
+      return;
+    }
+    refreshGalleryQueue();
+    rebuildGalleryQueueFromVisiblePage();
+    closePanels("queue");
+    renderGalleryQueuePanel();
+    state.galleryQueuePanel.dataset.open = "true";
+    requestAnimationFrame(() => {
+      state.galleryQueuePanel?.querySelector('.xiv-queue-item[data-current="true"]')?.scrollIntoView?.({ block: "nearest" });
+    });
+  }
+
+  async function jumpToGalleryQueueIndex(index) {
+    const target = state.galleryQueue[Number(index)];
+    if (!target) return;
+    state.galleryQueuePanel.dataset.open = "false";
+    if (samePageUrl(target, activeGalleryQueueUrl())) {
+      updateStatus(`当前已是第 ${Number(index) + 1} 组`);
+      return;
+    }
+    rememberX810114QueueVisit(target);
+    const selfieTarget = isSelfieGalleryQueueUrl(target);
+    if (!selfieTarget) {
+      try { sessionStorage.setItem(galleryQueueAutoOpenKey(), target); } catch {}
+    }
+    if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
+      try { await state.root?.requestFullscreen?.(); } catch {}
+    }
+    updateStatus(`正在跳转到第 ${Number(index) + 1} 组`);
+    try {
+      if (await loadGalleryQueueTargetInPlace(target)) return;
+    } catch {}
+    if (selfieTarget) return;
+    if (samePageUrl(target, location.href)) location.reload();
+    else location.href = target;
   }
 
   function fetchSameOriginDocumentViaFrame(targetUrl, timeoutMs = 18000) {
@@ -3870,7 +4048,7 @@
   }
 
   function closePanels(except = "") {
-    [state.settingsPanel, state.diagnosticsPanel].forEach((panel) => {
+    [state.settingsPanel, state.diagnosticsPanel, state.galleryQueuePanel].forEach((panel) => {
       if (!panel) return;
       if (panel.dataset.panel === except) return;
       panel.dataset.open = "false";
@@ -4089,6 +4267,7 @@
           <button class="xiv-btn" type="button" data-xiv="auto" title="自动滚动">${icons.play}<span>自动</span></button>
           <button class="xiv-btn" type="button" data-xiv="prev-set" title="上一组">${icons.prevSet}<span>上一组</span></button>
           <button class="xiv-btn" type="button" data-xiv="next-set" title="下一组">${icons.nextSet}<span>下一组</span></button>
+          <button class="xiv-btn" type="button" data-xiv="queue-list" title="组列表">${icons.queueList}<span>组列表</span></button>
           <button class="xiv-btn" type="button" data-xiv="slower" title="减慢自动滚动">${icons.slow}<span>减速</span></button>
           <button class="xiv-btn" type="button" data-xiv="faster" title="加快自动滚动">${icons.fast}<span>加速</span></button>
           <button class="xiv-btn" type="button" data-xiv="top" title="回到顶部">${icons.top}<span>顶部</span></button>
@@ -4113,6 +4292,10 @@
         <h3>诊断报告</h3>
         <pre></pre>
       </div>
+      <div class="xiv-panel xiv-queue-panel" data-panel="queue" aria-label="组列表">
+        <div class="xiv-queue-head"><h3>后续组</h3><span class="xiv-queue-count">0 组</span></div>
+        <div class="xiv-queue-list"></div>
+      </div>
       <div id="xiv-lightbox"><img alt=""></div>
     `;
     document.documentElement.appendChild(state.root);
@@ -4127,6 +4310,7 @@
     state.status = state.root.querySelector("#xiv-status");
     state.settingsPanel = state.root.querySelector('[data-panel="settings"]');
     state.diagnosticsPanel = state.root.querySelector('[data-panel="diagnostics"]');
+    state.galleryQueuePanel = state.root.querySelector('[data-panel="queue"]');
 
     state.root.querySelector('[data-xiv="close"]').addEventListener("click", closeViewer);
     state.root.querySelector('[data-xiv="filter"]').addEventListener("change", (event) => setMediaFilter(event.target.value));
@@ -4140,6 +4324,11 @@
     state.root.querySelector('[data-xiv="auto"]').addEventListener("click", toggleAutoScroll);
     state.root.querySelector('[data-xiv="prev-set"]').addEventListener("click", () => navigateGalleryQueue(-1));
     state.root.querySelector('[data-xiv="next-set"]').addEventListener("click", () => navigateGalleryQueue(1));
+    state.root.querySelector('[data-xiv="queue-list"]').addEventListener("click", toggleGalleryQueuePanel);
+    state.galleryQueuePanel.addEventListener("click", (event) => {
+      const item = event.target?.closest?.(".xiv-queue-item[data-queue-index]");
+      if (item) void jumpToGalleryQueueIndex(item.dataset.queueIndex);
+    });
     state.root.querySelector('[data-xiv="slower"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed - 1));
     state.root.querySelector('[data-xiv="faster"]').addEventListener("click", () => setAutoScrollSpeed(state.autoScrollSpeed + 1));
     state.root.querySelector('[data-xiv="top"]').addEventListener("click", () => state.stage.scrollTo({ top: 0, behavior: "smooth" }));
@@ -4178,6 +4367,11 @@
     window.addEventListener("beforeunload", saveViewerPosition);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") saveViewerPosition();
+    });
+    state.root.addEventListener("pointerdown", (event) => {
+      if (state.galleryQueuePanel?.dataset.open !== "true") return;
+      if (event.target?.closest?.('[data-panel="queue"], [data-xiv="queue-list"]')) return;
+      state.galleryQueuePanel.dataset.open = "false";
     });
     watchSystemTheme();
     syncSettingsPanel();
@@ -5312,6 +5506,7 @@
 
   async function closeViewer() {
     if (!state.root) return;
+    closePanels();
     saveViewerPosition();
     closeLightbox(false);
     state.autoScrollPausedForLightbox = false;
@@ -6321,7 +6516,10 @@
     }
     if (event.key === "Escape") {
       claimEvent(event);
-      if (state.lightbox?.dataset.active === "true") closeLightbox();
+      const openPanel = [state.galleryQueuePanel, state.settingsPanel, state.diagnosticsPanel]
+        .find((panel) => panel?.dataset.open === "true");
+      if (openPanel) openPanel.dataset.open = "false";
+      else if (state.lightbox?.dataset.active === "true") closeLightbox();
       else closeViewer();
     } else if (!isTyping && event.key.toLowerCase() === "g") {
       claimEvent(event);

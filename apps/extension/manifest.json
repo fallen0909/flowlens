@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "瀑光 FlowLens",
-  "version": "1.10.0",
+  "version": "2.0.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwZnPhuFgp5H8JinOllMNes7mM44oIL36zFGM0YMhIKFn3ybaXXOjo/3sn5Qo4VdUcxPXNd6IolYQ7mJvx8jdNNpLikgqHgGl7oxVdB+Z96fwzFJHjxge3A8F5oEWojPAIu5cIsWkQVVQxqVF0HlyQnKt3XfPK+75uulpcjnXgagybMcqzzdPigNACO2dsk1ZL7G2JDk8Y8Td7a77d4//8Do9daCdo9REGaoGdO6aVjxnpWja0BFksDz7U/ITGqyExpQWell8hSaRbFd/ZlO5TcGA2DKUe91EHS5RFLz60KqQpBEx/VlsZ9uXoz4QLOEz5C3RWf/sIqlebfcDXdlDoQIDAQAB",
   "description": "把网页图片和视频整理成沉浸式全屏瀑布流，支持大图浏览、幻灯片和下载。",
   "permissions": [

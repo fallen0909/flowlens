@@ -20,7 +20,11 @@ await writeFile(
   "utf8"
 );
 
-const baseUrl = "https://raw.githubusercontent.com/fallen0909/flowlens/master";
+const rawRef = process.env.FLOWLENS_RAW_REF || "master";
+const outputSuffix = process.env.FLOWLENS_OUTPUT_SUFFIX || "";
+if (!/^[A-Za-z0-9._/-]+$/.test(rawRef)) throw new Error(`Invalid raw ref: ${rawRef}`);
+if (outputSuffix && !/^-[a-z0-9-]+$/.test(outputSuffix)) throw new Error(`Invalid output suffix: ${outputSuffix}`);
+const baseUrl = `https://raw.githubusercontent.com/fallen0909/flowlens/${rawRef}`;
 const shared = [
   "src/core/version.js",
   "src/core/global-settings.js",
@@ -80,7 +84,8 @@ ${requires}
 }
 
 async function build(entry) {
-  await writeFile(resolve(root, entry.output), header(entry), "utf8");
+  const output = entry.output.replace(/\.user\.js$/, `${outputSuffix}.user.js`);
+  await writeFile(resolve(root, output), header({ ...entry, output }), "utf8");
 }
 
 await build({

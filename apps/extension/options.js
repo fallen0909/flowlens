@@ -56,6 +56,9 @@
 
   function $(id) { return document.getElementById(id); }
 
+  const manifestVersion = chrome?.runtime?.getManifest?.().version || "--";
+  if ($("extensionVersion")) $("extensionVersion").textContent = `v${manifestVersion}`;
+
   let current = { ...DEFAULTS };
 
   function updateSpeedLabel() {

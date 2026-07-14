@@ -13,48 +13,63 @@
     #xiv-root .xiv-settings,
     #xiv-root .xiv-settings-panel,
     #xiv-root .xiv-panel:has(.xiv-setting-row) {
-      width: min(420px, calc(100vw - 24px)) !important;
-      max-width: min(420px, calc(100vw - 24px)) !important;
-      max-height: min(76vh, 640px) !important;
+      width: min(460px, calc(100vw - 24px)) !important;
+      max-width: min(460px, calc(100vw - 24px)) !important;
+      max-height: min(82vh, 720px) !important;
       overflow: auto !important;
-      padding: 16px !important;
-      border-radius: 18px !important;
-      font-size: 14px !important;
+      padding: 14px 16px 16px !important;
+      border-radius: 20px !important;
+      font-size: 13px !important;
+      scrollbar-width: thin !important;
     }
     #xiv-root [data-panel="settings"] h3,
     #xiv-root .xiv-settings h3,
     #xiv-root .xiv-settings-panel h3,
     #xiv-root .xiv-panel:has(.xiv-setting-row) h3 {
-      font-size: 22px !important;
-      margin: 0 0 12px !important;
+      font-size: 20px !important;
+      margin: 0 0 8px !important;
       line-height: 1.15 !important;
+      letter-spacing: -.02em !important;
     }
     #xiv-root .xiv-setting-row {
-      min-height: 42px !important;
-      padding: 10px 0 !important;
+      min-height: 38px !important;
+      padding: 8px 2px !important;
       gap: 12px !important;
-      font-size: 14px !important;
+      font-size: 13px !important;
       line-height: 1.25 !important;
+      border-top-color: rgba(127,127,127,.16) !important;
     }
     #xiv-root .xiv-setting-row input[type="checkbox"] {
-      width: 22px !important;
+      appearance: none !important;
+      width: 38px !important;
       height: 22px !important;
       flex: 0 0 auto !important;
+      margin: 0 !important;
+      border: 1px solid rgba(127,127,127,.28) !important;
+      border-radius: 999px !important;
+      background: radial-gradient(circle at 11px 50%, #fff 0 7px, transparent 7.5px), rgba(127,127,127,.3) !important;
+      box-shadow: none !important;
+      cursor: pointer !important;
+      transition: background .18s ease, border-color .18s ease !important;
+    }
+    #xiv-root .xiv-setting-row input[type="checkbox"]:checked {
+      border-color: #4f72ff !important;
+      background: radial-gradient(circle at 26px 50%, #fff 0 7px, transparent 7.5px), #4f72ff !important;
     }
     #xiv-root .xiv-setting-row select {
-      min-width: 138px !important;
-      height: 40px !important;
+      min-width: 144px !important;
+      height: 36px !important;
       border-radius: 999px !important;
       padding: 0 34px 0 14px !important;
-      font-size: 14px !important;
-      font-weight: 850 !important;
+      font-size: 13px !important;
+      font-weight: 800 !important;
     }
     #xiv-root .xiv-setting-row button {
-      width: 42px !important;
-      height: 42px !important;
-      min-width: 42px !important;
+      width: 36px !important;
+      height: 36px !important;
+      min-width: 36px !important;
       border-radius: 999px !important;
-      font-size: 22px !important;
+      font-size: 19px !important;
       line-height: 1 !important;
     }
     #xiv-root .xiv-setting-row strong,
@@ -64,38 +79,46 @@
       font-size: 15px !important;
     }
     .xiv-fl-compact-section {
-      margin: 12px 0 4px !important;
-      color: #7a8190 !important;
-      font-size: 12px !important;
-      font-weight: 950 !important;
-      letter-spacing: .06em !important;
+      margin: 12px 0 2px !important;
+      padding: 5px 8px !important;
+      border-radius: 8px !important;
+      background: rgba(92,104,132,.08) !important;
+      color: #6d7482 !important;
+      font-size: 11px !important;
+      font-weight: 900 !important;
+      letter-spacing: .08em !important;
     }
-    #xiv-root[data-theme="dark"] .xiv-fl-compact-section { color: #aab1c0 !important; }
+    #xiv-root[data-theme="dark"] .xiv-fl-compact-section { color: #b7bdc9 !important; background: rgba(255,255,255,.07) !important; }
     .xiv-fl-speed-row .xiv-fl-speed-control {
       display: inline-flex !important;
       align-items: center !important;
-      gap: 10px !important;
+      gap: 7px !important;
       flex: 0 0 auto !important;
     }
     .xiv-fl-speed-row .xiv-fl-speed-value {
-      min-width: 72px !important;
+      min-width: 88px !important;
       text-align: center !important;
-      font-size: 14px !important;
-      font-weight: 900 !important;
+      font-size: 13px !important;
+      font-weight: 800 !important;
       white-space: nowrap !important;
     }
+    .xiv-fl-shortcuts-wrap {
+      margin-top: 12px !important;
+      border-radius: 12px !important;
+      background: rgba(0,0,0,.035) !important;
+      overflow: hidden !important;
+    }
+    #xiv-root[data-theme="dark"] .xiv-fl-shortcuts-wrap { background: rgba(255,255,255,.06) !important; }
+    .xiv-fl-shortcuts-wrap summary { padding: 10px 12px !important; cursor: pointer !important; font-size: 12px !important; font-weight: 850 !important; }
     .xiv-fl-shortcuts-mini {
-      margin-top: 10px !important;
-      padding: 10px !important;
+      padding: 0 10px 10px !important;
       border-radius: 14px !important;
-      background: rgba(0,0,0,.045) !important;
       display: grid !important;
       grid-template-columns: 1fr 1fr !important;
       gap: 7px 8px !important;
       font-size: 12px !important;
       line-height: 1.3 !important;
     }
-    #xiv-root[data-theme="dark"] .xiv-fl-shortcuts-mini { background: rgba(255,255,255,.08) !important; }
     .xiv-fl-shortcuts-mini kbd {
       display: inline-block !important;
       min-width: 28px !important;
@@ -121,8 +144,8 @@
         width: min(356px, calc(100vw - 16px)) !important;
         max-width: calc(100vw - 16px) !important;
         height: auto !important;
-        max-height: min(68vh, calc(100vh - 74px - env(safe-area-inset-bottom, 0px))) !important;
-        padding: 10px !important;
+        max-height: min(76vh, calc(100vh - 74px - env(safe-area-inset-bottom, 0px))) !important;
+        padding: 12px !important;
       }
       .xiv-fl-shortcuts-mini { grid-template-columns: 1fr !important; }
     }
@@ -188,7 +211,8 @@
     const node = document.querySelector(".xiv-fl-speed-value");
     if (!node) return;
     const ms = currentSpeed();
-    node.textContent = `${speedLabel(ms)} ${Math.round(ms / 100) / 10}秒`;
+    const text = `${speedLabel(ms)} ${Math.round(ms / 100) / 10}秒`;
+    if (node.textContent !== text) node.textContent = text;
   }
 
   function changeSpeed(delta) {
@@ -241,41 +265,51 @@
   }
 
   function makeShortcuts() {
-    const node = document.createElement("div");
-    node.className = "xiv-fl-shortcuts-mini";
+    const node = document.createElement("details");
+    node.className = "xiv-fl-shortcuts-wrap";
     node.dataset.flCompact = "true";
     node.innerHTML = `
-      <span><kbd>G</kbd>开关图片流</span>
-      <span><kbd>Esc</kbd>退出/关闭</span>
-      <span><kbd>1/2/3</kbd>全部/图/视频</span>
-      <span><kbd>V</kbd>循环筛选</span>
-      <span><kbd>A</kbd>自动滚动</span>
-      <span><kbd>P</kbd>大图自动切换</span>
-      <span><kbd>←/→</kbd>上一组/下一组</span>
-      <span><kbd>S</kbd>选择模式</span>
-      <span><kbd>Shift+D</kbd>下载已选</span>`;
+      <summary>快捷键</summary>
+      <div class="xiv-fl-shortcuts-mini">
+        <span><kbd>G</kbd>开关图片流</span>
+        <span><kbd>Esc</kbd>退出/关闭</span>
+        <span><kbd>1/2/3</kbd>全部/图/视频</span>
+        <span><kbd>V</kbd>循环筛选</span>
+        <span><kbd>A</kbd>自动滚动</span>
+        <span><kbd>P</kbd>大图自动切换</span>
+        <span><kbd>←/→</kbd>上一组/下一组</span>
+        <span><kbd>S</kbd>选择模式</span>
+        <span><kbd>Shift+D</kbd>下载已选</span>
+      </div>`;
     return node;
+  }
+
+  function ensureSection(panel, key, text, before) {
+    if (!before || panel.querySelector(`[data-fl-section="${key}"]`)) return;
+    const section = makeSection(text);
+    section.dataset.flSection = key;
+    before.before(section);
   }
 
   function apply() {
     injectStyle();
     const panel = findSettingsPanel();
     if (!panel) return;
-    panel.querySelectorAll('[data-fl-compact="true"]').forEach((node) => node.remove());
     const rows = [...panel.querySelectorAll('.xiv-setting-row')];
     const title = panel.querySelector('h3, .xiv-panel-title');
     const firstRow = rows[0];
-    if (firstRow) firstRow.before(makeSection("基础显示"));
+    ensureSection(panel, "display", "显示与入口", firstRow);
     const filterRow = rows.find((row) => /图片流筛选|主题/.test(row.textContent || ""));
-    if (filterRow) filterRow.before(makeSection("浏览控制"));
+    ensureSection(panel, "browse", "浏览控制", filterRow);
     const themeRow = rows.find((row) => /主题/.test(row.textContent || ""));
-    const speedRow = makeSpeedRow();
-    if (themeRow) themeRow.before(speedRow);
-    else panel.appendChild(speedRow);
-    panel.appendChild(makeSection("快捷键"));
-    panel.appendChild(makeShortcuts());
+    if (!panel.querySelector(".xiv-fl-speed-row")) {
+      const speedRow = makeSpeedRow();
+      if (themeRow) themeRow.before(speedRow);
+      else panel.appendChild(speedRow);
+    }
+    if (!panel.querySelector(".xiv-fl-shortcuts-wrap")) panel.appendChild(makeShortcuts());
     updateSpeedLabel();
-    if (title) title.textContent = "瀑光设置";
+    if (title && title.textContent !== "瀑光设置") title.textContent = "瀑光设置";
   }
 
   function schedule() {
