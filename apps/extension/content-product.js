@@ -140,7 +140,7 @@
     try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
   }
 
-  function settings() { return readJson(SETTINGS_KEY, {}); }
+  function settings() { return window.__flowLensSettingsStore?.read?.() || readJson(SETTINGS_KEY, {}); }
 
   function safePart(text, fallback = "FlowLens") {
     return String(text || fallback)
@@ -398,25 +398,8 @@
   }
 
   function ensureLightboxAutoButton() {
-    const lb = lightbox();
-    if (!lb || lb.dataset.active !== "true") {
-      stopLightboxAuto();
-      return;
-    }
-    let button = lb.querySelector(".xiv-fl-lightbox-auto");
-    if (!button) {
-      button = document.createElement("button");
-      button.type = "button";
-      button.className = "xiv-fl-lightbox-auto";
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation?.();
-        toggleLightboxAuto();
-      });
-      lb.appendChild(button);
-    }
-    syncLightboxAutoButton();
+    lightbox()?.querySelector(".xiv-fl-lightbox-auto")?.remove();
+    if (lightboxAutoPlaying) stopLightboxAuto();
   }
 
   function isTypingTarget(target) { return target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']"); }
@@ -431,7 +414,12 @@
     }
     if (!active() && !lightboxActive()) return;
     if (lightboxActive() && !event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "p") {
-      event.preventDefault(); event.stopPropagation(); toggleLightboxAuto();
+      const button = lightbox()?.querySelector(".xiv-lightbox-slideshow");
+      if (button) {
+        event.preventDefault();
+        event.stopPropagation();
+        button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      }
     } else if (!event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "s") {
       event.preventDefault(); event.stopPropagation(); toggleSelectionMode();
     } else if (!event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "x") {
@@ -571,7 +559,7 @@
     rootObserver?.disconnect();
     observedRoot = root;
     rootObserver = new MutationObserver(scheduleApplyAll);
-    rootObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "src", "style", "hidden", "class"] });
+    rootObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "src"] });
     bootstrapObserver?.disconnect();
     bootstrapObserver = null;
     scheduleApplyAll();

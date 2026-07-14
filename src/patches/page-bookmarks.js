@@ -4,6 +4,8 @@
 
   const KEY = "flowlens-page-bookmarks-v2";
   const MAX_ITEMS = 300;
+  const extensionStorage = typeof chrome !== "undefined" ? chrome.storage?.local || null : null;
+  let extensionItems = [];
   const SAVE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5h12a1 1 0 0 1 1 1v15l-7-4-7 4v-15a1 1 0 0 1 1-1Z"/></svg>';
   const LIST_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h11M8 12h11M8 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
 
@@ -50,6 +52,7 @@
   }
 
   function readItems() {
+    if (extensionStorage) return extensionItems.slice(0, MAX_ITEMS);
     try {
       const items = JSON.parse(localStorage.getItem(KEY) || "[]");
       return Array.isArray(items) ? items.filter((item) => item?.url).slice(0, MAX_ITEMS) : [];
@@ -75,8 +78,26 @@
         updatedAt: item.updatedAt || item.createdAt || new Date().toISOString()
       });
     }
-    localStorage.setItem(KEY, JSON.stringify(clean.slice(0, MAX_ITEMS)));
-    return clean.slice(0, MAX_ITEMS);
+    const result = clean.slice(0, MAX_ITEMS);
+    if (extensionStorage) {
+      extensionItems = result;
+      extensionStorage.set({ [KEY]: result });
+    } else {
+      localStorage.setItem(KEY, JSON.stringify(result));
+    }
+    return result;
+  }
+
+  async function loadExtensionItems() {
+    if (!extensionStorage) return;
+    try {
+      const result = await extensionStorage.get(KEY);
+      extensionItems = Array.isArray(result?.[KEY]) ? result[KEY].filter((item) => item?.url).slice(0, MAX_ITEMS) : [];
+    } catch {
+      extensionItems = [];
+    }
+    syncButton();
+    renderPanel();
   }
 
   function coverOfCurrentPage() {
@@ -303,6 +324,14 @@
   window.addEventListener("storage", (event) => {
     if (!event.key || event.key === KEY) syncButton();
   });
+  if (typeof chrome !== "undefined") {
+    chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
+      if (areaName !== "local" || !changes[KEY]) return;
+      extensionItems = Array.isArray(changes[KEY].newValue) ? changes[KEY].newValue.slice(0, MAX_ITEMS) : [];
+      syncButton();
+      renderPanel();
+    });
+  }
 
   let timer = 0;
   function scheduleInstall() {
@@ -311,5 +340,6 @@
   }
 
   new MutationObserver(scheduleInstall).observe(document.documentElement, { childList: true, subtree: true });
+  loadExtensionItems();
   installButtons();
 })();

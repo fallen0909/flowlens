@@ -90,6 +90,7 @@
     stage: null,
     grid: null,
     masonryColumns: [],
+    masonryColumnHeights: [],
     lightbox: null,
     counter: null,
     status: null,
@@ -115,6 +116,8 @@
     autoScroll: false,
     autoScrollSpeed: 3,
     autoScrollFrame: 0,
+    autoScrollLastTime: 0,
+    autoScrollRemainder: 0,
     autoScrollPausedForLightbox: false,
     active: false,
     index: 0,
@@ -143,6 +146,7 @@
     viewerSwipe: null,
     lastLightboxWheelAt: 0,
     mediaPreloadTimer: 0,
+    highResResolveTimer: 0,
     mediaPreloadCache: new Map(),
     lightboxDrag: null,
     lightboxSuppressClickUntil: 0,
@@ -194,21 +198,26 @@
     return "flowlens-settings-v2";
   }
 
-  function chromeStorageLocal() {
+  function chromeSettingsStorage() {
     try {
-      return typeof chrome !== "undefined" ? chrome.storage?.local : null;
+      return typeof chrome !== "undefined" ? chrome.storage?.sync || chrome.storage?.local || null : null;
     } catch {
       return null;
     }
   }
 
   function loadSettings() {
+    const extensionSettings = window.__flowLensSettingsStore?.read?.();
+    if (extensionSettings && typeof extensionSettings === "object") {
+      state.settings = { ...DEFAULT_SETTINGS, ...extensionSettings };
+    } else {
     try {
       const raw = localStorage.getItem(settingsStorageKey());
       const parsed = raw ? JSON.parse(raw) : {};
       state.settings = { ...DEFAULT_SETTINGS, ...parsed };
     } catch {
       state.settings = { ...DEFAULT_SETTINGS };
+    }
     }
     state.columns = Math.max(2, Math.min(8, Number(state.settings.columns || DEFAULT_SETTINGS.columns)));
     state.autoScrollSpeed = Math.max(1, Math.min(10, Number(state.settings.autoScrollSpeed || DEFAULT_SETTINGS.autoScrollSpeed)));
@@ -217,7 +226,14 @@
   }
 
   function loadExtensionSettings() {
-    const storage = chromeStorageLocal();
+    const settingsStore = window.__flowLensSettingsStore;
+    if (settingsStore?.read) {
+      state.settings = { ...DEFAULT_SETTINGS, ...state.settings, ...settingsStore.read() };
+      applySettings();
+      settingsStore.load?.();
+      return;
+    }
+    const storage = chromeSettingsStorage();
     if (!storage?.get) return;
     try {
       storage.get(settingsStorageKey(), (result) => {
@@ -234,12 +250,16 @@
 
   function saveSettings(patch = {}) {
     state.settings = { ...(state.settings || DEFAULT_SETTINGS), ...patch };
+    if (window.__flowLensSettingsStore?.write) {
+      state.settings = { ...state.settings, ...window.__flowLensSettingsStore.write(patch) };
+      return;
+    }
     try {
       localStorage.setItem(settingsStorageKey(), JSON.stringify(state.settings));
     } catch {
       // Storage can be blocked on restricted pages; settings remain active for this session.
     }
-    const storage = chromeStorageLocal();
+    const storage = chromeSettingsStorage();
     if (storage?.set) {
       try {
         storage.set({ [settingsStorageKey()]: state.settings });
@@ -267,6 +287,13 @@
     }
     applyLaunchSettings();
     syncSettingsPanel();
+  }
+
+  function applySyncedSettings(event) {
+    const settings = event?.detail?.settings;
+    if (!settings || typeof settings !== "object") return;
+    state.settings = { ...(state.settings || DEFAULT_SETTINGS), ...settings };
+    applySettings();
   }
 
   const css = `
@@ -2470,7 +2497,11 @@
   }
 
   function normalizeX810114VideoUrl(url) {
-    return url ? url.replace("https://video.twimg.com", "https://video-cf.twimg.com") : "";
+    return url
+      ? url
+        .replace("https://video.twimg.com", "https://twimg.moonchan.xyz")
+        .replace("https://video-cf.twimg.com", "https://twimg.moonchan.xyz")
+      : "";
   }
 
   function normalizeMediaUrl(url) {
@@ -2703,6 +2734,7 @@
   }
 
   function alternateVideoUrl(url) {
+    if (url.includes("https://twimg.moonchan.xyz")) return url.replace("https://twimg.moonchan.xyz", "https://video.twimg.com");
     if (url.includes("https://video.twimg.com")) return url.replace("https://video.twimg.com", "https://video-cf.twimg.com");
     if (url.includes("https://video-cf.twimg.com")) return url.replace("https://video-cf.twimg.com", "https://video.twimg.com");
     return "";
@@ -2839,11 +2871,13 @@
     setImageSourceWithFallback(img, url);
     img.addEventListener("load", () => {
       if (!isLoadedPhotoLike(img)) rejectImage(url);
+      const previousRatio = state.mediaRatioByImage.get(keyForUrl(url)) || 0;
       rememberMediaRatio(url, img.naturalWidth || 0, img.naturalHeight || 0);
       if (img.naturalWidth > 0 && img.naturalHeight > 0) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
       const tile = img.closest?.(".xiv-tile");
       if (tile) tile.dataset.estimatedHeight = "";
-      scheduleMasonryLayout();
+      const nextRatio = img.naturalWidth > 0 && img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : 0;
+      if (!previousRatio || (nextRatio && Math.abs(nextRatio - previousRatio) > 0.08)) scheduleMasonryLayout();
     }, { once: true });
     img.addEventListener("error", () => {
       setTimeout(() => {
@@ -2872,7 +2906,7 @@
         preload: "none",
         keepFirstFrame: true,
         previewTime: 1,
-        previewMode: isGenericX810114Page() || /\/\/video(?:-cf)?\.twimg\.com\//i.test(url) ? "seek" : "canvas",
+        previewMode: isGenericX810114Page() || /\/\/twimg\.moonchan\.xyz\//i.test(url) ? "canvas" : /\/\/video(?:-cf)?\.twimg\.com\//i.test(url) ? "seek" : "canvas",
         deferSource: true
       });
       const size = videoSizeFromUrl(url);
@@ -3206,7 +3240,7 @@
     const video = document.createElement("video");
     const poster = state.posterByImage.get(keyForUrl(url));
     if (poster) video.poster = poster;
-    if (previewMode === "canvas" && !/\/\/video(?:-cf)?\.twimg\.com\//i.test(url)) video.crossOrigin = "anonymous";
+    if (previewMode === "canvas") video.crossOrigin = "anonymous";
     video.muted = muted;
     video.defaultMuted = muted;
     video.volume = muted ? 0 : 1;
@@ -3927,6 +3961,12 @@
         return parsePageBookmarks(await GM_getValue(PAGE_BOOKMARKS_KEY, "[]"));
       }
     } catch {}
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        const result = await chrome.storage.local.get(PAGE_BOOKMARKS_KEY);
+        return parsePageBookmarks(result?.[PAGE_BOOKMARKS_KEY]);
+      }
+    } catch {}
     try { return parsePageBookmarks(localStorage.getItem(PAGE_BOOKMARKS_KEY)); } catch { return []; }
   }
 
@@ -3940,6 +3980,14 @@
         stored = true;
       }
     } catch {}
+    if (!stored) {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          await chrome.storage.local.set({ [PAGE_BOOKMARKS_KEY]: clean });
+          stored = true;
+        }
+      } catch {}
+    }
     if (!stored) {
       try { localStorage.setItem(PAGE_BOOKMARKS_KEY, value); } catch {}
     }
@@ -4015,6 +4063,7 @@
     window.addEventListener("pointermove", onLaunchPointerMove, true);
     window.addEventListener("pointerup", endLaunchDrag, true);
     window.addEventListener("pointercancel", endLaunchDrag, true);
+    window.addEventListener("flowlens:settings-sync", applySyncedSettings);
     document.documentElement.appendChild(state.launch);
     applyLaunchSettings();
 
@@ -4058,7 +4107,7 @@
         <label class="xiv-setting-row"><span>打开时自动全屏</span><input type="checkbox" data-setting="autoFullscreen"></label>
         <label class="xiv-setting-row"><span>网格视频预览</span><input type="checkbox" data-setting="videoPreview"></label>
         <label class="xiv-setting-row"><span>主题</span><select class="xiv-select" data-setting="theme"><option value="system">跟随系统</option><option value="dark">深色</option><option value="light">浅色</option></select></label>
-        <small>入口可以直接拖动，位置会保存。普通更新通过 reload-token 自动重载。</small>
+        <small>入口可以直接拖动，位置会保存。设置会自动保存，刷新网页后完全生效。</small>
       </div>
       <div class="xiv-panel xiv-diagnostics" data-panel="diagnostics">
         <h3>诊断报告</h3>
@@ -4170,12 +4219,14 @@
 
   function scheduleRenderQueue() {
     if (state.renderFrame || !state.renderQueue.length) return;
+    if (state.lightbox?.dataset.active === "true") return;
     state.renderFrame = requestAnimationFrame(processRenderQueue);
   }
 
   function processRenderQueue() {
     state.renderFrame = 0;
     if (!state.grid || !state.renderQueue.length) return;
+    if (state.lightbox?.dataset.active === "true") return;
     const fragment = document.createDocumentFragment();
     const start = performance.now();
     let created = 0;
@@ -4241,13 +4292,13 @@
       appendTilesToMasonry([...fragment.childNodes]);
       observeDeferredImages();
     }
-    syncTileIndexes();
     updateCounter();
-    scheduleRestoreViewerPosition();
     if (state.renderQueue.length) {
       scheduleRenderQueue();
     } else {
       state.renderStartedAt = 0;
+      syncTileIndexes();
+      scheduleRestoreViewerPosition();
       window.dispatchEvent(new CustomEvent("flowlens:gallery-items-rendered"));
     }
   }
@@ -4284,9 +4335,10 @@
   }
 
   function syncTileIndexes() {
+    const indexByKey = new Map(state.images.map((url, index) => [keyForUrl(url), index]));
     allTiles().forEach((tile) => {
-      const i = state.images.indexOf(tile.dataset.url || "");
-      if (i < 0) return;
+      const i = indexByKey.get(tile.dataset.urlKey || keyForUrl(tile.dataset.url || ""));
+      if (!Number.isInteger(i) || i < 0) return;
       tile.dataset.index = String(i);
       const label = tile.querySelector("span");
       if (label) label.textContent = String(i + 1).padStart(2, "0");
@@ -4329,6 +4381,7 @@
     tiles.forEach((tile) => { tile.dataset.estimatedHeight = ""; });
     state.grid.replaceChildren();
     state.masonryColumns = [];
+    state.masonryColumnHeights = [];
     ensureMasonryColumns();
     appendTilesToMasonry(tiles);
     applyMediaFilter();
@@ -4348,6 +4401,7 @@
       state.grid.appendChild(column);
       return column;
     });
+    state.masonryColumnHeights = new Array(count).fill(0);
     appendTilesToMasonry(tiles);
     return state.masonryColumns;
   }
@@ -4355,7 +4409,10 @@
   function appendTilesToMasonry(tiles) {
     if (!tiles.length) return;
     const columns = ensureMasonryColumns();
-    const columnHeights = columns.map((column) => columnHeight(column));
+    if (state.masonryColumnHeights.length !== columns.length) {
+      state.masonryColumnHeights = columns.map((column) => columnHeight(column));
+    }
+    const columnHeights = state.masonryColumnHeights;
     for (const tile of tiles) {
       const index = shortestColumnIndex(columnHeights);
       columns[index]?.appendChild(tile);
@@ -4378,13 +4435,6 @@
   function estimatedTileHeight(tile, column) {
     const cached = Number(tile.dataset.estimatedHeight || 0);
     if (cached > 20) return cached;
-    const rect = tile.getBoundingClientRect?.();
-    if (rect?.height > 20) {
-      const measured = rect.height + masonryGap();
-      tile.dataset.estimatedHeight = String(Math.round(measured));
-      return measured;
-    }
-
     const url = tile.dataset.url || "";
     const media = tile.querySelector("img, video");
     const naturalWidth = media?.naturalWidth || media?.videoWidth || 0;
@@ -4396,9 +4446,17 @@
       || ratioFromStyle(media)
       || ratioFromSize(sizeFromUrl(url))
       || ratioFromSize(sizeFromUrl(media?.currentSrc || media?.src || ""))
-      || 0.72;
+      || 0;
     const columnWidth = column?.clientWidth || tile.clientWidth || Math.max(160, Math.floor((state.stage?.clientWidth || window.innerWidth || 1000) / Math.max(1, state.columns)));
-    const estimated = Math.max(80, columnWidth / ratio) + masonryGap();
+    if (!ratio) {
+      const rect = tile.getBoundingClientRect?.();
+      if (rect?.height > 20) {
+        const measured = rect.height + masonryGap();
+        tile.dataset.estimatedHeight = String(Math.round(measured));
+        return measured;
+      }
+    }
+    const estimated = Math.max(80, columnWidth / (ratio || 0.72)) + masonryGap();
     tile.dataset.estimatedHeight = String(Math.round(estimated));
     return estimated;
   }
@@ -4430,6 +4488,7 @@
       tiles.forEach((tile) => { tile.dataset.estimatedHeight = ""; });
       state.grid.replaceChildren();
       state.masonryColumns = [];
+      state.masonryColumnHeights = [];
       ensureMasonryColumns();
       appendTilesToMasonry(tiles);
     });
@@ -4453,7 +4512,7 @@
     if (!state.active) return;
     clearTimeout(state.masonryLayoutTimer);
     const scrolling = Date.now() - state.lastStageScrollAt < 220;
-    const delay = state.renderQueue.length ? 360 : scrolling ? 280 : 160;
+    const delay = state.renderQueue.length ? 700 : scrolling ? 520 : 240;
     state.masonryLayoutTimer = setTimeout(layoutMasonry, delay);
   }
 
@@ -4685,11 +4744,18 @@
   function runAutoScroll() {
     cancelAnimationFrame(state.autoScrollFrame);
     if (!state.autoScroll || !state.active || !state.stage) return;
-    const step = () => {
+    state.autoScrollLastTime = 0;
+    state.autoScrollRemainder = 0;
+    const step = (timestamp) => {
       if (!state.autoScroll || !state.active || !state.stage) return;
       if (state.lightbox?.dataset.active === "true") return;
       const before = state.stage.scrollTop;
-      state.stage.scrollTop += state.autoScrollSpeed;
+      const elapsed = state.autoScrollLastTime ? Math.min(34, Math.max(0, timestamp - state.autoScrollLastTime)) : 16.67;
+      state.autoScrollLastTime = timestamp;
+      const distance = state.autoScrollSpeed * 60 * elapsed / 1000 + state.autoScrollRemainder;
+      const pixels = Math.max(1, Math.floor(distance));
+      state.autoScrollRemainder = distance - pixels;
+      state.stage.scrollTop += pixels;
       const nearBottom = state.stage.scrollTop + state.stage.clientHeight > state.stage.scrollHeight - 12;
       if (nearBottom) {
         fetchRemainingPages();
@@ -5205,7 +5271,7 @@
     startViewerPositionRestore();
     closeHostPhotoViewer();
     state.active = true;
-    state.suppressLightboxUntil = Date.now() + 900;
+    state.suppressLightboxUntil = Date.now() + 120;
     document.documentElement.classList.add("xiv-active");
     startHostOverlayGuard();
     state.root.dataset.active = "true";
@@ -5314,6 +5380,7 @@
     }
     const img = new Image();
     img.decoding = "async";
+    try { img.fetchPriority = "high"; } catch {}
     img.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
     img.src = url;
     state.mediaPreloadCache.set(key, { media: img, time: Date.now() });
@@ -5324,7 +5391,7 @@
     clearTimeout(state.mediaPreloadTimer);
     state.mediaPreloadTimer = setTimeout(() => {
       if (state.lightbox?.dataset.active !== "true" || !state.images.length) return;
-      const offsets = [1, 2, 3, -1];
+      const offsets = [1, 2, 3, 4, 5, -1, -2];
       const urls = [];
       const seen = new Set();
       for (const offset of offsets) {
@@ -5345,7 +5412,32 @@
       for (const url of urls) {
         videoBudget = preloadMediaUrl(url, videoBudget);
       }
-    }, 90);
+    }, 30);
+  }
+
+  function scheduleLightboxHighResUpgrade(index, thumbUrl, openToken) {
+    clearTimeout(state.highResResolveTimer);
+    if (!thumbUrl || isVideoUrl(thumbUrl)) return;
+    state.highResResolveTimer = setTimeout(async () => {
+      if (state.lightbox?.dataset.active !== "true" || state.index !== index || state.lightbox.dataset.openToken !== openToken) return;
+      const highResUrl = await resolveHighResUrl(thumbUrl, true);
+      if (!highResUrl || highResUrl === thumbUrl) return;
+      if (state.lightbox?.dataset.active !== "true" || state.index !== index || state.lightbox.dataset.openToken !== openToken) return;
+      if (isVideoUrl(highResUrl)) {
+        setLightboxVideo(highResUrl);
+      } else {
+        let img = state.lightbox.querySelector(":scope > img");
+        if (!img) {
+          state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
+          img = state.lightbox.querySelector("img");
+        }
+        img.dataset.xivCanZoom = "false";
+        img.addEventListener("load", () => updateLightboxZoomHint(img), { once: true });
+        setImageSourceWithFallback(img, highResUrl);
+        updateFavoriteButton(highResUrl, thumbUrl);
+      }
+      scheduleLightboxMediaPreload(index);
+    }, state.highResByImage.has(keyForUrl(thumbUrl)) ? 40 : 420);
   }
 
   async function openLightbox(index) {
@@ -5353,6 +5445,11 @@
       closeHostPhotoViewer();
       return;
     }
+    if (state.renderFrame) {
+      cancelAnimationFrame(state.renderFrame);
+      state.renderFrame = 0;
+    }
+    clearTimeout(state.masonryLayoutTimer);
     pauseAutoScrollForLightbox();
     state.index = index;
     const openToken = `${Date.now()}:${index}:${Math.random()}`;
@@ -5361,6 +5458,7 @@
     state.root.dataset.lightboxActive = "true";
     state.lightbox.dataset.flVideoEnded = "false";
     state.lightbox.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+    clearTimeout(state.highResResolveTimer);
     const thumbUrl = state.images[index];
     if (isVideoUrl(thumbUrl)) {
       setLightboxVideo(thumbUrl);
@@ -5379,23 +5477,7 @@
     state.lightbox.dataset.active = "true";
     state.root.dataset.lightboxActive = "true";
     scheduleLightboxMediaPreload(index);
-    const highResUrl = await resolveHighResUrl(thumbUrl);
-    if (state.lightbox.dataset.active === "true" && state.index === index && state.lightbox.dataset.openToken === openToken) {
-      if (isVideoUrl(highResUrl)) {
-        setLightboxVideo(highResUrl);
-      } else {
-        let img = state.lightbox.querySelector("img");
-        if (!img) {
-          state.lightbox.innerHTML = `${lightboxArrows()}<img alt="">`;
-          img = state.lightbox.querySelector("img");
-        }
-        img.dataset.xivCanZoom = "false";
-        img.addEventListener("load", () => updateLightboxZoomHint(img));
-        setImageSourceWithFallback(img, highResUrl);
-        updateFavoriteButton(highResUrl, thumbUrl);
-      }
-      scheduleLightboxMediaPreload(index);
-    }
+    scheduleLightboxHighResUpgrade(index, thumbUrl, openToken);
   }
 
   function closeLightbox(resumeAutoScroll = true) {
@@ -5407,6 +5489,8 @@
     state.root.dataset.lightboxActive = "false";
     state.lightbox.dataset.zoom = "fit";
     clearTimeout(state.mediaPreloadTimer);
+    clearTimeout(state.highResResolveTimer);
+    if (state.renderQueue.length) scheduleRenderQueue();
     if (resumeAutoScroll) resumeAutoScrollAfterLightbox();
   }
 
@@ -6010,6 +6094,7 @@
   function onLightboxClick(event) {
     if (state.lightbox?.dataset.active !== "true") return;
     if (!state.lightbox.contains(event.target)) return;
+    if (event.target?.closest?.(".xiv-lightbox-slideshow")) return;
     if (event.target?.closest?.("#xiv-lightbox video") && !isMobilePointerEvent(event)) return;
     claimEvent(event);
     if (Date.now() < state.lightboxSuppressClickUntil) return;
@@ -6035,7 +6120,7 @@
 
   function onLightboxPointerDown(event) {
     if (state.lightbox?.dataset.active !== "true" || event.button !== 0) return;
-    if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow")) return;
+    if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow")) return;
     if (state.lightbox.dataset.zoom === "actual" && event.target?.matches?.("img, video")) {
       claimEvent(event);
       state.lightboxDrag = {
@@ -6123,10 +6208,64 @@
     state.viewerSwipe = null;
   }
 
+  function lightboxWheelZoom(event) {
+    const lb = state.lightbox;
+    const media = lb?.querySelector("img, video");
+    if (!lb || !media) return false;
+    const rect = media.getBoundingClientRect?.();
+    if (!rect?.width || !rect?.height) return false;
+
+    const sourceKey = media.currentSrc || media.src || media.dataset?.mediaUrl || "";
+    const zoomKey = `${sourceKey}|${media.naturalWidth || media.videoWidth || 0}x${media.naturalHeight || media.videoHeight || 0}`;
+    if (media.dataset.xivWheelZoomKey !== zoomKey || !media.dataset.xivWheelBaseWidth) {
+      media.dataset.xivWheelZoomKey = zoomKey;
+      media.dataset.xivWheelBaseWidth = String(Math.max(1, Math.round(rect.width)));
+      media.dataset.xivWheelBaseHeight = String(Math.max(1, Math.round(rect.height)));
+      lb.dataset.wheelZoom = "1";
+    }
+
+    const current = Number(lb.dataset.wheelZoom || 1);
+    const direction = event.deltaY < 0 || event.deltaX < 0 ? 1 : -1;
+    const next = Math.max(1, Math.min(4, current * (direction > 0 ? 1.12 : 0.89)));
+    const anchorX = (event.clientX + lb.scrollLeft) / Math.max(1, lb.scrollWidth);
+    const anchorY = (event.clientY + lb.scrollTop) / Math.max(1, lb.scrollHeight);
+
+    if (next <= 1.03) {
+      lb.dataset.zoom = "fit";
+      delete lb.dataset.wheelZoom;
+      delete media.dataset.xivWheelBaseWidth;
+      delete media.dataset.xivWheelBaseHeight;
+      delete media.dataset.xivWheelZoomKey;
+      media.style.removeProperty("--xiv-actual-width");
+      media.style.removeProperty("--xiv-actual-height");
+      lb.scrollTo?.({ left: 0, top: 0, behavior: "auto" });
+      updateStatus("适应屏幕");
+      return true;
+    }
+
+    const baseWidth = Number(media.dataset.xivWheelBaseWidth || rect.width);
+    const baseHeight = Number(media.dataset.xivWheelBaseHeight || rect.height);
+    media.style.setProperty("--xiv-actual-width", `${Math.round(baseWidth * next)}px`);
+    media.style.setProperty("--xiv-actual-height", `${Math.round(baseHeight * next)}px`);
+    lb.dataset.zoom = "actual";
+    lb.dataset.wheelZoom = String(next);
+    media.dataset.xivCanZoom = "true";
+    updateStatus(`${Math.round(next * 100)}%`);
+    requestAnimationFrame(() => {
+      lb.scrollLeft = Math.max(0, Math.round(anchorX * lb.scrollWidth - event.clientX));
+      lb.scrollTop = Math.max(0, Math.round(anchorY * lb.scrollHeight - event.clientY));
+    });
+    return true;
+  }
+
   function onLightboxWheel(event) {
     if (state.lightbox?.dataset.active !== "true") return;
     if (!state.lightbox.contains(event.target)) return;
     claimEvent(event);
+    if (event.ctrlKey || event.altKey) {
+      lightboxWheelZoom(event);
+      return;
+    }
     const now = Date.now();
     if (now - state.lastLightboxWheelAt < 220) return;
     const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;

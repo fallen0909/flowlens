@@ -1,0 +1,219 @@
+(() => {
+  if (window.__flowLensLightboxIconsUnified) return;
+  window.__flowLensLightboxIconsUnified = true;
+
+  const STYLE_ID = "flowlens-lightbox-icons-unified-style";
+  const SIZE = 46;
+  const GAP = 8;
+  const RIGHT = 14;
+  const HEART_RED = "#e11d48";
+  let timer = 0;
+
+  function root() { return document.getElementById("xiv-root"); }
+  function box() { return root()?.querySelector("#xiv-lightbox"); }
+
+  function installStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
+      #xiv-root > .xiv-lightbox-slideshow,
+      body > .xiv-lightbox-slideshow,
+      html > .xiv-lightbox-slideshow,
+      .xiv-lightbox-slideshow[data-fl-legacy-hidden="true"] {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow,
+      #xiv-lightbox .xiv-lightbox-fav,
+      #xiv-lightbox .xiv-lightbox-close {
+        position: fixed !important;
+        top: max(10px, env(safe-area-inset-top, 0px) + 10px) !important;
+        bottom: auto !important;
+        left: auto !important;
+        inset-block-end: auto !important;
+        inset-inline-start: auto !important;
+        width: ${SIZE}px !important;
+        height: ${SIZE}px !important;
+        min-width: ${SIZE}px !important;
+        min-height: ${SIZE}px !important;
+        border-radius: 999px !important;
+        border: 1px solid rgba(0,0,0,.14) !important;
+        background: rgba(255,255,255,.96) !important;
+        background-image: none !important;
+        color: #111 !important;
+        box-shadow: 0 1px 4px rgba(0,0,0,.10) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        z-index: 2147483647 !important;
+        transform: none !important;
+        translate: none !important;
+        scale: none !important;
+        rotate: none !important;
+        transform-origin: center center !important;
+        contain: layout paint style !important;
+        transition: none !important;
+        will-change: auto !important;
+        overflow: hidden !important;
+        text-indent: 0 !important;
+        filter: none !important;
+      }
+      #xiv-lightbox .xiv-lightbox-close { right: ${RIGHT}px !important; }
+      #xiv-lightbox .xiv-lightbox-fav { right: ${RIGHT + SIZE + GAP}px !important; }
+      #xiv-lightbox .xiv-lightbox-slideshow { right: ${RIGHT + (SIZE + GAP) * 2}px !important; }
+      #xiv-lightbox .xiv-lightbox-arrow {
+        position: fixed !important;
+        top: 50dvh !important;
+        bottom: auto !important;
+        width: ${SIZE}px !important;
+        height: ${SIZE}px !important;
+        margin-top: -${SIZE / 2}px !important;
+        transform: none !important;
+        translate: none !important;
+        scale: none !important;
+        rotate: none !important;
+        transform-origin: center center !important;
+        contain: layout paint style !important;
+        transition: none !important;
+        will-change: auto !important;
+        z-index: 2147483647 !important;
+      }
+      #xiv-lightbox .xiv-lightbox-arrow[data-side="left"] {
+        left: max(${RIGHT}px, env(safe-area-inset-left, 0px) + ${RIGHT}px) !important;
+        right: auto !important;
+      }
+      #xiv-lightbox .xiv-lightbox-arrow[data-side="right"] {
+        right: max(${RIGHT}px, env(safe-area-inset-right, 0px) + ${RIGHT}px) !important;
+        left: auto !important;
+      }
+      #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] {
+        color: ${HEART_RED} !important;
+        border-color: rgba(225,29,72,.28) !important;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow::before,
+      #xiv-lightbox .xiv-lightbox-slideshow::after,
+      #xiv-lightbox .xiv-lightbox-fav::before,
+      #xiv-lightbox .xiv-lightbox-fav::after,
+      #xiv-lightbox .xiv-lightbox-close::before,
+      #xiv-lightbox .xiv-lightbox-close::after {
+        content: none !important;
+        display: none !important;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow svg,
+      #xiv-lightbox .xiv-lightbox-fav svg,
+      #xiv-lightbox .xiv-lightbox-close svg {
+        display: block !important;
+        width: 24px !important;
+        height: 24px !important;
+        min-width: 24px !important;
+        min-height: 24px !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        color: currentColor !important;
+        stroke: currentColor !important;
+        filter: none !important;
+        flex: 0 0 auto !important;
+      }
+      #xiv-lightbox .xiv-lightbox-slideshow svg path,
+      #xiv-lightbox .xiv-lightbox-slideshow svg rect { fill: currentColor !important; stroke: none !important; }
+      #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] svg,
+      #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] svg path {
+        color: ${HEART_RED} !important;
+        fill: ${HEART_RED} !important;
+        stroke: ${HEART_RED} !important;
+      }
+    `;
+    document.documentElement.appendChild(style);
+  }
+
+  function hideLegacyDuplicates(lb) {
+    document.querySelectorAll(".xiv-lightbox-slideshow").forEach((btn) => {
+      if (lb && lb.contains(btn)) return;
+      btn.dataset.flLegacyHidden = "true";
+      btn.style.setProperty("display", "none", "important");
+      btn.style.setProperty("visibility", "hidden", "important");
+      btn.style.setProperty("opacity", "0", "important");
+      btn.style.setProperty("pointer-events", "none", "important");
+    });
+  }
+
+  function svgEl(name) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    if (name === "pause") {
+      [[7, 5], [13.2, 5]].forEach(([x, y]) => {
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", String(x));
+        rect.setAttribute("y", String(y));
+        rect.setAttribute("width", "3.8");
+        rect.setAttribute("height", "14");
+        rect.setAttribute("rx", "1.2");
+        rect.setAttribute("fill", "currentColor");
+        svg.appendChild(rect);
+      });
+    } else {
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M8 5.8v12.4c0 .8.9 1.3 1.6.9l9.2-6.2c.6-.4.6-1.4 0-1.8L9.6 4.9C8.9 4.5 8 5 8 5.8Z");
+      path.setAttribute("fill", "currentColor");
+      svg.appendChild(path);
+    }
+    return svg;
+  }
+
+  function ensureSlideshowButton(lb) {
+    const buttons = Array.from(lb.querySelectorAll(".xiv-lightbox-slideshow"));
+    let btn = buttons[0];
+    buttons.slice(1).forEach((dup) => dup.remove());
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "xiv-lightbox-slideshow";
+      btn.dataset.active = "false";
+      const fav = lb.querySelector(".xiv-lightbox-fav");
+      if (fav?.parentNode === lb) lb.insertBefore(btn, fav);
+      else lb.appendChild(btn);
+    }
+    return btn;
+  }
+
+  function drawButton(btn) {
+    if (!btn) return;
+    const wanted = btn.dataset.active === "true" ? "pause" : "play";
+    if (btn.dataset.flUnifiedIcon === wanted && btn.querySelector("svg")) return;
+    btn.dataset.flUnifiedIcon = wanted;
+    btn.textContent = "";
+    btn.appendChild(svgEl(wanted));
+  }
+
+  function scan() {
+    installStyle();
+    const lb = box();
+    hideLegacyDuplicates(lb);
+    if (!lb || lb.dataset.active !== "true") return;
+    drawButton(ensureSlideshowButton(lb));
+  }
+
+  function schedule(delay = 30) {
+    clearTimeout(timer);
+    timer = window.setTimeout(scan, delay);
+  }
+
+  document.addEventListener("click", () => schedule(20), true);
+  document.addEventListener("keydown", () => schedule(20), true);
+  window.addEventListener("flowlens:slideshow-state", () => schedule(0));
+  const observer = new MutationObserver(() => schedule(60));
+  if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-favorited"] });
+  schedule(0);
+})();

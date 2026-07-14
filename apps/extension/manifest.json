@@ -1,14 +1,13 @@
 {
   "manifest_version": 3,
   "name": "瀑光 FlowLens",
-  "version": "1.9.9",
-  "description": "Collect page images and videos into a fullscreen waterfall viewer with original-size viewing, slideshow controls, and ZIP download.",
+  "version": "1.10.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwZnPhuFgp5H8JinOllMNes7mM44oIL36zFGM0YMhIKFn3ybaXXOjo/3sn5Qo4VdUcxPXNd6IolYQ7mJvx8jdNNpLikgqHgGl7oxVdB+Z96fwzFJHjxge3A8F5oEWojPAIu5cIsWkQVVQxqVF0HlyQnKt3XfPK+75uulpcjnXgagybMcqzzdPigNACO2dsk1ZL7G2JDk8Y8Td7a77d4//8Do9daCdo9REGaoGdO6aVjxnpWja0BFksDz7U/ITGqyExpQWell8hSaRbFd/ZlO5TcGA2DKUe91EHS5RFLz60KqQpBEx/VlsZ9uXoz4QLOEz5C3RWf/sIqlebfcDXdlDoQIDAQAB",
+  "description": "把网页图片和视频整理成沉浸式全屏瀑布流，支持大图浏览、幻灯片和下载。",
   "permissions": [
     "activeTab",
     "scripting",
     "downloads",
-    "downloads.ui",
-    "alarms",
     "storage"
   ],
   "host_permissions": [
@@ -43,26 +42,7 @@
         "<all_urls>"
       ],
       "js": [
-        "content-settings-sync.js",
-        "content.js",
-        "content-patch.js",
-        "content-fixes.js",
-        "content-product.js",
-        "content-site-adapter-center.js",
-        "content-ui-cleanup.js",
-        "content-lightbox-stable.js",
-        "content-lightbox-ios-smooth.js",
-        "content-settings-redesign.js",
-        "content-settings-compact-v2.js",
-        "content-zhihu.js",
-        "content-topfix.js",
-        "content-media-sync.js",
-        "content-lightbox-control-fixes.js",
-        "content-pornpics-queue-hotfix.js",
-        "content-slideshow-native.js",
-        "content-page-bookmarks.js",
-        "content-video-cover-strategy.js",
-        "content-diagnostics-log.js"
+        "content-bootstrap.js"
       ],
       "run_at": "document_idle"
     }

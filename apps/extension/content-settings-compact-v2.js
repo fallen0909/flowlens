@@ -137,13 +137,16 @@
   }
 
   function readSettings() {
+    const extensionSettings = window.__flowLensSettingsStore?.read?.();
+    if (extensionSettings) return extensionSettings;
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; }
   }
 
   function writeSettings(patch) {
+    if (window.__flowLensSettingsStore?.write) return window.__flowLensSettingsStore.write(patch);
     const next = { ...readSettings(), ...patch };
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    try { chrome?.storage?.local?.set?.({ [SETTINGS_KEY]: next }); } catch {}
+    try { (chrome?.storage?.sync || chrome?.storage?.local)?.set?.({ [SETTINGS_KEY]: next }); } catch {}
     try { window.__flowLensSyncGlobalSettings?.(); } catch {}
     return next;
   }

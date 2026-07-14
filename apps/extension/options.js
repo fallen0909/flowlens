@@ -35,7 +35,8 @@
 
   function read(callback) {
     try {
-      chrome.storage.local.get(KEY, (result) => {
+      const storage = chrome.storage.sync || chrome.storage.local;
+      storage.get(KEY, (result) => {
         const stored = result?.[KEY] || {};
         callback({ ...DEFAULTS, ...stored });
       });
@@ -46,7 +47,8 @@
 
   function write(settings, callback) {
     try {
-      chrome.storage.local.set({ [KEY]: settings }, callback);
+      const storage = chrome.storage.sync || chrome.storage.local;
+      storage.set({ [KEY]: settings }, callback);
     } catch {
       callback?.();
     }

@@ -13,7 +13,7 @@
   function writeSettings(patch) {
     const next = { ...readSettings(), ...patch };
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch {}
-    try { chrome?.storage?.local?.set?.({ [SETTINGS_KEY]: next }); } catch {}
+    try { (chrome?.storage?.sync || chrome?.storage?.local)?.set?.({ [SETTINGS_KEY]: next }); } catch {}
     try { window.__flowLensSyncGlobalSettings?.(); } catch {}
     return next;
   }

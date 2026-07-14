@@ -1,0 +1,3 @@
+(() => {
+  window.__flowLensLightboxGallerySwipe = true;
+})();

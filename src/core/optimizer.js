@@ -65,8 +65,8 @@
   `;
 
   function injectStyle() { if (document.getElementById("xiv-fl-ux-patch-style")) return; const style = document.createElement("style"); style.id = "xiv-fl-ux-patch-style"; style.textContent = css; document.documentElement.appendChild(style); }
-  function readSettings() { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; } }
-  function saveSettings(patch) { const settings = { ...readSettings(), ...patch }; try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } }
+  function readSettings() { const extensionSettings = window.__flowLensSettingsStore?.read?.(); if (extensionSettings) return extensionSettings; try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch { return {}; } }
+  function saveSettings(patch) { if (window.__flowLensSettingsStore?.write) return window.__flowLensSettingsStore.write(patch); const settings = { ...readSettings(), ...patch }; try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } return settings; }
   function launchHidden() { return readSettings().launchHidden === true; }
   function applyLaunchVisibility() { document.documentElement.classList.toggle("xiv-fl-launch-hidden", launchHidden()); }
   function getStoredFilter() { const nativeSelect = document.querySelector('#xiv-root [data-xiv="filter"]'); const value = localStorage.getItem(FILTER_KEY) || (nativeSelect ? nativeSelect.value : "all") || "all"; return ["all", "image", "video"].includes(value) ? value : "all"; }
