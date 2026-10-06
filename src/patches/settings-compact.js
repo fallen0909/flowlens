@@ -335,10 +335,10 @@
     if (desiredGroups.some((group, index) => currentGroups[index] !== group)) {
       desiredGroups.forEach((group) => panel.appendChild(group));
     }
-    if (!cloudBody.querySelector(".xiv-cd2-settings")) cloud.hidden = true;
-    else cloud.hidden = false;
-    if (!bookmarkBody.querySelector(".fl-page-bookmark-settings")) bookmark.hidden = true;
-    else bookmark.hidden = false;
+    const cloudHidden = !cloudBody.querySelector(".xiv-cd2-settings");
+    const bookmarkHidden = !bookmarkBody.querySelector(".fl-page-bookmark-settings");
+    if (cloud.hidden !== cloudHidden) cloud.hidden = cloudHidden;
+    if (bookmark.hidden !== bookmarkHidden) bookmark.hidden = bookmarkHidden;
   }
 
   function schedule() {
@@ -352,6 +352,6 @@
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["class", "style", "data-open", "data-active"]
+    attributeFilter: ["data-open", "data-active"]
   });
 })();

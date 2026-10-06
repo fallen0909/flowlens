@@ -135,6 +135,7 @@
   }
 
   function finishApply() {
+    window.__flowLensControl?.refreshMediaFilter?.();
     window.__flowLensControl?.compactVisibleLabels?.();
     window.dispatchEvent(new CustomEvent("flowlens:media-filter-applied"));
   }
@@ -259,14 +260,16 @@
       else node.value = String(config[key] || "");
     });
     const label = section.querySelector("[data-fl-mf-adapter]");
-    if (label) label.textContent = `当前站点适配器：${currentAdapter()?.name || "通用"}`;
+    const text = `当前站点适配器：${currentAdapter()?.name || "通用"}`;
+    if (label && label.textContent !== text) label.textContent = text;
     refreshLog();
   }
 
   function refreshLog() {
     const log = document.querySelector("[data-fl-mf-log]");
     if (!log) return;
-    log.textContent = logs.length ? logs.map((item) => `${item.time}｜${item.reason}｜${item.url}`).join("\n") : "暂无过滤记录";
+    const text = logs.length ? logs.map((item) => `${item.time}｜${item.reason}｜${item.url}`).join("\n") : "暂无过滤记录";
+    if (log.textContent !== text) log.textContent = text;
   }
 
   registerAdapter({
@@ -283,7 +286,7 @@
 
   window.__flowLensMediaFilter = { readConfig, writeConfig, reasonFor, addTerm, registerAdapter, applyFilters };
   installStyle();
-  const observer = new MutationObserver(() => { ensureUi(); scheduleApply(); });
+  const observer = new MutationObserver((records) => { if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.id === "xiv-root" || node.matches?.(".xiv-tile") || node.querySelector?.(".xiv-tile"))))) { ensureUi(); scheduleApply(); } });
   if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
   document.addEventListener("click", (event) => {
     if (event.target?.closest?.(".fl-mf-section, .fl-mf-block")) scheduleApply(80);

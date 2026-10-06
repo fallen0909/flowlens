@@ -2,10 +2,6 @@
   if (window.__flowLensVisibleSequenceSafe) return;
   window.__flowLensVisibleSequenceSafe = true;
 
-  const nativeAdd = EventTarget.prototype.addEventListener;
-  const wrapped = new WeakMap();
-  let opening = false;
-
   function box() {
     const node = document.getElementById("xiv-lightbox");
     return node?.dataset.active === "true" ? node : null;
@@ -48,15 +44,8 @@
   }
 
   function openTile(tile) {
-    if (!tile || opening) return false;
-    opening = true;
-    try {
-      tile.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, button: 0, clientX: 2, clientY: 2 }));
-      tile.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, clientX: 2, clientY: 2, view: window }));
-    } finally {
-      setTimeout(() => { opening = false; compactLabels(); }, 80);
-    }
-    return true;
+    if (!tile) return false;
+    return window.__flowLensControl?.openLightboxIndex?.(Number(tile.dataset.index)) === true;
   }
 
   function jump(delta) {
@@ -83,85 +72,9 @@
     });
   }
 
-  function claim(event) {
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    event.stopImmediatePropagation?.();
-  }
-
-  function listenerName(listener) {
-    if (typeof listener === "function") return listener.name || "";
-    if (listener && typeof listener.handleEvent === "function") return listener.handleEvent.name || "";
-    return "";
-  }
-
-  function call(listener, target, event) {
-    if (typeof listener === "function") return listener.call(target, event);
-    return listener?.handleEvent?.call(listener, event);
-  }
-
-  EventTarget.prototype.addEventListener = function patchedAdd(type, listener, options) {
-    const name = listenerName(listener);
-    const shouldWrap = listener && (
-      name === "onKeydown" ||
-      name === "onLightboxWheel" ||
-      name === "onLightboxClick" ||
-      name === "endLightboxDrag"
-    );
-    if (!shouldWrap) return nativeAdd.call(this, type, listener, options);
-    let fn = wrapped.get(listener);
-    if (!fn) {
-      fn = function flowLensVisibleSequenceWrapper(event) {
-        if (box()) {
-          if (name === "onKeydown" && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
-            claim(event);
-            if (!event.repeat) jump(event.key === "ArrowRight" ? 1 : -1);
-            return;
-          }
-          if (name === "onLightboxWheel" && event.type === "wheel") {
-            if (box()?.dataset.zoom === "actual" && window.__flowLensHandleLightboxZoomWheel?.(event)) {
-              claim(event);
-              return;
-            }
-            claim(event);
-            const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
-            if (Math.abs(delta) >= 4) jump(delta > 0 ? 1 : -1);
-            return;
-          }
-          if (name === "onLightboxClick") {
-            if (event.target?.closest?.(".xiv-lightbox-slideshow")) {
-              claim(event);
-              return;
-            }
-            const arrow = event.target?.closest?.(".xiv-lightbox-arrow");
-            if (arrow) {
-              claim(event);
-              jump(arrow.dataset.side === "right" ? 1 : -1);
-              return;
-            }
-          }
-          if (name === "endLightboxDrag" && event.type.startsWith("pointer")) {
-            const before = currentUrl();
-            const ret = call(listener, this, event);
-            setTimeout(() => {
-              const after = currentUrl();
-              if (after && after !== before && reason(after, box())) jump(1);
-            }, 90);
-            return ret;
-          }
-        }
-        return call(listener, this, event);
-      };
-      wrapped.set(listener, fn);
-    }
-    return nativeAdd.call(this, type, fn, options);
-  };
-
   function patchControl() {
     const control = window.__flowLensControl;
     if (!control || control.__flVisibleSequenceSafe) return;
-    const original = control.showAdjacent?.bind(control);
-    control.showAdjacent = (delta = 1) => jump(delta >= 0 ? 1 : -1) || original?.(delta);
     control.compactVisibleLabels = compactLabels;
     control.__flVisibleSequenceSafe = true;
   }
@@ -173,5 +86,5 @@
   }, true);
   const boot = new MutationObserver(() => patchControl());
   if (document.documentElement) boot.observe(document.documentElement, { childList: true, subtree: true });
-  setInterval(patchControl, 1500);
+  patchControl();
 })();

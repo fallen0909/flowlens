@@ -20,7 +20,6 @@
   let zoomFactor = 1;
   let zoomMediaKey = "";
   let drag = null;
-  let slideshowPointerHandledAt = 0;
   let videoAdvanceTimer = 0;
   let lastEndedMediaKey = "";
   let lastEndedAt = 0;
@@ -116,7 +115,9 @@
       if (fav?.parentNode === box) box.insertBefore(btn, fav);
       else box.appendChild(btn);
     }
-    btn.dataset.active = slideshowActive ? "true" : "false";
+    const active = String(slideshowActive);
+    if (btn.dataset.active !== active) btn.dataset.active = active;
+    btn.setAttribute("aria-pressed", active);
     btn.title = slideshowActive ? "暂停大图自动切换" : `开始大图自动切换（${speedLabel(slideshowDelay())}）`;
     btn.setAttribute("aria-label", btn.title);
     return btn;
@@ -143,31 +144,21 @@
     return box?.querySelector("video") || iframeVideo(box?.querySelector("iframe[data-media-url], .xiv-video-frame"));
   }
 
+  let waitingVideoKey = "";
+  let waitingVideoSince = 0;
   function playVideo(video) {
-    if (!video) return false;
-    if (!video.playsInline) video.playsInline = true;
-    if (!video.paused && !video.ended) return true;
-    try {
-      const promise = video.play?.();
-      promise?.catch?.(() => {
-        try {
-          video.muted = true;
-          video.play?.()?.catch?.(() => {});
-        } catch {}
-      });
-    } catch {}
-    return true;
+    if (!video || video.ended) return false;
+    if (video.paused && video.dataset.played !== "true") coreApi()?.playVideo?.(video);
+    return !video.error && video.dataset.flPlaybackBlocked !== "true";
   }
-
   function videoRunning() {
     const video = activeVideo();
-    if (!video) return false;
-    // Calling play() on an ended video restarts it in Chromium. Check ended
-    // first or the slideshow can loop the same video forever.
-    if (video.ended) return false;
+    if (!video || video.ended || video.error || video.dataset.flPlaybackBlocked === "true") return false;
+    const key = mediaKey(video);
+    if (key !== waitingVideoKey) { waitingVideoKey = key; waitingVideoSince = Date.now(); }
     playVideo(video);
-    const duration = Number(video.duration || 0);
-    if (Number.isFinite(duration) && duration > 0) return Number(video.currentTime || 0) < duration - 0.35;
+    if (video.readyState < 2 || video.paused) return Date.now() - waitingVideoSince < 15000;
+    waitingVideoSince = Date.now();
     return true;
   }
 
@@ -214,6 +205,8 @@
     if (!slideshowActive || !isOpen()) return;
     const key = sourceKey || mediaKey();
     const now = Date.now();
+    const currentKey = mediaKey();
+    if (key && currentKey && key !== currentKey) return;
     if (key && key === lastEndedMediaKey && now - lastEndedAt < 1200) return;
     lastEndedMediaKey = key;
     lastEndedAt = now;
@@ -244,12 +237,13 @@
   }
 
   function stopSlideshow(update = true) {
+    const changed = slideshowActive;
     slideshowActive = false;
     clearTimeout(slideshowTimer);
     clearTimeout(videoAdvanceTimer);
     slideshowTimer = 0;
     if (update && isOpen()) ensureButton();
-    window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: false } }));
+    if (changed) window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: false } }));
   }
 
   function toggleSlideshow() { slideshowActive ? stopSlideshow() : startSlideshow(); }
@@ -351,16 +345,14 @@
     if (!event.target?.closest?.(".xiv-lightbox-slideshow")) return;
     if (!isOpen()) return;
     if (!ownsSlideshow()) return;
-    slideshowPointerHandledAt = Date.now();
     claim(event);
-    toggleSlideshow();
   }
 
   function onClick(event) {
     if (event.target?.closest?.(".xiv-lightbox-slideshow")) {
       if (!ownsSlideshow()) return;
       claim(event);
-      if (Date.now() - slideshowPointerHandledAt > 500) toggleSlideshow();
+      toggleSlideshow();
       return;
     }
     if (event.target?.closest?.(".xiv-lightbox-close")) window.setTimeout(removeButton, 40);
@@ -429,6 +421,8 @@
 
   window.addEventListener("message", (event) => {
     const msg = event.data || {};
+    const frame = lightbox()?.querySelector("iframe[data-media-url]");
+    if (!frame || event.source !== frame.contentWindow) return;
     if (msg.type === "XIV_VIDEO_TIME" && msg.eventName === "ended") advanceAfterVideoEnded(String(msg.url || ""));
   });
   document.addEventListener("pointerdown", onSlideshowPointerDown, true);

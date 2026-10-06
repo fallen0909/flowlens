@@ -159,7 +159,7 @@
     currentMode = liveFilter();
     button.title = `切换图/视频：当前${FILTER_TEXT[currentMode]}`;
     button.setAttribute("aria-label", button.title);
-    button.innerHTML = filterIcon(currentMode);
+    if (button.dataset.flIconMode !== currentMode) { button.dataset.flIconMode = currentMode; button.innerHTML = filterIcon(currentMode); }
   }
 
   function speedLabel(ms) {
@@ -190,7 +190,7 @@
       if (h3?.nextSibling) panel.insertBefore(versionRow, h3.nextSibling);
       else panel.prepend(versionRow);
     }
-    versionRow.innerHTML = `<span>瀑光版本</span><strong>v${VERSION}</strong>`;
+    if (versionRow.dataset.version !== VERSION) { versionRow.dataset.version = VERSION; versionRow.innerHTML = `<span>瀑光版本</span><strong>v${VERSION}</strong>`; }
 
     let speedRow = panel.querySelector(".fl-slideshow-speed-row");
     if (!speedRow) {
@@ -230,7 +230,7 @@
       // stops itself.
       app.querySelectorAll(":scope > .xiv-lightbox-slideshow").forEach((node) => node.remove());
       if (slideshowActive) stopSlideshow(false);
-      app.dataset.flLightbox = isLightboxOpen() ? "true" : "false";
+      if (app.dataset.flLightbox !== String(isLightboxOpen())) app.dataset.flLightbox = String(isLightboxOpen());
       return;
     }
     let button = app.querySelector(".xiv-lightbox-slideshow");
@@ -252,7 +252,7 @@
       app.appendChild(button);
     }
     const open = isLightboxOpen();
-    app.dataset.flLightbox = open ? "true" : "false";
+    if (app.dataset.flLightbox !== String(open)) app.dataset.flLightbox = String(open);
     if (!open) {
       stopSlideshow(false);
       return;
@@ -308,7 +308,7 @@
   function checkLightbox() {
     const app = root();
     const open = isLightboxOpen();
-    if (app) app.dataset.flLightbox = open ? "true" : "false";
+    if (app) if (app.dataset.flLightbox !== String(open)) app.dataset.flLightbox = String(open);
     if (!open) stopSlideshow(false);
     ensureSlideshowButton();
   }

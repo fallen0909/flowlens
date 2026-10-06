@@ -41,14 +41,8 @@
   }
 
   function cleanupPageLockIfClosed() {
-    const root = document.getElementById("xiv-root");
-    if (root?.dataset.active === "true") return;
-    document.documentElement.classList.remove("xiv-active");
-    for (const node of [document.documentElement, document.body]) {
-      if (!node) continue;
-      if (node.style.overflow === "hidden") node.style.overflow = "";
-      if (node.style.pointerEvents === "none") node.style.pointerEvents = "";
-    }
+    if (viewerIsActive()) return;
+    window.__flowLensControl?.restorePageLock?.();
   }
 
   function schedulePageLockRecovery() {
@@ -133,31 +127,10 @@
     if (!root || root.dataset.active !== "true") return;
     const tiles = [...document.querySelectorAll("#xiv-grid .xiv-tile")];
     if (!tiles.length) return;
-    const duplicateCount = dedupeTilesDom(tiles);
-    let imageCount = 0;
-    let videoCount = 0;
-    let visible = 0;
-    for (const tile of tiles) {
-      const duplicate = tile.dataset.flDuplicate === "true";
-      const type = mediaTypeOfTile(tile);
-      if (!duplicate) {
-        if (type === "video") videoCount += 1;
-        else imageCount += 1;
-      }
-      tile.dataset.flMediaType = type;
-      const show = !duplicate && (value === "all" || value === type);
-      tile.hidden = !show;
-      tile.style.display = show ? "" : "none";
-      if (show) visible += 1;
-    }
-    const counter = document.getElementById("xiv-counter");
-    if (counter) {
-      const total = imageCount + videoCount;
-      const dedupeText = duplicateCount ? `，去重 ${duplicateCount}` : "";
-      if (value === "image") counter.textContent = `图片 ${visible}/${imageCount}${dedupeText}`;
-      else if (value === "video") counter.textContent = `视频 ${visible}/${videoCount}${dedupeText}`;
-      else counter.textContent = `${total} 个${dedupeText}`;
-    }
+    dedupeTilesDom(tiles);
+    const api = window.__flowLensControl;
+    if (api?.getMediaFilter?.() !== value) api?.setMediaFilter?.(value);
+    else api?.refreshMediaFilter?.();
   }
 
   function setStoredFilter(value) {
@@ -226,9 +199,7 @@
       if (target?.id === "xiv-root" || target?.id === "xiv-grid") return true;
       return [...mutation.addedNodes].some((node) => node?.nodeType === 1 && (node.id === "xiv-root" || node.id === "xiv-grid" || node.querySelector?.("#xiv-root, #xiv-grid, .xiv-tile")));
     });
-    if (important || viewerIsActive()) scheduleApplyAll();
-    else schedulePageLockRecovery();
-  }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "class", "style"] });
+    if (important) scheduleApplyAll();
+  }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active"] });
   window.addEventListener("resize", () => applyFilterDom(getStoredFilter()), { passive: true });
-  window.setInterval(cleanupPageLockIfClosed, 1500);
 })();

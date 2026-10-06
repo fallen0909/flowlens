@@ -115,6 +115,12 @@
     fetchedPages: new Set(),
     expectedImages: 0,
     fetching: false,
+    collectionGeneration: 0,
+    navigationGeneration: 0,
+    collectionController: new AbortController(),
+    pendingPages: new Set(),
+    failedPages: new Map(),
+    pageLock: null,
     downloading: false,
     autoScroll: false,
     autoScrollSpeed: 3,
@@ -264,6 +270,7 @@
     }
     try {
       localStorage.setItem(settingsStorageKey(), JSON.stringify(state.settings));
+      window.__flowLensSyncGlobalSettings?.(patch);
     } catch {
       // Storage can be blocked on restricted pages; settings remain active for this session.
     }
@@ -2311,7 +2318,7 @@
     void probeCd2Bridge();
   }
 
-  function fetchSameOriginDocumentViaFrame(targetUrl, timeoutMs = 18000) {
+  function fetchSameOriginDocumentViaFrame(targetUrl, timeoutMs = 18000, signal = null) {
     return new Promise((resolve, reject) => {
       let done = false;
       const frame = document.createElement("iframe");
@@ -2321,12 +2328,16 @@
         if (done) return;
         done = true;
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
         try { frame.remove(); } catch {}
         if (error) reject(error);
         else resolve(doc);
       }
 
       const timeout = window.setTimeout(() => finish(new Error("frame timeout")), timeoutMs);
+      const onAbort = () => finish(new DOMException("Collection changed", "AbortError"));
+      if (signal?.aborted) { onAbort(); return; }
+      signal?.addEventListener("abort", onAbort, { once: true });
       frame.addEventListener("load", () => {
         window.setTimeout(() => {
           try {
@@ -2361,6 +2372,8 @@
       return loadSelfieGalleryQueueTargetInPlace(targetUrl);
     }
 
+    const navigation = ++state.navigationGeneration;
+    const isCurrent = () => state.active && navigation === state.navigationGeneration;
     const virtualSelfieNavigation = false;
     const previousQueueUrl = state.galleryQueueCurrentUrl;
     const genericTarget = GENERIC_X810114_RE.test(targetUrl);
@@ -2372,6 +2385,7 @@
         html = await fetchHtml(targetUrl, previousQueueUrl || location.href);
         targetDoc = new DOMParser().parseFromString(html, "text/html");
       } catch {
+        if (!isCurrent()) return false;
         if (!isKnownGalleryUrl(targetUrl)) return false;
         try {
           targetDoc = await fetchSameOriginDocumentViaFrame(targetUrl);
@@ -2391,6 +2405,7 @@
         queueDoc = null;
       }
     }
+    if (!isCurrent()) return false;
     updateStatus("正在加载下一组");
     saveViewerPosition();
     closeLightbox(false);
@@ -2419,6 +2434,7 @@
 
     if (genericTarget) {
       await prepareGenericX810114Page();
+      if (!isCurrent()) return false;
       if (!state.x810114ApiMode) startGenericObserver();
     } else {
       collectFromDocument(targetDoc, targetUrl);
@@ -2447,6 +2463,8 @@
     const targetUrl = normalizedPageUrl(target);
     if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
 
+    const navigation = ++state.navigationGeneration;
+    const isCurrent = () => state.active && navigation === state.navigationGeneration;
     let html = "";
     let doc = null;
     try {
@@ -2454,17 +2472,20 @@
       html = await fetchHtml(targetUrl, state.galleryQueueCurrentUrl || location.href);
       doc = new DOMParser().parseFromString(html, "text/html");
     } catch {
+      if (!isCurrent()) return false;
       if (isXchinaPhotoUrl(targetUrl)) {
         try {
           doc = await fetchSameOriginDocumentViaFrame(targetUrl);
         } catch {}
       }
+      if (!isCurrent()) return false;
       if (!doc) {
       updateStatus("收藏页面读取失败，已保留当前图片流");
       return false;
       }
     }
 
+    if (!isCurrent()) return false;
     if (!doc?.documentElement) {
       updateStatus("收藏页面无法解析，已保留当前图片流");
       return false;
@@ -2510,15 +2531,19 @@
   }
 
   async function loadSelfieGalleryQueueTargetInPlace(targetUrl) {
+    const navigation = ++state.navigationGeneration;
+    const isCurrent = () => state.active && navigation === state.navigationGeneration;
     const previousQueueUrl = state.galleryQueueCurrentUrl || location.href;
     let doc = null;
     try {
       doc = await fetchSelfieGalleryDocument(targetUrl, previousQueueUrl);
     } catch {
+      if (!isCurrent()) return false;
       updateStatus("下一组加载失败，已保留当前全屏");
       return false;
     }
 
+    if (!isCurrent()) return false;
     doc.documentElement.dataset.xivBase = targetUrl;
     updateStatus("正在切换下一组");
     saveViewerPosition();
@@ -3503,7 +3528,18 @@
     return HTTP_PAGE_RE.test(location.href);
   }
 
+  function invalidateCollectionRequests() {
+    state.collectionGeneration += 1;
+    state.collectionController.abort();
+    state.collectionController = new AbortController();
+    state.pendingPages.clear();
+    state.failedPages.clear();
+    state.fetching = false;
+    state.lastGalleryFetchAt = 0;
+  }
+
   function resetCollection() {
+    invalidateCollectionRequests();
     state.images = [];
     state.detailByImage.clear();
     state.photoShowByImage.clear();
@@ -4275,9 +4311,38 @@
       video.dataset.sourceUrl = fallback;
       video.src = fallback;
       video.load();
-      if (autoplay) video.play().catch(() => {});
+      if (autoplay) requestVideoPlayback(video);
     };
     video.dataset.loadTimer = String(window.setTimeout(tryFallback, autoplay ? 4500 : 3200));
+  }
+
+  const videoPlayRequests = new WeakMap();
+  function requestVideoPlayback(video, userInitiated = false) {
+    if (!video || !video.isConnected || video.ended || (!userInitiated && video.dataset.played === "true")) return Promise.resolve(false);
+    if (videoPlayRequests.has(video)) return videoPlayRequests.get(video);
+    video.playsInline = true;
+    if (userInitiated) { video.muted = false; video.volume = 1; }
+    const play = async () => {
+      try {
+        await video.play();
+        delete video.dataset.flPlaybackBlocked;
+        return true;
+      } catch (error) {
+        if (!video.isConnected || video.ended) return false;
+        if (error?.name === "NotAllowedError" && !video.muted) {
+          video.muted = true;
+          try { await video.play(); delete video.dataset.flPlaybackBlocked; return true; } catch (mutedError) { error = mutedError; }
+        }
+        if (error?.name !== "AbortError") {
+          video.dataset.flPlaybackBlocked = "true";
+          if (state.lightbox?.contains(video)) updateStatus("视频未能自动播放，请点击视频播放控件");
+        }
+        return false;
+      }
+    };
+    const pending = play().finally(() => videoPlayRequests.delete(video));
+    videoPlayRequests.set(video, pending);
+    return pending;
   }
 
   function createVideoElement(url, options = {}) {
@@ -4355,7 +4420,7 @@
     });
     video.addEventListener("canplay", () => {
       clearTimeout(Number(video.dataset.loadTimer || 0));
-      if (autoplay) video.play().catch(() => {});
+      if (autoplay) requestVideoPlayback(video);
     });
     video.addEventListener("playing", () => {
       video.dataset.played = "true";
@@ -4379,13 +4444,16 @@
   }
 
   async function collectX810114ProfileFromApi() {
+    const generation = state.collectionGeneration;
+    const signal = state.collectionController.signal;
     const name = x810114ProfileName();
     if (!name) return false;
     updateStatus("读取站点数据");
     const apiUrl = `https://x.moonchan.xyz/api/twitter/${encodeURIComponent(name)}.json.gz?t=${new Date().toISOString().slice(0, 10)}`;
-    const res = await fetch(apiUrl, { credentials: "omit", cache: "no-store" });
+    const res = await fetch(apiUrl, { credentials: "omit", cache: "no-store", signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (signal.aborted || generation !== state.collectionGeneration) return false;
     const timeline = Array.isArray(data.timeline) ? data.timeline : [];
     state.expectedImages = Number(data.total_urls || timeline.length || 0);
     let added = 0;
@@ -4401,6 +4469,8 @@
   }
 
   async function prepareGenericX810114Page() {
+    const generation = state.collectionGeneration;
+    const isCurrent = () => generation === state.collectionGeneration && !state.collectionController.signal.aborted;
     if (!isX810114ProfilePage()) {
       collectFromDocument(document, location.href);
       updateStatus(`已收集 ${state.images.length} 张`);
@@ -4409,14 +4479,17 @@
     try {
       if (await collectX810114ProfileFromApi()) return;
     } catch {
+      if (!isCurrent()) return;
       updateStatus("接口失败，改用页面收集");
     }
+    if (!isCurrent()) return;
     const expand = findButtonByText(/展开全部/);
     if (expand) {
       updateStatus("正在展开全部");
       expand.click();
       await sleep(900);
     }
+    if (!isCurrent()) return;
     collectFromDocument(document, location.href);
     updateStatus(`已收集 ${state.images.length} 张`);
   }
@@ -4767,6 +4840,9 @@
   }
 
   async function fetchRemainingPages(limit = GALLERY_FETCH_BATCH, force = false) {
+    const generation = state.collectionGeneration;
+    const signal = state.collectionController.signal;
+    const isCurrent = () => generation === state.collectionGeneration && !signal.aborted;
     const activeUrl = activeGalleryQueueUrl();
     if (!isPhotoGalleryPage(activeUrl)) {
       updateStatus("当前页模式");
@@ -4785,25 +4861,35 @@
     async function fetchPageDoc(url) {
       let lastError = "";
       try {
-        const res = await fetch(url, { credentials: "include", cache: "no-store", referrer: activeUrl });
-        if (!res.ok) {
-          lastError = `HTTP ${res.status}`;
-        } else {
-          const html = await res.text();
-          if (/正在进行安全验证|cloudflare|cf-browser-verification|Just a moment/i.test(html)) {
-            lastError = "security page";
-          } else {
-            const doc = new DOMParser().parseFromString(html, "text/html");
-            doc.documentElement.dataset.xivBase = url;
-            return doc;
+        const requestController = new AbortController();
+        const abort = () => requestController.abort();
+        signal.addEventListener("abort", abort, { once: true });
+        const timeout = setTimeout(abort, 25000);
+        let res;
+        try {
+          res = await fetch(url, { credentials: "include", cache: "no-store", referrer: activeUrl, signal: requestController.signal });
+          if (res.ok) {
+            const html = await res.text();
+            if (!isCurrent()) throw new DOMException("Collection changed", "AbortError");
+            if (!/正在进行安全验证|cloudflare|cf-browser-verification|Just a moment/i.test(html)) {
+              const doc = new DOMParser().parseFromString(html, "text/html");
+              doc.documentElement.dataset.xivBase = url;
+              return doc;
+            }
+            throw new Error("security page");
           }
+        } finally {
+          clearTimeout(timeout);
+          signal.removeEventListener("abort", abort);
         }
+        lastError = `HTTP ${res.status}`;
       } catch (error) {
+        if (!isCurrent()) throw error;
         lastError = String(error?.message || error);
       }
       if (isKnownGalleryUrl(url)) {
         try {
-          const doc = await fetchSameOriginDocumentViaFrame(url, 22000);
+          const doc = await fetchSameOriginDocumentViaFrame(url, 22000, signal);
           doc.documentElement.dataset.xivBase = url;
           return doc;
         } catch (error) {
@@ -4817,10 +4903,15 @@
       let loaded = 0;
       let claimed = 0;
       const nextPage = () => {
+        if (!isCurrent()) return "";
         if (claimed >= limit) return "";
-        const url = sortedPageUrls().find((candidate) => !state.fetchedPages.has(candidate) && !samePageUrl(candidate, activeUrl));
+        const url = sortedPageUrls().find((candidate) => {
+          const failure = state.failedPages.get(candidate);
+          return !state.fetchedPages.has(candidate) && !state.pendingPages.has(candidate) && !samePageUrl(candidate, activeUrl)
+            && (!failure || (failure.attempts < 3 && (force || Date.now() >= failure.retryAt)));
+        });
         if (!url) return "";
-        state.fetchedPages.add(url);
+        state.pendingPages.add(url);
         claimed += 1;
         return url;
       };
@@ -4831,12 +4922,20 @@
           updateStatus(`加载分页 ${loaded + 1}/${state.pageUrls.size}`);
           try {
             const doc = await fetchPageDoc(url);
+            if (!isCurrent()) return;
             collectFromDocument(doc, url);
+            state.fetchedPages.add(url);
+            state.failedPages.delete(url);
+            state.galleryFailureCount = state.failedPages.size;
           } catch (error) {
-            state.galleryFailureCount += 1;
+            if (!isCurrent()) return;
+            const attempts = (state.failedPages.get(url)?.attempts || 0) + 1;
+            state.failedPages.set(url, { attempts, retryAt: Date.now() + attempts * 1000 });
+            state.galleryFailureCount = state.failedPages.size;
             debugLog("分页加载异常", { url, error: String(error?.message || error) });
             updateStatus(`分页异常：${String(error?.message || error).slice(0, 36)}`);
           } finally {
+            if (isCurrent()) state.pendingPages.delete(url);
             loaded += 1;
             if (isKnownGalleryUrl(activeUrl)) await sleep(160);
           }
@@ -4845,6 +4944,7 @@
       const workers = Math.min(2, Math.max(1, limit));
       await Promise.all(Array.from({ length: workers }, worker));
     } finally {
+      if (!isCurrent()) return;
       state.fetching = false;
       const hasMore = sortedPageUrls().some((url) => !state.fetchedPages.has(url) && !samePageUrl(url, activeUrl));
       if (hasMore && state.active) {
@@ -5538,7 +5638,8 @@
       if (!Number.isInteger(i) || i < 0) return;
       tile.dataset.index = String(i);
       const label = tile.querySelector("span");
-      if (label) label.textContent = String(i + 1).padStart(2, "0");
+      const text = String(i + 1).padStart(2, "0");
+      if (label && label.textContent !== text) label.textContent = text;
     });
   }
 
@@ -5566,10 +5667,14 @@
   }
 
   function applyMediaFilter() {
+    let changed = false;
     allTiles().forEach((tile) => {
-      tile.hidden = !mediaMatchesFilter(tile.dataset.url || "");
+      const blocked = tile.dataset.flDuplicate === "true" || !!window.__flowLensMediaFilter?.reasonFor?.(tile.dataset.url, tile);
+      const hidden = !mediaMatchesFilter(tile.dataset.url || "") || blocked;
+      if (tile.hidden !== hidden) { tile.hidden = hidden; changed = true; }
+      if (tile.style.display) tile.style.removeProperty("display");
     });
-    layoutMasonry();
+    if (changed) layoutMasonry();
   }
 
   function rebuildMasonry() {
@@ -5876,13 +5981,12 @@
     const visibleCount = filteredImages().length;
     const suffix = state.mediaFilter === "all" ? "" : ` / 显示 ${visibleCount}`;
     const expected = isPornpicsGalleryPage() ? 0 : state.expectedImages;
-    state.counter.textContent = expected
-      ? `${state.images.length}/${state.expectedImages} 张${suffix}`
-      : `${state.images.length} 张${suffix}`;
+    const text = expected ? `${state.images.length}/${state.expectedImages} 张${suffix}` : `${state.images.length} 张${suffix}`;
+    if (state.counter.textContent !== text) state.counter.textContent = text;
   }
 
   function updateStatus(text) {
-    if (state.status) state.status.textContent = text;
+    if (state.status && state.status.textContent !== text) state.status.textContent = text;
   }
 
   function setColumns(next, persist = true) {
@@ -6337,8 +6441,10 @@
   async function waitForGalleryFetch() {
     while (state.fetching) await sleep(180);
     while (state.fetchedPages.size < state.pageUrls.size) {
+      const before = state.fetchedPages.size;
       await fetchRemainingPages(GALLERY_FETCH_BATCH, true);
       while (state.fetching) await sleep(180);
+      if (state.fetchedPages.size === before) break;
     }
   }
 
@@ -6454,6 +6560,24 @@
     state.hostOverlayTimer = 0;
   }
 
+  function acquirePageLock() {
+    if (state.pageLock) return;
+    state.pageLock = [document.documentElement, document.body].filter(Boolean).map(node => ({
+      node, value: node.style.getPropertyValue("overflow"), priority: node.style.getPropertyPriority("overflow")
+    }));
+    state.pageLock.forEach(({ node }) => node.style.setProperty("overflow", "hidden"));
+  }
+
+  function restorePageLock() {
+    if (state.active || !state.pageLock) return;
+    for (const { node, value, priority } of state.pageLock) {
+      if (node.style.getPropertyValue("overflow") !== "hidden") continue;
+      if (value) node.style.setProperty("overflow", value, priority);
+      else node.style.removeProperty("overflow");
+    }
+    state.pageLock = null;
+  }
+
   async function openViewer() {
     ensureUi();
     if (!isSupportedPage()) {
@@ -6462,6 +6586,7 @@
       return;
     }
 
+    const navigation = ++state.navigationGeneration;
     resetCollection();
     state.galleryQueueCurrentUrl = normalizedPageUrl(location.href);
     state.galleryQueueCurrentTitle = pageTitleFromDocument(document, location.href);
@@ -6474,8 +6599,7 @@
     state.root.dataset.active = "true";
     state.root.dataset.theme = state.theme;
     if (!isGenericX810114Page()) {
-      document.documentElement.style.overflow = "hidden";
-      document.body.style.overflow = "hidden";
+      acquirePageLock();
     }
 
     if (!state.images.length) {
@@ -6483,6 +6607,7 @@
       state.pageUrls.add(location.href);
       if (isGenericX810114Page()) {
         await prepareGenericX810114Page();
+        if (!state.active || navigation !== state.navigationGeneration) return;
       } else {
         collectFromDocument(document, location.href);
       }
@@ -6509,6 +6634,8 @@
 
   async function closeViewer() {
     if (!state.root) return;
+    state.navigationGeneration += 1;
+    invalidateCollectionRequests();
     closePanels();
     saveViewerPosition();
     closeLightbox(false);
@@ -6525,8 +6652,7 @@
     state.galleryQueueCurrentTitle = "";
     document.documentElement.classList.remove("xiv-active");
     state.root.dataset.active = "false";
-    document.documentElement.style.overflow = "";
-    document.body.style.overflow = "";
+    restorePageLock();
     if (document.fullscreenElement === state.root) {
       try {
         await document.exitFullscreen();
@@ -7083,6 +7209,21 @@
     const video = document.getElementById("v");
     video.volume = 1;
     video.muted = false;
+    let started = false;
+    let playPending = false;
+    async function startPlayback() {
+      if (started || playPending || video.ended) return;
+      playPending = true;
+      try { await video.play(); }
+      catch (error) {
+        if (error.name === "NotAllowedError") {
+          video.muted = true;
+          try { await video.play(); } catch { send("autoplay-blocked"); }
+        } else if (error.name !== "AbortError") send("playback-error");
+      } finally { playPending = false; }
+    }
+    video.addEventListener("playing", () => { started = true; video.dataset.played = "true"; });
+    video.addEventListener("canplay", startPlayback);
 
     function send(eventName) {
       parent.postMessage({
@@ -7098,7 +7239,7 @@
       if (startTime > 0 && Number.isFinite(video.duration) && startTime < video.duration - 0.5) {
         try { video.currentTime = startTime; } catch {}
       }
-      video.play().catch(() => {});
+      startPlayback();
       send("loadedmetadata");
     });
     ["timeupdate", "pause", "ended", "seeked", "playing"].forEach((eventName) => {
@@ -7106,9 +7247,10 @@
     });
     window.addEventListener("message", (event) => {
       const message = event.data || {};
-      if (message.type !== "XIV_VIDEO_CONTROL" || message.url !== mediaUrl) return;
+      if (event.source !== parent || message.type !== "XIV_VIDEO_CONTROL" || message.url !== mediaUrl) return;
       send("before-" + message.action);
       if (message.action === "pause") video.pause();
+      if (message.action === "play") { started = false; startPlayback(); }
     });
     setInterval(() => send("tick"), 500);
   </script>
@@ -7171,7 +7313,7 @@
     video.addEventListener("loadedmetadata", () => updateLightboxZoomHint(video));
     video.addEventListener("loadeddata", () => updateLightboxZoomHint(video));
     state.lightbox.appendChild(video);
-    video.play().catch(() => {});
+    requestVideoPlayback(video);
   }
 
   function unloadVideoElement(video) {
@@ -7211,6 +7353,8 @@
   function onVideoFrameMessage(event) {
     const message = event.data || {};
     if (message.type !== "XIV_VIDEO_TIME") return;
+    const frame = state.lightbox?.querySelector("iframe[data-media-url]");
+    if (!frame || event.source !== frame.contentWindow || message.url !== frame.dataset.mediaUrl) return;
     const url = normalizeMediaUrl(String(message.url || ""));
     const time = Number(message.currentTime || 0);
     if (message.eventName === "ended" && state.lightbox?.dataset.active === "true") {
@@ -7221,14 +7365,18 @@
   }
 
   function showAdjacentImage(delta) {
-    if (!state.images.length) return;
+    if (!state.images.length) return false;
     let next = state.index;
     for (let step = 0; step < state.images.length; step += 1) {
       next = (next + delta + state.images.length) % state.images.length;
-      if (mediaMatchesFilter(state.images[next])) break;
+      const tile = state.grid?.querySelector(`.xiv-tile[data-index="${next}"]`);
+      const blocked = window.__flowLensMediaFilter?.reasonFor?.(state.images[next], tile);
+      if (mediaMatchesFilter(state.images[next]) && !blocked && (!tile || (!tile.hidden && tile.style.display !== "none"))) break;
+      if (step === state.images.length - 1) return false;
     }
     state.lightboxGestureToken = Date.now();
     openLightbox(next);
+    return true;
   }
 
   function actualZoomCssSize(media) {
@@ -7669,6 +7817,7 @@
 
   function installControlApi() {
     window.__flowLensControl = {
+      refreshMediaFilter() { applyMediaFilter(); updateCounter(); },
       getMediaFilter() {
         return state.mediaFilter;
       },
@@ -7684,8 +7833,21 @@
       },
       showAdjacent(delta = 1) {
         if (state.lightbox?.dataset.active !== "true") return false;
-        showAdjacentImage(delta >= 0 ? 1 : -1);
+        return showAdjacentImage(delta >= 0 ? 1 : -1);
+      },
+      openLightboxIndex(index) {
+        if (!state.active || !Number.isInteger(index) || index < 0 || index >= state.images.length) return false;
+        state.lightboxGestureToken = Date.now();
+        void openLightbox(index);
         return true;
+      },
+      restorePageLock,
+      playVideo: requestVideoPlayback,
+      retryFailedPages() {
+        if (state.fetching) return Promise.resolve(false);
+        state.failedPages.clear();
+        state.galleryFailureCount = 0;
+        return fetchRemainingPages(GALLERY_FETCH_BATCH, true);
       },
       currentPageBookmarkUrl() {
         return normalizedPageUrl(state.galleryQueueCurrentUrl || location.href);
@@ -7768,6 +7930,7 @@
   }
 
   installControlApi();
+  window.addEventListener("flowlens:settings-updated", () => { loadSettings(); if (state.root) applySettings(); });
   ensureUi();
   maybeAutoOpenFromGalleryQueue();
 })();

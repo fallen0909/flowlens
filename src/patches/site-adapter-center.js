@@ -102,13 +102,14 @@
     }
     const data = status();
     if (!data) {
-      section.innerHTML = "<h4>站点适配中心</h4><small>等待 FlowLens 初始化。</small>";
+      const html = "<h4>站点适配中心</h4><small>等待 FlowLens 初始化。</small>";
+      if (section.__flowLensHtml !== html) { section.__flowLensHtml = html; section.innerHTML = html; }
       return;
     }
     const media = data.media || {};
     const pages = data.pages || {};
     const queue = data.queue || {};
-    section.innerHTML = `
+    const html = `
       <h4>站点适配中心</h4>
       <div class="fl-site-adapter-tags">${(data.adapters || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
       <div class="fl-site-adapter-grid">
@@ -119,7 +120,9 @@
         <div class="fl-site-adapter-card"><b>渲染</b><span>${media.rendered ?? 0}${media.queuedRender ? `，待渲染 ${media.queuedRender}` : ""}</span></div>
         <div class="fl-site-adapter-card"><b>组图队列</b><span>${queue.total ? `${Math.max(0, queue.index + 1)}/${queue.total}` : "未识别"}</span></div>
       </div>
+      <button type="button" data-fl-retry-pages ${!pages.failures || pages.fetching ? "disabled" : ""}>重试失败分页</button>
     `;
+    if (section.__flowLensHtml !== html) { section.__flowLensHtml = html; section.innerHTML = html; }
   }
 
   function scheduleRender() {
@@ -131,6 +134,9 @@
   if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-open"] });
   window.addEventListener("flowlens:gallery-items-rendered", scheduleRender);
   window.addEventListener("flowlens:media-filter-applied", scheduleRender);
-  document.addEventListener("click", scheduleRender, true);
+  document.addEventListener("click", (event) => {
+    if (event.target?.closest?.("[data-fl-retry-pages]")) void window.__flowLensControl?.retryFailedPages?.();
+    scheduleRender();
+  }, true);
   scheduleRender();
 })();

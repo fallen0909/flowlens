@@ -1,83 +1,34 @@
-// ==UserScript==
-// @name         瀑光 FlowLens 全局设置同步
-// @namespace    local.flowlens.settings
-// @version      1.3.5
-// @description  让隐藏入口图标、主题、列数、自动滚动速度、大图切换速度等设置在所有网站共用一份。
-// @match        *://*/*
-// @run-at       document-start
-// @noframes
-// @grant        GM_getValue
-// @grant        GM_setValue
-// ==/UserScript==
-
 (() => {
   if (window.__flowLensGlobalSettings) return;
   window.__flowLensGlobalSettings = true;
-
+  if (window.__flowLensSettingsStore || typeof GM_getValue !== "function") return;
   const SETTINGS_KEY = "flowlens-settings-v2";
   const GLOBAL_KEY = "flowlens-global-settings-v2";
   const SYNC_KEYS = ["launchHidden", "launchCompact", "autoFullscreen", "videoPreview", "theme", "columns", "autoScrollSpeed", "lightboxAutoDelay"];
-  let saveTimer = 0;
-
-  function safeJsonParse(text) {
-    try { return JSON.parse(text || "{}") || {}; } catch { return {}; }
+  const parse = value => { try { return typeof value === "string" ? JSON.parse(value) || {} : value || {}; } catch { return {}; } };
+  const pick = value => Object.fromEntries(SYNC_KEYS.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]));
+  function readLocal() { try { return parse(localStorage.getItem(SETTINGS_KEY)); } catch { return {}; } }
+  function readGlobal() { try { return pick(parse(GM_getValue(GLOBAL_KEY, "{}"))); } catch { return {}; } }
+  function apply() {
+    const settings = { ...readLocal(), ...readGlobal() };
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+    document.documentElement.classList.toggle("xiv-fl-launch-hidden", settings.launchHidden === true);
+    window.dispatchEvent(new CustomEvent("flowlens:settings-updated", { detail: settings }));
+    return settings;
   }
-
-  function readLocalSettings() {
-    return safeJsonParse(localStorage.getItem(SETTINGS_KEY) || "{}");
+  // Save only explicit changes; a background tab cannot overwrite newer values.
+  function sync(patch = {}) {
+    const changed = pick(patch);
+    if (Object.keys(changed).length) {
+      try { GM_setValue(GLOBAL_KEY, JSON.stringify({ ...readGlobal(), ...changed })); } catch {}
+    }
+    return apply();
   }
-
-  function writeLocalSettings(settings) {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings || {})); } catch { /* ignore */ }
+  window.__flowLensApplyGlobalSettings = apply;
+  window.__flowLensSyncGlobalSettings = sync;
+  apply();
+  if (typeof GM_addValueChangeListener === "function") {
+    GM_addValueChangeListener(GLOBAL_KEY, (_key, _old, _next, remote) => { if (remote) apply(); });
   }
-
-  function pick(settings) {
-    const result = {};
-    SYNC_KEYS.forEach((key) => {
-      if (Object.prototype.hasOwnProperty.call(settings || {}, key)) result[key] = settings[key];
-    });
-    return result;
-  }
-
-  function readGlobalSettings() {
-    try { return safeJsonParse(GM_getValue(GLOBAL_KEY, "{}")); } catch { return {}; }
-  }
-
-  function writeGlobalSettings(settings) {
-    try { GM_setValue(GLOBAL_KEY, JSON.stringify(pick(settings || {}))); } catch { /* ignore */ }
-  }
-
-  function applyLaunchVisibility(settings) {
-    document.documentElement.classList.toggle("xiv-fl-launch-hidden", settings && settings.launchHidden === true);
-  }
-
-  function applyGlobalToThisSite() {
-    const global = readGlobalSettings();
-    const local = readLocalSettings();
-    const merged = { ...local, ...pick(global) };
-    writeLocalSettings(merged);
-    applyLaunchVisibility(merged);
-    return merged;
-  }
-
-  function syncThisSiteToGlobal() {
-    const local = readLocalSettings();
-    writeGlobalSettings(local);
-    applyLaunchVisibility(local);
-  }
-
-  window.__flowLensApplyGlobalSettings = applyGlobalToThisSite;
-  window.__flowLensSyncGlobalSettings = syncThisSiteToGlobal;
-
-  applyGlobalToThisSite();
-
-  window.addEventListener("storage", (event) => {
-    if (event.key !== SETTINGS_KEY) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(syncThisSiteToGlobal, 120);
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") syncThisSiteToGlobal();
-  });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") apply(); });
 })();

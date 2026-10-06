@@ -55,11 +55,7 @@ const shared = [
   "src/patches/page-bookmarks.js"
 ];
 
-function header({ name, namespace, description, output, additions = [] }) {
-  const requires = [...shared, ...additions]
-    .map((path) => `// @require      ${baseUrl}/${path}?v=${version}`)
-    .join("\n");
-
+function header({ name, namespace, description, output, sources }) {
   return `// ==UserScript==
 // @name         ${name}
 // @namespace    ${namespace}
@@ -72,13 +68,22 @@ function header({ name, namespace, description, output, additions = [] }) {
 // @grant        GM_download
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_addValueChangeListener
 // @grant        GM_openInTab
 // @connect      localhost
 // @connect      127.0.0.1
+// @connect      self
+// @connect      video.twimg.com
+// @connect      pbs.twimg.com
+// @connect      twimg.moonchan.xyz
+// @connect      x.moonchan.xyz
+// @connect      img.xchina.io
+// @connect      upload.xchina.io
 // @downloadURL  ${baseUrl}/${output}
 // @updateURL    ${baseUrl}/${output}
-${requires}
 // ==/UserScript==
+
+${sources}
 
 (() => {
   window.__FLOWLENS_VERSION__ = "${version}";
@@ -88,7 +93,12 @@ ${requires}
 
 async function build(entry) {
   const output = entry.output.replace(/\.user\.js$/, `${outputSuffix}.user.js`);
-  await writeFile(resolve(root, output), header({ ...entry, output }), "utf8");
+  const modules = [...shared, ...(entry.additions || [])];
+  const sources = (await Promise.all(modules.map(async (path) => {
+    const source = (await readFile(resolve(root, path), "utf8")).replace(/^\uFEFF/, "").replace(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==\s*/g, "");
+    return `// FlowLens module: ${path}\n${source.trim()}\n`;
+  }))).join("\n");
+  await writeFile(resolve(root, output), header({ ...entry, output, sources }), "utf8");
 }
 
 await build({
@@ -106,4 +116,4 @@ await build({
   additions: ["src/mobile/mobile-center.js"]
 });
 
-console.log(`Built FlowLens userscript loaders v${version}`);
+console.log(`Built FlowLens userscript bundles v${version}`);

@@ -27,17 +27,19 @@ assert(/^\d+\.\d+\.\d+$/.test(version), `Invalid version: ${version}`);
 assert(versionManifest.desktop?.version === version, "desktop version must match version.json root version");
 assert(versionManifest.mobile?.version === version, "mobile version must match version.json root version");
 
-for (const path of [files.desktop, files.mobile]) {
+for (const path of [files.desktop, files.mobile, "flowlens-desktop-preview.user.js", "flowlens-mobile-all-preview.user.js"]) {
   const content = await text(path);
   assert(content.includes(`// @version      ${version}`), `${path} has stale @version`);
   assert(content.includes(`window.__FLOWLENS_VERSION__ = "${version}"`), `${path} has stale runtime version`);
-  assert(content.includes(`src/patches/lightbox-event-guard.js?v=${version}`), `${path} is missing lightbox event guard`);
-  assert(content.includes(`src/patches/lightbox-ios-smooth.js?v=${version}`), `${path} is missing smooth lightbox patch`);
-  assert(content.includes(`src/patches/lightbox-gallery-swipe.js?v=${version}`), `${path} is missing gallery swipe patch`);
-  assert(content.includes(`src/patches/lightbox-enhance.js?v=${version}`), `${path} is missing the slideshow controller`);
+  assert(content.includes(`// FlowLens module: src/patches/lightbox-event-guard.js`), `${path} is missing lightbox event guard`);
+  assert(content.includes(`// FlowLens module: src/patches/lightbox-ios-smooth.js`), `${path} is missing smooth lightbox patch`);
+  assert(content.includes(`// FlowLens module: src/patches/lightbox-gallery-swipe.js`), `${path} is missing gallery swipe patch`);
+  assert(content.includes(`// FlowLens module: src/patches/lightbox-enhance.js`), `${path} is missing the slideshow controller`);
   assert(!content.includes("src/patches/lightbox-control-fixes.js"), `${path} still loads the conflicting slideshow controller`);
-  assert(content.includes(`src/patches/site-adapter-center.js?v=${version}`), `${path} is missing site adapter center patch`);
-  assert(content.includes(`src/core/version.js?v=${version}`), `${path} has stale version center require`);
+  assert(content.includes(`// FlowLens module: src/patches/site-adapter-center.js`), `${path} is missing site adapter center patch`);
+  assert(content.includes(`// FlowLens module: src/core/version.js`), `${path} has stale version center require`);
+  assert(!/^\/\/\s*@require\s/m.test(content), `${path} still depends on mutable remote modules`);
+  assert(content.includes("// @grant        GM_addValueChangeListener"), `${path} cannot sync remote setting changes`);
   assert(content.includes("// @grant        GM_openInTab"), `${path} cannot open completed CloudDrive2 playback`);
   assert(content.includes("// @connect      localhost"), `${path} cannot connect to local CloudDrive2`);
 }
@@ -77,7 +79,7 @@ assert(!background.includes("setUiOptions") && !background.includes("setShelfEna
 
 const lightboxEnhance = await text("src/patches/lightbox-enhance.js");
 assert(lightboxEnhance.includes('window.__flowLensSlideshowOwner = "lightbox-enhance";'), "lightbox controller does not own slideshow state");
-assert(lightboxEnhance.includes("advanceAfterVideoEnded") && lightboxEnhance.includes("if (video.ended)"), "video-ended slideshow advance is missing");
+assert(lightboxEnhance.includes("advanceAfterVideoEnded") && lightboxEnhance.includes("video.ended"), "video-ended slideshow advance is missing");
 const core = await text("src/core/flowlens-core.js");
 const syncIndexesBody = core.match(/function syncTileIndexes\(\) \{([\s\S]*?)\n  \}/)?.[1] || "";
 assert(syncIndexesBody.includes("indexByKey") && !syncIndexesBody.includes("state.images.indexOf"), "tile index synchronization regressed to quadratic scanning");

@@ -114,7 +114,7 @@
 
   function markSmoothMedia(media) {
     if (!media || !media.classList) return;
-    media.classList.add("xiv-fl-smooth-media");
+    if (!media.classList.contains("xiv-fl-smooth-media")) media.classList.add("xiv-fl-smooth-media");
   }
 
   function shouldSmoothSwap(img, nextUrl) {
