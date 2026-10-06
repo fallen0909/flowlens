@@ -97,7 +97,7 @@ assert(!core.includes("state.lightbox.innerHTML ="), "lightbox still destroys an
 assert(core.includes("pornpicsGalleryInfo") && core.includes("galleryQueueDedupeKey") && core.includes("galleryQueueCoverFromImage"), "PornPics locale dedupe or queue previews are missing");
 
 const compactSettings = await text("src/patches/settings-compact.js");
-assert(compactSettings.includes('data-settings-group="${key}"') && compactSettings.includes("显示与浏览") && compactSettings.includes("磁力与播放"), "collapsible settings modules are missing");
+assert(compactSettings.includes('data-settings-group="${key}"') && compactSettings.includes("显示与播放") && compactSettings.includes("磁力与转存") && compactSettings.includes("过滤与诊断"), "collapsible settings modules are missing");
 
 const optimizer = await text("src/core/optimizer.js");
 assert(optimizer.includes('function animateLightboxMedia() { lastSwitchDirection = "fade"; }'), "lightbox flash animation is still active");

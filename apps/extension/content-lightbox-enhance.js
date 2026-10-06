@@ -12,6 +12,7 @@
   const ZOOM_MAP = { "1": 1.5, "2": 2, "3": 4, "0": 1 };
 
   let slideshowActive = false;
+  let slideshowZoomPaused = false;
   let slideshowTimer = 0;
   let refreshTimer = 0;
   let observer = null;
@@ -117,9 +118,12 @@
     }
     const active = String(slideshowActive);
     if (btn.dataset.active !== active) btn.dataset.active = active;
-    btn.setAttribute("aria-pressed", active);
-    btn.title = slideshowActive ? "暂停大图自动切换" : `开始大图自动切换（${speedLabel(slideshowDelay())}）`;
-    btn.setAttribute("aria-label", btn.title);
+    if (btn.getAttribute("aria-pressed") !== active) btn.setAttribute("aria-pressed", active);
+    const title = slideshowActive
+      ? (slideshowZoomPaused ? "放大查看中，恢复适应屏幕后继续（点击停止连播）" : "暂停大图自动切换")
+      : `开始大图自动切换（${speedLabel(slideshowDelay())}）`;
+    if (btn.title !== title) btn.title = title;
+    if (btn.getAttribute("aria-label") !== title) btn.setAttribute("aria-label", title);
     return btn;
   }
 
@@ -181,7 +185,7 @@
   function scheduleSlideshow(wait = slideshowDelay()) {
     if (!ownsSlideshow()) return;
     clearTimeout(slideshowTimer);
-    if (!slideshowActive) return;
+    if (!slideshowActive || slideshowZoomPaused) return;
     slideshowTimer = window.setTimeout(slideshowTick, Math.max(250, Number(wait) || DEFAULT_DELAY));
     ensureButton();
     window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: slideshowActive } }));
@@ -190,6 +194,7 @@
   function slideshowTick() {
     if (!slideshowActive) return;
     if (!isOpen()) { removeButton(); return; }
+    if (imageIsZoomed()) { syncZoomPause(); return; }
     if (videoRunning()) { scheduleSlideshow(650); return; }
     goNext();
     window.setTimeout(() => {
@@ -229,6 +234,7 @@
     if (!ownsSlideshow()) return;
     if (!isOpen()) return;
     slideshowActive = true;
+    syncZoomPause();
     const video = activeVideo();
     if (video) playVideo(video);
     scheduleSlideshow(video ? 650 : Math.min(480, slideshowDelay()));
@@ -239,6 +245,9 @@
   function stopSlideshow(update = true) {
     const changed = slideshowActive;
     slideshowActive = false;
+    slideshowZoomPaused = false;
+    const box = lightbox();
+    if (box?.dataset.flSlideshowPaused) delete box.dataset.flSlideshowPaused;
     clearTimeout(slideshowTimer);
     clearTimeout(videoAdvanceTimer);
     slideshowTimer = 0;
@@ -247,6 +256,29 @@
   }
 
   function toggleSlideshow() { slideshowActive ? stopSlideshow() : startSlideshow(); }
+
+  function imageIsZoomed() {
+    const box = lightbox();
+    return mediaEl()?.tagName === "IMG" && (box?.dataset.zoom === "actual" || box?.dataset.flShortcutZoom === "true" || box?.dataset.dragging === "true" || box?.dataset.flDragging === "true");
+  }
+
+  function syncZoomPause() {
+    const paused = slideshowActive && imageIsZoomed();
+    if (paused === slideshowZoomPaused) return;
+    slideshowZoomPaused = paused;
+    const box = lightbox();
+    if (paused) {
+      clearTimeout(slideshowTimer);
+      clearTimeout(videoAdvanceTimer);
+      slideshowTimer = 0;
+      if (box) box.dataset.flSlideshowPaused = "zoom";
+    } else {
+      if (box?.dataset.flSlideshowPaused) delete box.dataset.flSlideshowPaused;
+      if (slideshowActive) scheduleSlideshow(slideshowDelay());
+    }
+    ensureButton();
+    window.dispatchEvent(new CustomEvent("flowlens:slideshow-state", { detail: { active: slideshowActive, paused, reason: paused ? "zoom" : "" } }));
+  }
 
   function ensureZoomHint() {
     const box = lightbox();
@@ -401,14 +433,15 @@
     if (!box || box === lightboxObserverTarget) return;
     lightboxObserver?.disconnect?.();
     lightboxObserverTarget = box;
-    lightboxObserver = new MutationObserver(() => scheduleRefresh(50));
-    lightboxObserver.observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active"] });
+    lightboxObserver = new MutationObserver(() => { syncZoomPause(); scheduleRefresh(50); });
+    lightboxObserver.observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "data-zoom", "data-fl-shortcut-zoom", "data-dragging", "data-fl-dragging"] });
   }
 
   function refresh() {
     installStyle();
     watchLightbox();
     if (!isOpen()) { removeButton(); resetZoom(false); return; }
+    syncZoomPause();
     const key = mediaKey();
     if (zoomMediaKey && key && zoomMediaKey !== key) resetZoom(false);
     ensureButton();
@@ -425,6 +458,7 @@
     if (!frame || event.source !== frame.contentWindow) return;
     if (msg.type === "XIV_VIDEO_TIME" && msg.eventName === "ended") advanceAfterVideoEnded(String(msg.url || ""));
   });
+  window.addEventListener("flowlens:video-ended", event => advanceAfterVideoEnded(String(event.detail?.url || "")));
   document.addEventListener("pointerdown", onSlideshowPointerDown, true);
   document.addEventListener("click", onClick, true);
   document.addEventListener("keydown", onKeydown, true);

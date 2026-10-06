@@ -49,17 +49,72 @@ console.log('PASS late response cannot pollute a new gallery');
 const p={state:{lightbox:{contains:()=>false}},updateStatus(){},Promise,WeakMap};vm.createContext(p);vm.runInContext(span('  const videoPlayRequests', '  function createVideoElement('),p);
 let plays=0;const video={isConnected:true,ended:false,muted:false,volume:1,dataset:{},play(){plays++;return this.muted?Promise.resolve():Promise.reject(new DOMException('blocked','NotAllowedError'));}};assert.equal(await p.requestVideoPlayback(video),true);assert.equal(video.muted,true);assert.equal(plays,2);video.dataset.played='true';await p.requestVideoPlayback(video);assert.equal(plays,2);video.ended=true;await p.requestVideoPlayback(video,true);assert.equal(plays,2);
 console.log('PASS autoplay muted fallback, no resume after user pause, no ended restart');
+{
+  const timers=new Map();let timerId=0;
+  const v={isConnected:true,readyState:0,currentTime:0,dataset:{allowFallback:'true'},load(){}};
+  const sources={state:{lightbox:{contains:()=>false}},location:{href:'https://site.test/'},URL,WeakMap,Number,clearTimeout:id=>timers.delete(id),window:{setTimeout:fn=>{const id=++timerId;timers.set(id,fn);return id;}},requestVideoPlayback(){}};
+  vm.createContext(sources);
+  vm.runInContext(span('  function videoSourceCandidates(', '  function alternateImageUrl(')+span('  const videoSourceRequests', '  const videoPlayRequests'),sources);
+  sources.setVideoSourceWithFallback(v,'https://twimg.moonchan.xyz/amplify_video/example.mp4?tag=29',false);
+  assert.match(v.src,/video\.twimg\.com/);
+  assert.equal(sources.advanceVideoSource(v),true);assert.match(v.src,/video-cf\.twimg\.com/);
+  assert.equal(sources.advanceVideoSource(v),true);assert.match(v.src,/twimg\.moonchan\.xyz/);
+  assert.equal(sources.advanceVideoSource(v),false);assert.equal(v.dataset.flSourceFailed,'true');
+  assert.equal(sources.advanceVideoSource(v),false);
+  console.log('PASS bounded source fallback preserves the path and skips a failed proxy');
+}
+{
+  let rejectOld;
+  const old={isConnected:true,ended:false,muted:false,volume:1,dataset:{sourceAttempt:'1'},play:()=>new Promise((_,reject)=>rejectOld=reject)};
+  const pending=p.requestVideoPlayback(old);
+  old.dataset.sourceAttempt='2';old.play=()=>Promise.resolve();
+  assert.equal(await p.requestVideoPlayback(old),true);
+  rejectOld(new DOMException('old source blocked','NotAllowedError'));
+  assert.equal(await pending,false);assert.equal(old.muted,false);assert.equal(old.dataset.flPlaybackBlocked,undefined);
+  console.log('PASS an old play request cannot mute or block a replacement source');
+}
+{
+  const ctx={};vm.createContext(ctx);vm.runInContext(span('  function isMediaCollectionMutation(', '  function stopGenericObserver('),ctx);
+  assert.equal(ctx.isMediaCollectionMutation({type:'childList',target:{tagName:'PRE'},addedNodes:[{nodeType:3}]}),false);
+  assert.equal(ctx.isMediaCollectionMutation({type:'childList',target:{tagName:'DIV'},addedNodes:[{nodeType:1,matches:()=>true}]}),true);
+  assert.equal(ctx.isMediaCollectionMutation({type:'attributes',attributeName:'style',target:{getAttribute:()=> 'color:red'}}),false);
+  assert.equal(ctx.isMediaCollectionMutation({type:'attributes',attributeName:'style',target:{getAttribute:()=> 'background:url(a.jpg)'}}),true);
+  console.log('PASS text and cosmetic changes do not trigger media recollection');
+}
+{
+  const queue={};vm.createContext(queue);vm.runInContext(span('  function isGalleryQueueMutation(', '  function stopGenericObserver('),queue);
+  assert.equal(queue.isGalleryQueueMutation({type:'childList',target:{},addedNodes:[{nodeType:3}]}),false);
+  assert.equal(queue.isGalleryQueueMutation({type:'characterData',target:{closest:()=>({})},addedNodes:[]}),true);
+  assert.equal(queue.isGalleryQueueMutation({type:'childList',target:{},addedNodes:[{nodeType:1,matches:()=>true}]}),true);
+  console.log('PASS unrelated text updates leave gallery queues idle, new links still refresh');
+}
+{
+  let loads=0;const pending={isConnected:true,dataset:{}};
+  const preview={state:{active:true,lightbox:{dataset:{active:'true'}},videoPreviewQueue:[pending],videoPreviewLoading:0},document:{visibilityState:'visible'},VIDEO_PREVIEW_CONCURRENCY:2,videoPreviewDistance:()=>0,startVideoPreviewLoad(){loads++;}};
+  vm.createContext(preview);vm.runInContext(span('  function pumpVideoPreviewQueue(', '  function videoPreviewDistance('),preview);
+  preview.pumpVideoPreviewQueue();assert.equal(loads,0);assert.equal(preview.state.videoPreviewQueue.length,1);
+  preview.state.lightbox.dataset.active='false';preview.document.visibilityState='hidden';preview.pumpVideoPreviewQueue();assert.equal(loads,0);
+  preview.document.visibilityState='visible';preview.pumpVideoPreviewQueue();assert.equal(loads,1);assert.equal(preview.state.videoPreviewQueue.length,0);
+  console.log('PASS preview work waits behind the lightbox and hidden tabs, then resumes');
+}
+{
+  let captures=0;const native={state:{lightbox:{dataset:{active:'true'},contains:()=>true}},claimEvent(){throw new Error('native controls intercepted');}};
+  vm.createContext(native);vm.runInContext(span('  function onLightboxClick(', '  function onLightboxPointerMove('),native);
+  const event={button:0,target:{closest:selector=>selector==='#xiv-lightbox video'?{}:null,setPointerCapture(){captures++;}}};
+  native.onLightboxClick(event);native.onLightboxPointerDown(event);assert.equal(captures,0);assert.equal(native.state.lightboxSwipe,undefined);
+  console.log('PASS native video play and seek controls keep their pointer events');
+}
 const original=EventTarget.prototype.addEventListener;const ec={window:{addEventListener(){}},document:{getElementById(){return null;},addEventListener(){},documentElement:{}},EventTarget,MutationObserver:class{observe(){}},setTimeout};vm.runInNewContext(read('src/patches/visible-sequence-safe.js'),ec);vm.runInNewContext(read('src/patches/lightbox-event-guard.js'),ec);assert.equal(EventTarget.prototype.addEventListener,original);let calls=0;const target=new EventTarget();function onKeydown(){calls++;}target.addEventListener('keydown',onKeydown);target.removeEventListener('keydown',onKeydown);target.dispatchEvent(new Event('keydown'));assert.equal(calls,0);
 console.log('PASS native event registration/removal stays intact');
 let values={overflow:'hidden',pointerEvents:'none'};const style={getPropertyValue:k=>values[k]||'',getPropertyPriority:()=>'',setProperty:(k,v)=>values[k]=v,removeProperty:k=>delete values[k]};const lock={state:{pageLock:null,active:false},document:{documentElement:{style},body:null}};vm.createContext(lock);vm.runInContext(span('  function acquirePageLock()', '  async function openViewer()'),lock);lock.restorePageLock();assert.equal(values.overflow,'hidden');lock.acquirePageLock();lock.restorePageLock();assert.equal(values.overflow,'hidden');assert.equal(values.pointerEvents,'none');values.overflow='scroll';lock.acquirePageLock();lock.restorePageLock();assert.equal(values.overflow,'scroll');
 console.log('PASS host styles and scroll lock restore correctly');
-const frameContext={JSON};vm.createContext(frameContext);vm.runInContext(span('  function safeScriptJson(', '  function rememberVideoTime('),frameContext);
-const frameHtml=frameContext.videoFrameSrcDoc('https://media.test/movie.mp4',0);
-const frameScript=frameHtml.match(/<script>([\s\S]*?)<\/script>/)[1];
-const mediaEvents={},messages=[];let framePlays=0;
-const frameVideo={muted:false,volume:1,currentTime:0,duration:5,ended:false,dataset:{},addEventListener:(k,v)=>{const old=mediaEvents[k];mediaEvents[k]=()=>{old?.();v();};},play(){framePlays++;if(!this.muted)return Promise.reject(new DOMException('blocked','NotAllowedError'));mediaEvents.playing?.();return Promise.resolve();}};
-vm.runInNewContext(frameScript,{document:{getElementById:()=>frameVideo},parent:{postMessage:m=>messages.push(m)},window:{addEventListener(){}},setInterval(){},DOMException,Number});mediaEvents.loadedmetadata();await new Promise(r=>setImmediate(r));assert.equal(framePlays,2);assert.equal(frameVideo.muted,true);assert.equal(frameVideo.dataset.played,'true');mediaEvents.canplay();await new Promise(r=>setImmediate(r));assert.equal(framePlays,2);
-console.log('PASS iframe autoplay fallback without repeated play calls');
+{
+  const frameContext={};vm.createContext(frameContext);vm.runInContext(span('  function videoFrameSrcDoc(', '  function rememberVideoTime('),frameContext);
+  const frameHtml=frameContext.videoFrameSrcDoc();
+  assert(frameHtml.includes('content="no-referrer"'));
+  assert(!frameHtml.includes('<script>'));
+  console.log('PASS protected frame contains a referrer policy without inline playback scripts');
+}
 
 {
 let now=0,nextTimer=1,index=0;const timers=new Map(),listeners={};
@@ -68,12 +123,18 @@ const image={src:'https://media.test/0.jpg',style,dataset:{},tagName:'IMG'};
 let button=null;
 const box={dataset:{active:'true'},querySelector(selector){if(selector==='.xiv-lightbox-slideshow')return button;if(selector==='video'||selector.includes('iframe')&&!selector.includes('img'))return null;if(selector.includes('img'))return image;return null;},insertBefore(btn){button=btn;},appendChild(btn){button=btn;},scrollTo(){}};
 const root={querySelector:()=>box};
-const doc={documentElement:{appendChild(){}},getElementById:id=>id==='xiv-root'?root:null,createElement:()=>({dataset:{},style,setAttribute(){},remove(){button=null;}}),addEventListener:(type,fn)=>{(listeners[type]||=[]).push(fn);},dispatchEvent(){}};
-const slide={window:{__flowLensControl:{showAdjacent(){index++;image.src='https://media.test/'+index+'.jpg';return true;}},setTimeout:(fn,wait=0)=>{const id=nextTimer++;timers.set(id,{fn,at:now+wait});return id;},addEventListener(){},dispatchEvent(){}},document:doc,localStorage:{getItem:()=>JSON.stringify({lightboxAutoDelay:800})},MutationObserver:class{observe(){}},clearTimeout:id=>timers.delete(id),CustomEvent:class{},requestAnimationFrame:fn=>fn(),Date:class extends Date{static now(){return now;}}};
+const doc={documentElement:{appendChild(){}},getElementById:id=>id==='xiv-root'?root:null,createElement:()=>({dataset:{},style,attributes:{},getAttribute(k){return this.attributes[k];},setAttribute(k,v){this.attributes[k]=v;},remove(){button=null;}}),addEventListener:(type,fn)=>{(listeners[type]||=[]).push(fn);},dispatchEvent(){}};
+let zoomObserver;
+const slide={window:{__flowLensControl:{showAdjacent(){index++;image.src='https://media.test/'+index+'.jpg';return true;}},setTimeout:(fn,wait=0)=>{const id=nextTimer++;timers.set(id,{fn,at:now+wait});return id;},addEventListener(){},dispatchEvent(){}},document:doc,localStorage:{getItem:()=>JSON.stringify({lightboxAutoDelay:800})},MutationObserver:class{constructor(fn){this.fn=fn;}observe(target){if(target===box)zoomObserver=this.fn;}},clearTimeout:id=>timers.delete(id),CustomEvent:class{},requestAnimationFrame:fn=>fn(),Date:class extends Date{static now(){return now;}}};
 vm.runInNewContext(read('src/patches/lightbox-enhance.js'),slide);
 function advance(ms){const end=now+ms;let runs=0;while(true){const first=[...timers.entries()].filter(([,t])=>t.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!first)break;assert(++runs<1000,'timer feedback loop');now=first[1].at;timers.delete(first[0]);first[1].fn();}now=end;}
 advance(0);const event={target:{closest:selector=>selector==='.xiv-lightbox-slideshow'?button:null},preventDefault(){},stopPropagation(){},stopImmediatePropagation(){}};
 listeners.pointerdown.forEach(fn=>fn(event));listeners.click.forEach(fn=>fn(event));assert.equal(button.dataset.active,'true');advance(2100);assert(index>=3);listeners.click.forEach(fn=>fn(event));assert.equal(button.dataset.active,'false');const pausedIndex=index;advance(3000);assert.equal(index,pausedIndex);
 console.log('PASS slideshow pointer/click starts once, advances repeatedly and pauses');
+listeners.click.forEach(fn=>fn(event));box.dataset.zoom='actual';zoomObserver();const zoomIndex=index;advance(4000);assert.equal(index,zoomIndex);assert.equal(box.dataset.flSlideshowPaused,'zoom');
+box.dataset.zoom='fit';zoomObserver();advance(700);assert.equal(index,zoomIndex);advance(200);assert(index>zoomIndex);
+box.dataset.flShortcutZoom='true';zoomObserver();const shortcutIndex=index;advance(3000);assert.equal(index,shortcutIndex);
+listeners.click.forEach(fn=>fn(event));delete box.dataset.flShortcutZoom;zoomObserver();advance(3000);assert.equal(index,shortcutIndex);
+console.log('PASS zoom suspends slideshow, fit resumes after a full delay, manual stop stays stopped');
 
 }

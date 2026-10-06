@@ -208,8 +208,7 @@
     const section = document.createElement("section");
     section.className = "fl-mf-section";
     section.innerHTML = `
-      <details>
-        <summary>高级广告过滤</summary>
+        <h4>广告过滤</h4>
         <div class="fl-mf-body">
           <label class="fl-mf-row"><span>启用识别过滤</span><input type="checkbox" data-fl-mf="enabled"></label>
           <label class="fl-mf-row"><span>智能识别</span><input type="checkbox" data-fl-mf="smart"></label>
@@ -223,7 +222,6 @@
           <div class="fl-mf-hint" data-fl-mf-adapter></div>
           <div class="fl-mf-log" data-fl-mf-log></div>
         </div>
-      </details>
     `;
     panel.appendChild(section);
     section.addEventListener("change", onUiChange);

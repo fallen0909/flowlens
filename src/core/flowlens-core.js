@@ -1327,7 +1327,7 @@
     state.galleryQueueObserver = new MutationObserver((mutations) => {
       if (mutations.every((mutation) => {
         const target = mutation.target;
-        return state.root?.contains(target) || state.launch?.contains(target);
+        return state.root?.contains(target) || state.launch?.contains(target) || !isGalleryQueueMutation(mutation);
       })) return;
       scheduleGalleryQueueRefresh();
     });
@@ -1421,16 +1421,22 @@
     const index = state.galleryQueueIndex >= 0 ? state.galleryQueueIndex + 1 : 0;
     state.root?.querySelectorAll('[data-xiv="prev-set"], [data-xiv="next-set"]').forEach((button) => {
       const label = button.dataset.xiv === "prev-set" ? "上一组" : "下一组";
-      button.disabled = !hasQueue && !allowRefreshClick;
-      button.dataset.enabled = hasQueue ? "true" : "false";
+      const disabled = !hasQueue && !allowRefreshClick;
+      if (button.disabled !== disabled) button.disabled = disabled;
+      const enabled = hasQueue ? "true" : "false";
+      if (button.dataset.enabled !== enabled) button.dataset.enabled = enabled;
       const shortcut = button.dataset.xiv === "prev-set" ? "," : ".";
-      button.title = hasQueue && index ? `${label}（${index}/${total}，${shortcut}）` : `${label}（未识别到队列，${shortcut}）`;
+      const title = hasQueue && index ? `${label}（${index}/${total}，${shortcut}）` : `${label}（未识别到队列，${shortcut}）`;
+      if (button.title !== title) button.title = title;
     });
     const listButton = state.root?.querySelector('[data-xiv="queue-list"]');
     if (listButton) {
-      listButton.disabled = !total && !allowRefreshClick;
-      listButton.dataset.enabled = total ? "true" : "false";
-      listButton.title = total ? `组列表（${index || 0}/${total}）` : "组列表（尚未识别到内容）";
+      const disabled = !total && !allowRefreshClick;
+      if (listButton.disabled !== disabled) listButton.disabled = disabled;
+      const enabled = total ? "true" : "false";
+      if (listButton.dataset.enabled !== enabled) listButton.dataset.enabled = enabled;
+      const title = total ? `组列表（${index || 0}/${total}）` : "组列表（尚未识别到内容）";
+      if (listButton.title !== title) listButton.title = title;
     }
     renderGalleryQueuePanel();
   }
@@ -1525,7 +1531,7 @@
 
   function renderGalleryQueuePanel() {
     const panel = state.galleryQueuePanel;
-    if (!panel) return;
+    if (!panel || panel.dataset.open !== "true") return;
     const list = panel.querySelector(".xiv-queue-list");
     const count = panel.querySelector(".xiv-queue-count");
     if (!list || !count) return;
@@ -1534,7 +1540,11 @@
     const activeIndex = galleryQueueIndexForUrl(queue, activeUrl) >= 0
       ? galleryQueueIndexForUrl(queue, activeUrl)
       : state.galleryQueueIndex;
-    count.textContent = queue.length ? `${activeIndex >= 0 ? activeIndex + 1 : 0} / ${queue.length}` : "0 组";
+    const renderKey = JSON.stringify([activeIndex, queue.map((url, index) => [url, galleryQueueDisplayTitle(url, index), state.galleryQueueCovers.get(url) || ""])]);
+    if (panel.__flowLensRenderKey === renderKey) return;
+    panel.__flowLensRenderKey = renderKey;
+    const text = queue.length ? `${activeIndex >= 0 ? activeIndex + 1 : 0} / ${queue.length}` : "0 组";
+    if (count.textContent !== text) count.textContent = text;
     list.replaceChildren();
     if (!queue.length) {
       const empty = document.createElement("div");
@@ -1595,8 +1605,8 @@
     refreshGalleryQueue();
     rebuildGalleryQueueFromVisiblePage();
     closePanels("queue");
-    renderGalleryQueuePanel();
     state.galleryQueuePanel.dataset.open = "true";
+    renderGalleryQueuePanel();
     requestAnimationFrame(() => {
       state.galleryQueuePanel?.querySelector('.xiv-queue-item[data-current="true"]')?.scrollIntoView?.({ block: "nearest" });
     });
@@ -3594,8 +3604,7 @@
   function normalizeX810114VideoUrl(url) {
     return url
       ? url
-        .replace("https://video.twimg.com", "https://twimg.moonchan.xyz")
-        .replace("https://video-cf.twimg.com", "https://twimg.moonchan.xyz")
+        .replace("https://twimg.moonchan.xyz", "https://video.twimg.com")
       : "";
   }
 
@@ -3833,6 +3842,17 @@
     if (url.includes("https://video.twimg.com")) return url.replace("https://video.twimg.com", "https://video-cf.twimg.com");
     if (url.includes("https://video-cf.twimg.com")) return url.replace("https://video-cf.twimg.com", "https://video.twimg.com");
     return "";
+  }
+
+  function videoSourceCandidates(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      if (!/^(twimg\.moonchan\.xyz|video(?:-cf)?\.twimg\.com)$/i.test(parsed.hostname)) return [url];
+      const hosts = parsed.hostname === "video-cf.twimg.com"
+        ? ["video-cf.twimg.com", "video.twimg.com", "twimg.moonchan.xyz"]
+        : ["video.twimg.com", "video-cf.twimg.com", "twimg.moonchan.xyz"];
+      return hosts.map(host => { const source = new URL(parsed.href); source.hostname = host; return source.href; });
+    } catch { return [url]; }
   }
 
   function alternateImageUrl(url) {
@@ -4082,6 +4102,7 @@
   }
 
   function pumpVideoPreviewQueue() {
+    if (!state.active || state.lightbox?.dataset.active === "true" || document.visibilityState === "hidden") return;
     state.videoPreviewQueue = state.videoPreviewQueue
       .filter((video) => video?.isConnected && video.dataset.previewLoaded !== "true")
       .sort((a, b) => videoPreviewDistance(a) - videoPreviewDistance(b));
@@ -4295,31 +4316,52 @@
     return total > 0 && brightPixels / total < 0.04;
   }
 
+  const videoSourceRequests = new WeakMap();
   function setVideoSourceWithFallback(video, url, autoplay = false) {
+    const sources = video.dataset.allowFallback === "false" ? [url] : videoSourceCandidates(url);
+    const request = { sources, index: 0, autoplay };
+    delete video.dataset.played;
+    videoSourceRequests.set(video, request);
+    loadVideoSourceAttempt(video, request);
+  }
+
+  function loadVideoSourceAttempt(video, request) {
     clearTimeout(Number(video.dataset.loadTimer || 0));
-    video.dataset.sourceUrl = url;
-    video.src = url;
+    video.dataset.sourceUrl = request.sources[request.index];
+    video.dataset.sourceAttempt = String(Number(video.dataset.sourceAttempt || 0) + 1);
+    delete video.dataset.flPlaybackBlocked;
+    delete video.dataset.flSourceFailed;
+    video.src = video.dataset.sourceUrl;
     video.load();
-    const tryFallback = () => {
-      if (!video.isConnected) return;
-      if (video.dataset.allowFallback === "false") return;
-      if (video.readyState >= 1 || video.currentTime > 0 || !video.paused || video.dataset.played === "true") return;
-      if (video.dataset.fallbackTried === "true") return;
-      const fallback = alternateVideoUrl(video.currentSrc || video.src || video.dataset.sourceUrl || url);
-      if (!fallback) return;
-      video.dataset.fallbackTried = "true";
-      video.dataset.sourceUrl = fallback;
-      video.src = fallback;
-      video.load();
-      if (autoplay) requestVideoPlayback(video);
-    };
-    video.dataset.loadTimer = String(window.setTimeout(tryFallback, autoplay ? 4500 : 3200));
+    video.dataset.loadTimer = String(window.setTimeout(() => {
+      if (videoSourceRequests.get(video) !== request || !video.isConnected || video.readyState >= 2 || video.dataset.played === "true") return;
+      advanceVideoSource(video);
+    }, request.autoplay ? 6000 : 5000));
+    if (request.autoplay && video.isConnected) requestVideoPlayback(video);
+  }
+
+  function advanceVideoSource(video) {
+    const request = videoSourceRequests.get(video);
+    if (!request || !video.isConnected || video.dataset.played === "true") return false;
+    clearTimeout(Number(video.dataset.loadTimer || 0));
+    if (request.index + 1 >= request.sources.length) {
+      video.dataset.flSourceFailed = "true";
+      video.dataset.flPlaybackBlocked = "true";
+      if (video.dataset.flLightboxVideo === "true" || state.lightbox?.contains(video)) updateStatus("视频源无法加载，请稍后重试或更换网络");
+      return false;
+    }
+    request.index += 1;
+    if (video.dataset.flLightboxVideo === "true" || state.lightbox?.contains(video)) updateStatus("正在切换备用视频源");
+    loadVideoSourceAttempt(video, request);
+    return true;
   }
 
   const videoPlayRequests = new WeakMap();
   function requestVideoPlayback(video, userInitiated = false) {
     if (!video || !video.isConnected || video.ended || (!userInitiated && video.dataset.played === "true")) return Promise.resolve(false);
-    if (videoPlayRequests.has(video)) return videoPlayRequests.get(video);
+    const sourceAttempt = video.dataset.sourceAttempt;
+    const existing = videoPlayRequests.get(video);
+    if (existing && existing.sourceAttempt === sourceAttempt) return existing.promise;
     video.playsInline = true;
     if (userInitiated) { video.muted = false; video.volume = 1; }
     const play = async () => {
@@ -4328,20 +4370,23 @@
         delete video.dataset.flPlaybackBlocked;
         return true;
       } catch (error) {
-        if (!video.isConnected || video.ended) return false;
+        if (!video.isConnected || video.ended || sourceAttempt !== video.dataset.sourceAttempt) return false;
         if (error?.name === "NotAllowedError" && !video.muted) {
           video.muted = true;
           try { await video.play(); delete video.dataset.flPlaybackBlocked; return true; } catch (mutedError) { error = mutedError; }
         }
+        if (!video.isConnected || sourceAttempt !== video.dataset.sourceAttempt) return false;
         if (error?.name !== "AbortError") {
           video.dataset.flPlaybackBlocked = "true";
-          if (state.lightbox?.contains(video)) updateStatus("视频未能自动播放，请点击视频播放控件");
+          if (video.dataset.flLightboxVideo === "true" || state.lightbox?.contains(video)) updateStatus("视频未能自动播放，请点击视频播放控件");
         }
         return false;
       }
     };
-    const pending = play().finally(() => videoPlayRequests.delete(video));
-    videoPlayRequests.set(video, pending);
+    const request = { sourceAttempt, promise: null };
+    const pending = play().finally(() => { if (videoPlayRequests.get(video) === request) videoPlayRequests.delete(video); });
+    request.promise = pending;
+    videoPlayRequests.set(video, request);
     return pending;
   }
 
@@ -4427,13 +4472,7 @@
       clearTimeout(Number(video.dataset.loadTimer || 0));
     });
     video.addEventListener("error", () => {
-      if (video.currentTime > 0 || video.dataset.played === "true") return;
-      if (video.dataset.allowFallback === "false") return;
-      if (video.dataset.fallbackTried === "true") return;
-      const fallback = alternateVideoUrl(video.currentSrc || video.src || video.dataset.sourceUrl || url);
-      if (!fallback) return;
-      video.dataset.fallbackTried = "true";
-      setVideoSourceWithFallback(video, fallback, autoplay);
+      advanceVideoSource(video);
     });
     if (deferSource) {
       video.dataset.sourceUrl = url;
@@ -4498,9 +4537,9 @@
     if (!isSupportedPage() || isPhotoGalleryPage() || state.observer) return;
     if (isX810114ProfilePage() && state.x810114ApiMode) return;
     state.observer = new MutationObserver((mutations) => {
-      if (mutations.every((mutation) => {
+      if (!state.active || mutations.every((mutation) => {
         const target = mutation.target;
-        return state.root?.contains(target) || state.launch?.contains(target);
+        return state.root?.contains(target) || state.launch?.contains(target) || !isMediaCollectionMutation(mutation);
       })) return;
       clearTimeout(state.genericCollectTimer);
       state.genericCollectTimer = setTimeout(() => {
@@ -4515,6 +4554,19 @@
       attributes: true,
       attributeFilter: ["src", "srcset", "data-src", "data-original", "style"]
     });
+  }
+
+  function isMediaCollectionMutation(mutation) {
+    if (mutation.type === "attributes") return mutation.attributeName !== "style" || /url\(/i.test(mutation.target.getAttribute?.("style") || "");
+    if (mutation.target?.tagName === "SCRIPT") return true;
+    const selector = 'img, video, source, picture, a[href], script, [style*="url("]';
+    return [...mutation.addedNodes].some(node => node.nodeType === 1 && (node.matches?.(selector) || node.querySelector?.(selector)));
+  }
+
+  function isGalleryQueueMutation(mutation) {
+    if (mutation.type === "attributes" || mutation.target?.closest?.("a[href]")) return true;
+    const selector = "a[href], [data-username], [data-user], [data-name]";
+    return [...mutation.addedNodes].some(node => node.nodeType === 1 && (node.matches?.(selector) || node.querySelector?.(selector)));
   }
 
   function stopGenericObserver() {
@@ -5467,6 +5519,7 @@
     window.addEventListener("beforeunload", saveViewerPosition);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") saveViewerPosition();
+      else pumpVideoPreviewQueue();
     });
     state.root.addEventListener("pointerdown", (event) => {
       const queueOpen = state.galleryQueuePanel?.dataset.open === "true";
@@ -5636,7 +5689,7 @@
     allTiles().forEach((tile) => {
       const i = indexByKey.get(tile.dataset.urlKey || keyForUrl(tile.dataset.url || ""));
       if (!Number.isInteger(i) || i < 0) return;
-      tile.dataset.index = String(i);
+      if (tile.dataset.index !== String(i)) tile.dataset.index = String(i);
       const label = tile.querySelector("span");
       const text = String(i + 1).padStart(2, "0");
       if (label && label.textContent !== text) label.textContent = text;
@@ -6534,10 +6587,10 @@
   function closeHostPhotoViewer() {
     if (!isGenericX810114Page()) return;
     document.querySelectorAll(".PhotoView-Portal, [class*='PhotoView' i], [class*='photo-view' i], [class*='ReactPhoto' i], [class*='react-photo' i]").forEach((node) => {
-      node.setAttribute("aria-hidden", "true");
-      node.style.setProperty("display", "none", "important");
-      node.style.setProperty("visibility", "hidden", "important");
-      node.style.setProperty("pointer-events", "none", "important");
+      if (node.getAttribute("aria-hidden") !== "true") node.setAttribute("aria-hidden", "true");
+      for (const [name, value] of [["display", "none"], ["visibility", "hidden"], ["pointer-events", "none"]]) {
+        if (node.style.getPropertyValue(name) !== value || node.style.getPropertyPriority(name) !== "important") node.style.setProperty(name, value, "important");
+      }
     });
   }
 
@@ -6545,11 +6598,15 @@
     if (!isGenericX810114Page() || state.hostOverlayObserver) return;
     closeHostPhotoViewer();
     clearInterval(state.hostOverlayTimer);
-    state.hostOverlayTimer = window.setInterval(closeHostPhotoViewer, 350);
-    state.hostOverlayObserver = new MutationObserver(() => closeHostPhotoViewer());
+    state.hostOverlayObserver = new MutationObserver(records => {
+      const selector = ".PhotoView-Portal, [class*='PhotoView' i], [class*='photo-view' i], [class*='ReactPhoto' i], [class*='react-photo' i]";
+      if (state.active && records.some(record => record.target?.matches?.(selector) || [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches?.(selector) || node.querySelector?.(selector))))) closeHostPhotoViewer();
+    });
     state.hostOverlayObserver.observe(document.documentElement, {
       childList: true,
-      subtree: true
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style"]
     });
   }
 
@@ -6665,7 +6722,7 @@
   function clearOldMediaPreloads() {
     const now = Date.now();
     for (const [key, item] of state.mediaPreloadCache) {
-      if (!item || now - item.time < 45000) continue;
+      if (!item || (now - item.time < 45000 && state.mediaPreloadCache.size < 16)) continue;
       const media = item.media;
       try {
         if (media?.tagName === "VIDEO") {
@@ -6687,8 +6744,9 @@
     clearOldMediaPreloads();
     if (isVideoUrl(url)) {
       if (videoBudget <= 0) return videoBudget;
+      if (videoSourceCandidates(url).length > 1) return videoBudget;
       const video = document.createElement("video");
-      video.preload = isCloudDriveMediaUrl(url) ? "metadata" : "auto";
+      video.preload = "metadata";
       video.muted = true;
       video.defaultMuted = true;
       video.playsInline = true;
@@ -6704,7 +6762,7 @@
     }
     const img = new Image();
     img.decoding = "async";
-    try { img.fetchPriority = "high"; } catch {}
+    try { img.fetchPriority = "low"; } catch {}
     img.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
     img.src = url;
     state.mediaPreloadCache.set(key, { media: img, time: Date.now() });
@@ -6715,7 +6773,7 @@
     clearTimeout(state.mediaPreloadTimer);
     state.mediaPreloadTimer = setTimeout(() => {
       if (state.lightbox?.dataset.active !== "true" || !state.images.length) return;
-      const offsets = [1, 2, 3, 4, 5, -1, -2];
+      const offsets = [1, 2, -1];
       const urls = [];
       const seen = new Set();
       for (const offset of offsets) {
@@ -6732,7 +6790,7 @@
           break;
         }
       }
-      let videoBudget = isCloudDriveFilesPage() ? 1 : 2;
+      let videoBudget = 1;
       for (const url of urls) {
         videoBudget = preloadMediaUrl(url, videoBudget);
       }
@@ -6818,7 +6876,7 @@
     clearTimeout(state.mediaPreloadTimer);
     clearTimeout(state.highResResolveTimer);
     if (state.renderQueue.length) scheduleRenderQueue();
-    if (resumeAutoScroll) resumeAutoScrollAfterLightbox();
+    if (resumeAutoScroll) { pumpVideoPreviewQueue(); resumeAutoScrollAfterLightbox(); }
   }
 
   function lightboxArrows() {
@@ -7176,86 +7234,8 @@
     }
   }
 
-  function safeScriptJson(value) {
-    return JSON.stringify(value).replace(/</g, "\\u003c");
-  }
-
-  function safeHtmlAttribute(value) {
-    return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
-
-  function videoFrameSrcDoc(url, startTime) {
-    return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="referrer" content="no-referrer">
-  <style>
-    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-    video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
-  </style>
-</head>
-<body>
-  <video id="v" controls autoplay playsinline preload="auto">
-    <source src="${safeHtmlAttribute(url)}" type="video/mp4">
-  </video>
-  <script>
-    const mediaUrl = ${safeScriptJson(url)};
-    const startTime = ${safeScriptJson(startTime || 0)};
-    const video = document.getElementById("v");
-    video.volume = 1;
-    video.muted = false;
-    let started = false;
-    let playPending = false;
-    async function startPlayback() {
-      if (started || playPending || video.ended) return;
-      playPending = true;
-      try { await video.play(); }
-      catch (error) {
-        if (error.name === "NotAllowedError") {
-          video.muted = true;
-          try { await video.play(); } catch { send("autoplay-blocked"); }
-        } else if (error.name !== "AbortError") send("playback-error");
-      } finally { playPending = false; }
-    }
-    video.addEventListener("playing", () => { started = true; video.dataset.played = "true"; });
-    video.addEventListener("canplay", startPlayback);
-
-    function send(eventName) {
-      parent.postMessage({
-        type: "XIV_VIDEO_TIME",
-        url: mediaUrl,
-        currentTime: Number(video.currentTime || 0),
-        paused: video.paused,
-        eventName
-      }, "*");
-    }
-
-    video.addEventListener("loadedmetadata", () => {
-      if (startTime > 0 && Number.isFinite(video.duration) && startTime < video.duration - 0.5) {
-        try { video.currentTime = startTime; } catch {}
-      }
-      startPlayback();
-      send("loadedmetadata");
-    });
-    ["timeupdate", "pause", "ended", "seeked", "playing"].forEach((eventName) => {
-      video.addEventListener(eventName, () => send(eventName));
-    });
-    window.addEventListener("message", (event) => {
-      const message = event.data || {};
-      if (event.source !== parent || message.type !== "XIV_VIDEO_CONTROL" || message.url !== mediaUrl) return;
-      send("before-" + message.action);
-      if (message.action === "pause") video.pause();
-      if (message.action === "play") { started = false; startPlayback(); }
-    });
-    setInterval(() => send("tick"), 500);
-  </script>
-</body>
-</html>`;
+  function videoFrameSrcDoc() {
+    return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}video{display:block;width:100%;height:100%;object-fit:contain;background:#000}</style></head><body></body></html>`;
   }
 
   function rememberVideoTime(video) {
@@ -7281,13 +7261,32 @@
     iframe.referrerPolicy = "no-referrer";
     iframe.allow = "autoplay; fullscreen; encrypted-media; picture-in-picture";
     iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-presentation";
-    iframe.srcdoc = videoFrameSrcDoc(url, startTime);
+    iframe.addEventListener("load", () => {
+      if (!iframe.isConnected || state.lightbox?.dataset.active !== "true") return;
+      const frameDoc = iframe.contentDocument;
+      if (!frameDoc?.body || frameDoc.querySelector("video")) return;
+      // Assign the source after adoption into the no-referrer document. The
+      // parent's page policy must not leak into a hotlink-protected video.
+      const video = createVideoElement(url, { autoplay: true, controls: true, preload: "auto", keepFirstFrame: false, muted: false, loop: false, startTime, deferSource: true });
+      video.dataset.mediaUrl = url;
+      video.dataset.flLightboxVideo = "true";
+      ["timeupdate", "pause", "seeked"].forEach(name => video.addEventListener(name, () => rememberVideoTime(video)));
+      video.addEventListener("ended", () => {
+        if (!iframe.isConnected || state.lightbox?.dataset.active !== "true") return;
+        state.lightbox.dataset.flVideoEnded = "true";
+        window.dispatchEvent(new CustomEvent("flowlens:video-ended", { detail: { url } }));
+      });
+      frameDoc.body.appendChild(video);
+      setVideoSourceWithFallback(video, url, true);
+      requestVideoPlayback(video);
+    }, { once: true });
+    iframe.srcdoc = videoFrameSrcDoc();
     state.lightbox.appendChild(iframe);
   }
 
   function setLightboxVideo(url) {
     url = normalizeMediaUrl(url);
-    if (isGenericX810114Page()) {
+    if (videoSourceCandidates(url).length > 1) {
       setLightboxFrameVideo(url);
       return;
     }
@@ -7326,6 +7325,9 @@
     }
     try {
       clearTimeout(Number(video.dataset.loadTimer || 0));
+      videoSourceRequests.delete(video);
+      video.dataset.sourceAttempt = String(Number(video.dataset.sourceAttempt || 0) + 1);
+      delete video.dataset.flLightboxVideo;
       video.removeAttribute("src");
       video.querySelectorAll("source").forEach((source) => source.removeAttribute("src"));
       video.load();
@@ -7339,6 +7341,7 @@
       unloadVideoElement(video);
     });
     state.lightbox?.querySelectorAll("iframe[data-media-url]").forEach((iframe) => {
+      try { iframe.contentDocument?.querySelectorAll("video").forEach(unloadVideoElement); } catch {}
       const url = normalizeMediaUrl(iframe.dataset.mediaUrl || "");
       iframe.contentWindow?.postMessage({ type: "XIV_VIDEO_CONTROL", action: "pause", url }, "*");
       try {
@@ -7511,7 +7514,7 @@
     if (state.lightbox?.dataset.active !== "true") return;
     if (!state.lightbox.contains(event.target)) return;
     if (event.target?.closest?.(".xiv-lightbox-slideshow")) return;
-    if (event.target?.closest?.("#xiv-lightbox video") && !isMobilePointerEvent(event)) return;
+    if (event.target?.closest?.("#xiv-lightbox video")) return;
     claimEvent(event);
     if (Date.now() < state.lightboxSuppressClickUntil) return;
     if (event.target?.closest?.(".xiv-lightbox-zoom")) {
@@ -7540,6 +7543,7 @@
 
   function onLightboxPointerDown(event) {
     if (state.lightbox?.dataset.active !== "true" || event.button !== 0) return;
+    if (event.target?.closest?.("#xiv-lightbox video")) return;
     if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow, .xiv-lightbox-zoom")) return;
     if (state.lightbox.dataset.zoom === "actual" && event.target?.matches?.("img, video")) {
       claimEvent(event);

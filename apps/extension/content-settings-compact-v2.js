@@ -31,7 +31,7 @@
       background: rgba(247,248,250,.96) !important;
       color: var(--fl-ink) !important;
       box-shadow: 0 24px 80px rgba(24,29,40,.28) !important;
-      backdrop-filter: blur(22px) saturate(1.1) !important;
+      backdrop-filter: blur(12px) !important;
       scrollbar-width: thin !important;
       font-family: "MiSans", "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif !important;
     }
@@ -119,7 +119,8 @@
     }
     #xiv-root .xiv-settings-group[open] > summary .xiv-settings-group-chevron { transform: rotate(225deg) translate(-2px,-2px) !important; }
     #xiv-root .xiv-settings-group-body { padding: 0 13px 12px !important; border-top: 1px solid var(--fl-line) !important; }
-    #xiv-root .xiv-settings-group .xiv-setting-row {
+    #xiv-root .xiv-settings-group .xiv-setting-row,
+    #xiv-root .xiv-settings-group .fl-mf-row {
       min-height: 50px !important;
       box-sizing: border-box !important;
       margin: 0 !important;
@@ -133,7 +134,8 @@
     }
     #xiv-root .xiv-settings-group .xiv-setting-row:last-child { border-bottom: 0 !important; }
     #xiv-root .xiv-settings-group .xiv-setting-row > span:first-child { color: var(--fl-ink) !important; font-size: 13px !important; font-weight: 800 !important; }
-    #xiv-root .xiv-settings-group .xiv-setting-row input[type="checkbox"] {
+    #xiv-root .xiv-settings-group .xiv-setting-row input[type="checkbox"],
+    #xiv-root .xiv-settings-group .fl-mf-row input[type="checkbox"] {
       appearance: none !important;
       width: 40px !important;
       height: 23px !important;
@@ -144,7 +146,8 @@
       background: radial-gradient(circle at 11px 50%, #fff 0 7px, transparent 7.5px), rgba(127,127,127,.3) !important;
       cursor: pointer !important;
     }
-    #xiv-root .xiv-settings-group .xiv-setting-row input[type="checkbox"]:checked {
+    #xiv-root .xiv-settings-group .xiv-setting-row input[type="checkbox"]:checked,
+    #xiv-root .xiv-settings-group .fl-mf-row input[type="checkbox"]:checked {
       border-color: var(--fl-accent) !important;
       background: radial-gradient(circle at 28px 50%, #fff 0 7px, transparent 7.5px), var(--fl-accent) !important;
     }
@@ -231,6 +234,46 @@
     }
     #xiv-root .xiv-fl-shortcuts-mini { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px !important; padding: 0 11px 11px !important; color: var(--fl-muted) !important; font-size: 11px !important; }
     #xiv-root .xiv-fl-shortcuts-mini kbd { display: inline-grid !important; min-width: 28px !important; margin-right: 6px !important; padding: 3px 5px !important; place-items: center !important; border-radius: 6px !important; background: rgba(127,127,127,.14) !important; color: var(--fl-ink) !important; font-size: 10px !important; font-weight: 950 !important; }
+    #xiv-root .xiv-settings-group h4 {
+      margin: 16px 0 8px !important; color: var(--fl-ink) !important;
+      font-size: 13px !important; font-weight: 850 !important; line-height: 1.4 !important;
+    }
+    #xiv-root .xiv-settings-group .fl-mf-section,
+    #xiv-root .xiv-settings-group .fl-site-adapter-section {
+      margin: 0 !important; padding: 0 !important; border: 0 !important;
+      border-radius: 0 !important; background: transparent !important;
+    }
+    #xiv-root .xiv-settings-group .fl-mf-body { padding: 0 !important; }
+    #xiv-root .xiv-settings-group .fl-mf-hint,
+    #xiv-root .xiv-settings-note { color: var(--fl-muted) !important; font-size: 11px !important; line-height: 1.6 !important; }
+    #xiv-root .xiv-settings-note { margin: 12px 0 0 !important; }
+    #xiv-root .xiv-settings-group .fl-mf-section textarea {
+      background: var(--fl-soft) !important; border: 1px solid var(--fl-line) !important;
+      color: var(--fl-ink) !important; border-radius: 10px !important; padding: 10px !important;
+      min-height: 62px !important; font-size: 12px !important;
+    }
+    #xiv-root .xiv-settings-group .fl-mf-actions button,
+    #xiv-root .xiv-settings-group [data-fl-retry-pages] {
+      appearance: none !important; min-height: 34px !important; height: auto !important;
+      width: auto !important; padding: 8px 11px !important; border: 1px solid var(--fl-line) !important;
+      border-radius: 10px !important; background: var(--fl-soft) !important;
+      color: var(--fl-ink) !important; font: 750 11px/1.4 "Microsoft YaHei UI", sans-serif !important;
+      cursor: pointer !important;
+    }
+    #xiv-root .xiv-settings-group [data-fl-mf-action="apply"] { background: var(--fl-accent) !important; border-color: var(--fl-accent) !important; color: white !important; }
+    #xiv-root .xiv-settings-group [data-fl-retry-pages] { margin-top: 10px !important; }
+    #xiv-root .xiv-settings-group button:disabled { opacity: .45 !important; cursor: default !important; }
+    #xiv-root .xiv-settings-group .fl-site-adapter-grid { grid-template-columns: 1fr 1fr !important; }
+    #xiv-root .xiv-settings-group .fl-site-adapter-card { background: var(--fl-soft) !important; border: 1px solid var(--fl-line) !important; border-radius: 10px !important; padding: 10px !important; }
+    #xiv-root .xiv-settings-group .fl-site-adapter-card b { color: var(--fl-muted) !important; opacity: 1 !important; font-weight: 650 !important; }
+    #xiv-root .xiv-settings-group .fl-site-adapter-card span { color: var(--fl-ink) !important; font-size: 12px !important; font-weight: 750 !important; }
+    #xiv-root .xiv-settings-group .fl-site-adapter-tags span { background: var(--fl-soft) !important; color: var(--fl-muted) !important; border: 1px solid var(--fl-line) !important; font-size: 10px !important; font-weight: 650 !important; }
+    #xiv-root .xiv-fl-shortcuts-mini { padding: 0 !important; }
+    #xiv-root .xiv-settings-group input:focus-visible,
+    #xiv-root .xiv-settings-group select:focus-visible,
+    #xiv-root .xiv-settings-group textarea:focus-visible,
+    #xiv-root .xiv-settings-group button:focus-visible,
+    #xiv-root .xiv-settings-group summary:focus-visible { outline: 2px solid var(--fl-accent) !important; outline-offset: 2px !important; }
     #xiv-root .xiv-fl-compact-section { display: none !important; }
     @media (max-width: 560px) {
       #xiv-root [data-panel="settings"] {
@@ -290,10 +333,10 @@
   }
 
   function makeShortcuts() {
-    const node = document.createElement("details");
+    const node = document.createElement("section");
     node.className = "xiv-fl-shortcuts-wrap";
     node.innerHTML = `
-      <summary>快捷键</summary>
+      <h4>快捷键</h4>
       <div class="xiv-fl-shortcuts-mini">
         <span><kbd>G</kbd>开关图片流</span><span><kbd>Esc</kbd>退出/关闭</span>
         <span><kbd>1/2/3</kbd>全部/图/视频</span><span><kbd>V</kbd>循环筛选</span>
@@ -311,10 +354,10 @@
     panel.querySelectorAll(":scope > .xiv-fl-compact-section").forEach((node) => node.remove());
     panel.querySelectorAll(".xiv-fl-speed-row").forEach((node) => node.remove());
 
-    const display = ensureGroup(panel, "display", "显示与浏览", "入口、布局、筛选和大图播放", true);
-    const cloud = ensureGroup(panel, "cloud", "磁力与播放", "CloudDrive2、115 转存和播放方式");
+    const display = ensureGroup(panel, "display", "显示与播放", "入口、布局、筛选和连播速度");
+    const cloud = ensureGroup(panel, "cloud", "磁力与转存", "CloudDrive2、115 和播放方式");
     const bookmark = ensureGroup(panel, "bookmark", "页面收藏", "收藏当前页面和查看收藏列表");
-    const advanced = ensureGroup(panel, "advanced", "高级设置", "广告过滤、快捷键和低频选项");
+    const advanced = ensureGroup(panel, "advanced", "过滤与诊断", "广告过滤、站点状态和快捷键");
     const displayBody = display.querySelector(".xiv-settings-group-body");
     const cloudBody = cloud.querySelector(".xiv-settings-group-body");
     const bookmarkBody = bookmark.querySelector(".xiv-settings-group-body");
@@ -323,8 +366,19 @@
     panel.querySelectorAll(":scope > .xiv-setting-row").forEach((row) => displayBody.appendChild(row));
     panel.querySelectorAll(":scope > .xiv-cd2-settings").forEach((section) => cloudBody.appendChild(section));
     panel.querySelectorAll(":scope > .fl-page-bookmark-settings").forEach((section) => bookmarkBody.appendChild(section));
+    panel.querySelectorAll(":scope > .fl-mf-section, :scope > .fl-site-adapter-section").forEach((section) => advancedBody.appendChild(section));
+    let zoomNote = displayBody.querySelector(".xiv-settings-note");
+    if (!zoomNote) {
+      zoomNote = document.createElement("p");
+      zoomNote.className = "xiv-settings-note";
+      zoomNote.textContent = "图片放大时暂停连播，恢复适应屏幕后继续。设置自动保存。";
+      displayBody.appendChild(zoomNote);
+    } else if (displayBody.lastElementChild !== zoomNote) displayBody.appendChild(zoomNote);
 
     if (!advancedBody.querySelector(".xiv-fl-shortcuts-wrap")) advancedBody.appendChild(makeShortcuts());
+    const sections = [advancedBody.querySelector(".fl-mf-section"), advancedBody.querySelector(".fl-site-adapter-section"), advancedBody.querySelector(".xiv-fl-shortcuts-wrap")].filter(Boolean);
+    const currentSections = [...advancedBody.children].filter(node => sections.includes(node));
+    if (sections.some((node, index) => currentSections[index] !== node)) sections.forEach(node => advancedBody.appendChild(node));
     [...panel.children].forEach((node) => {
       if (node.matches("h3, .fl-version-row, .xiv-settings-group, style")) return;
       if (node.matches("small") || node.matches("details")) advancedBody.appendChild(node);
@@ -348,7 +402,10 @@
 
   injectStyle();
   schedule();
-  new MutationObserver(schedule).observe(document.documentElement, {
+  new MutationObserver(records => {
+    const panel = findPanel();
+    if (records.some(record => record.target === panel || [...record.addedNodes].some(node => node.nodeType === 1 && node.id === "xiv-root"))) schedule();
+  }).observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,

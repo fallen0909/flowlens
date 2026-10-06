@@ -237,9 +237,10 @@
     if (!button) return;
     const url = currentUrl();
     const saved = readItems().some((item) => normalizeUrl(item.url) === url);
-    button.dataset.saved = saved ? "true" : "false";
-    button.dataset.url = url;
-    button.title = saved ? "取消收藏本页" : "收藏本页";
+    if (button.dataset.saved !== String(saved)) button.dataset.saved = String(saved);
+    if (button.dataset.url !== url) button.dataset.url = url;
+    const title = saved ? "取消收藏本页" : "收藏本页";
+    if (button.title !== title) button.title = title;
   }
 
   function toggleCurrentPage() {
@@ -378,7 +379,9 @@
     timer = window.setTimeout(installButtons, 80);
   }
 
-  new MutationObserver(scheduleInstall).observe(document.documentElement, { childList: true, subtree: true });
+  new MutationObserver(records => {
+    if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.id === "xiv-root" || node.matches?.('.fl-page-bookmark-settings, .xiv-panel[data-panel="settings"]') || node.querySelector?.('.xiv-panel[data-panel="settings"]'))))) scheduleInstall();
+  }).observe(document.documentElement, { childList: true, subtree: true });
   loadExtensionItems();
   installButtons();
 })();

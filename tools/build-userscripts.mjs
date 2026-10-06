@@ -74,6 +74,7 @@ function header({ name, namespace, description, output, sources }) {
 // @connect      127.0.0.1
 // @connect      self
 // @connect      video.twimg.com
+// @connect      video-cf.twimg.com
 // @connect      pbs.twimg.com
 // @connect      twimg.moonchan.xyz
 // @connect      x.moonchan.xyz

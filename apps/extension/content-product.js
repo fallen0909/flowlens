@@ -258,9 +258,10 @@
 
   function syncSelectionUi() {
     const r = root();
-    if (r) r.dataset.flSelecting = selectionMode ? "true" : "false";
+    if (r && r.dataset.flSelecting !== String(selectionMode)) r.dataset.flSelecting = String(selectionMode);
     for (const tile of tiles()) {
-      tile.dataset.flSelected = selectedKeys.has(tileKey(tile)) ? "true" : "false";
+      const selected = String(selectedKeys.has(tileKey(tile)));
+      if (tile.dataset.flSelected !== selected) tile.dataset.flSelected = selected;
     }
     const count = selectedKeys.size;
     if (selectionMode) setStatus(count ? `已选择 ${count} 个` : "选择模式：点击图片加入选择");
