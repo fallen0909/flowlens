@@ -4,6 +4,38 @@ import assert from 'node:assert/strict';
 const read=p=>fs.readFileSync(p,'utf8');
 const core=read('src/core/flowlens-core.js');
 const span=(a,b)=>{const start=core.indexOf(a),end=core.indexOf(b,start);assert(start>=0&&end>start,a);return core.slice(start,end);};
+{
+  const url='https://media.test/clip.mp4',poster='https://media.test/missing.jpg';let videoCreates=0,replacement=null;
+  const ctx={state:{posterByImage:new Map([[url,poster]]),previewPosterCache:new Map(),mediaRatioByImage:new Map(),settings:{videoPreview:false}},keyForUrl:u=>u,isCloudDriveMediaUrl:()=>false,isKnownGalleryUrl:()=>false,videoSourceCandidates:u=>[u],videoSizeFromUrl:()=>null,applyInitialAspectRatio(){},shouldKeepReferrer:()=>false,scheduleMasonryLayout(){},alternateImageUrl:()=>'',Event:class{},document:{createElement(){return {dataset:{},style:{},events:{},addEventListener(k,fn){this.events[k]=fn;},dispatchEvent(){this.events.error();},replaceWith(node){replacement=node;}};}},createVideoElement(){videoCreates++;return {dataset:{},style:{}};}};
+  vm.createContext(ctx);vm.runInContext(span('  function createVideoPreviewElement(', '  function createVideoPreviewFrame('),ctx);const img=ctx.createVideoPreviewElement(url,0);img.events.error();assert.equal(videoCreates,1);assert(replacement);assert.equal(ctx.state.posterByImage.has(url),false);
+  console.log('PASS a broken poster falls back once without reloading the same failed image');
+}
+{
+  let loads=0,captures=0,unloads=0;const scheduled=new Map();let timer=0;
+  const videos=Array.from({length:4},()=>({isConnected:true,dataset:{previewUrl:'https://media.test/clip.mp4'},events:{},addEventListener(k,fn){this.events[k]=fn;},removeEventListener(k,fn){if(this.events[k]===fn)delete this.events[k];}}));
+  const preview={state:{active:true,lightbox:{dataset:{active:'false'}},videoPreviewQueue:videos.slice(),videoPreviewLoading:0},document:{visibilityState:'visible'},VIDEO_PREVIEW_CONCURRENCY:3,videoPreviewDistance:()=>0,window:{setTimeout(fn){scheduled.set(++timer,fn);return timer;}},clearTimeout:id=>scheduled.delete(id),setVideoSourceWithFallback(){loads++;},captureVideoPreviewFrame(){captures++;},unloadVideoElement(){unloads++;}};
+  vm.createContext(preview);vm.runInContext(span('  function pumpVideoPreviewQueue(', '  function videoPreviewDistance(')+span('  function finishVideoPreviewLoad(', '  function captureVideoPreviewFrame('),preview);
+  preview.pumpVideoPreviewQueue();assert.equal(loads,3);assert.equal(preview.state.videoPreviewLoading,3);
+  videos[0].events.loadeddata();assert.equal(loads,4);assert.equal(captures,1);assert.equal(preview.state.videoPreviewLoading,3);
+  preview.cancelVideoPreview(videos[1]);assert.equal(preview.state.videoPreviewLoading,2);assert.equal(unloads,1);assert.equal(videos[1].events.loadeddata,undefined);
+  videos[2].events.loadeddata();videos[3].events.loadeddata();assert.equal(preview.state.videoPreviewLoading,0);assert.equal(scheduled.size,0);
+  console.log('PASS first decoded frame releases preview slots; cancellation removes listeners and timers');
+}
+{
+  let current={tagName:'IMG',getBoundingClientRect:()=>({width:600,height:400}),removeAttribute(){},replaceWith(node){current=node;}};
+  const tile={isConnected:true,hidden:false,dataset:{url:'https://media.test/1.jpg',index:'34',mediaMounted:'true',selected:'true'},querySelector(){return current;}};
+  const ctx={state:{},initialMediaRatio:()=>0.72,isVideoUrl:()=>false,document:{createElement(){return {style:{},replaceWith(node){current=node;}};}},createTileMedia:(url,index)=>({url,index,tagName:'IMG'})};
+  vm.createContext(ctx);vm.runInContext(span('  function createTileMediaPlaceholder(', '  function ensureTileMediaObserver('),ctx);
+  ctx.setTileMediaMounted(tile,false);assert.equal(tile.dataset.mediaMounted,'false');assert(current.style.cssText.includes('aspect-ratio:1.5'));
+  ctx.setTileMediaMounted(tile,true);assert.equal(current.url,tile.dataset.url);assert.equal(current.index,34);assert.equal(tile.dataset.selected,'true');
+  tile.hidden=true;current.replaceWith=node=>{current=node;};current.getBoundingClientRect=()=>({width:0,height:0});current.removeAttribute=()=>{};ctx.setTileMediaMounted(tile,false);assert.equal(tile.dataset.mediaMounted,'false');
+  console.log('PASS offscreen media releases sources, keeps dimensions and selection, and restores the same item');
+}
+{
+  const layout={state:{grid:{clientWidth:1000,querySelectorAll:()=>[],replaceChildren(){throw Error('stable cards were detached');}},lastMasonryWidth:1000,columns:3,masonryColumns:Array.from({length:3},()=>({isConnected:true}))},useSimpleGridLayout:()=>false,columnHeight:()=>800};
+  vm.createContext(layout);vm.runInContext(span('  function layoutMasonry(', '  function withStageScrollPreserved('),layout);layout.layoutMasonry();assert.deepEqual(Array.from(layout.state.masonryColumnHeights),[800,800,800]);
+  console.log('PASS media loads retain masonry cards and do not reload preview frames');
+}
 const shared=new Map([['flowlens-global-settings-v2',JSON.stringify({columns:3})]]);
 function site(){const local=new Map(), handlers={};const c={window:{dispatchEvent(){},addEventListener(){}},document:{documentElement:{classList:{toggle(){}}},addEventListener:(k,v)=>handlers[k]=v,visibilityState:'visible'},localStorage:{getItem:k=>local.get(k)||null,setItem:(k,v)=>local.set(k,v)},GM_getValue:(k,d)=>shared.get(k)||d,GM_setValue:(k,v)=>shared.set(k,v),CustomEvent:class{},Object};vm.runInNewContext(read('src/core/global-settings.js'),c);return {c,local,handlers};}
 const a=site(),b=site();b.c.window.__flowLensSyncGlobalSettings({columns:5});a.c.document.visibilityState='hidden';a.handlers.visibilitychange();assert.equal(JSON.parse(shared.get('flowlens-global-settings-v2')).columns,5);a.c.document.visibilityState='visible';a.handlers.visibilitychange();assert.equal(JSON.parse(a.local.get('flowlens-settings-v2')).columns,5);

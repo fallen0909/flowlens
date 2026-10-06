@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens mobile
 // @namespace    local.flowlens.mobile.all
-// @version      2.0.6
+// @version      2.0.7
 // @description  FlowLens mobile release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,8 +28,8 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.6";
-  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-10-06", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews"]), source: "src/core/version.js" });
+  const VERSION = "2.0.7";
+  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-10-07", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
 })();
@@ -1434,7 +1434,7 @@
   const GALLERY_PAGE_WINDOW = 16;
   const GALLERY_FETCH_BATCH = 3;
   const SITE_ALBUM_FETCH_BATCH = 6;
-  const VIDEO_PREVIEW_CONCURRENCY = 1;
+  const VIDEO_PREVIEW_CONCURRENCY = 3;
 
   const state = {
     root: null,
@@ -1453,6 +1453,7 @@
     photoShowByImage: new Map(),
     highResByImage: new Map(),
     posterByImage: new Map(),
+    previewPosterCache: new Map(),
     mediaRatioByImage: new Map(),
     videoTimeByImage: new Map(),
     favoriteKeys: new Set(),
@@ -1489,6 +1490,8 @@
     galleryQueueRefreshTimer: 0,
     videoPreviewObserver: null,
     imageLoadObserver: null,
+    tileMediaObserver: null,
+    nearMediaTiles: new Set(),
     videoPreviewQueue: [],
     videoPreviewLoading: 0,
     hostOverlayObserver: null,
@@ -4644,8 +4647,48 @@
 
   function rememberPosterUrl(imageUrl, posterUrl) {
     if (posterUrl && isMediaUrl(posterUrl) && !isVideoUrl(posterUrl)) {
-      state.posterByImage.set(keyForUrl(imageUrl), posterUrl);
+      state.posterByImage.set(keyForUrl(normalizeMediaUrl(imageUrl)), fastVideoPosterUrl(posterUrl));
     }
+  }
+
+  function fastVideoPosterUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      if (/^(twimg(?:\.l)?\.moonchan\.xyz|pbs\.moonchan\.xyz)$/i.test(parsed.hostname)) {
+        parsed.hostname = "pbs.twimg.com";
+        parsed.port = "";
+      }
+      return parsed.href;
+    } catch { return url; }
+  }
+
+  function collectVideoPosters(doc, base) {
+    const posterFor = node => {
+      for (const attr of ["poster", "data-poster", "data-thumbnail", "data-thumb", "data-cover", "data-preview"]) {
+        const url = absoluteUrl(node.getAttribute?.(attr), base);
+        if (url && isMediaUrl(url) && !isVideoUrl(url)) return url;
+      }
+      const scope = node.closest?.("a, figure, article, li") || node.parentElement;
+      // A shared container with several videos cannot safely identify a cover.
+      if (!scope || scope.querySelectorAll?.("video, a[href$='.mp4']").length > 1) return "";
+      const img = scope.querySelector?.("img");
+      return img ? imageCandidateFromImg(img, base) : "";
+    };
+    doc.querySelectorAll("video, a[href]").forEach(node => {
+      if (state.root?.contains(node)) return;
+      const url = node.tagName === "VIDEO" ? mediaCandidateFromVideo(node, base) : absoluteUrl(node.getAttribute("href"), base);
+      if (isVideoUrl(url)) rememberPosterUrl(url, posterFor(node));
+    });
+    doc.querySelectorAll("iframe[srcdoc]").forEach(frame => {
+      if (state.root?.contains(frame)) return;
+      const html = frame.getAttribute("srcdoc") || "";
+      const inner = new DOMParser().parseFromString(html, "text/html");
+      inner.querySelectorAll("video[poster]").forEach(video => {
+        const poster = absoluteUrl(video.getAttribute("poster"), base);
+        const urls = [mediaCandidateFromVideo(video, base), ...(unescapeEmbeddedUrl(html).match(/https?:\/\/[^\s"'<>]+\.mp4(?:\?[^\s"'<>]*)?/g) || [])];
+        urls.filter(isVideoUrl).forEach(url => rememberPosterUrl(url, poster));
+      });
+    });
   }
 
   function addImage(url, detailUrl = "", posterUrl = "") {
@@ -4782,6 +4825,7 @@
     let added = 0;
     state.collectionBase = base;
     doc.documentElement.dataset.xivBase = base;
+    collectVideoPosters(doc, base);
     refreshGalleryQueue(doc, base);
     rememberExpectedImageCount(doc);
     if (isCloudDriveFilesPage(base)) {
@@ -4808,18 +4852,21 @@
     if (isPhotoGalleryPage(base)) discoverPageLinksFromDocument(doc, base);
 
     doc.querySelectorAll("img").forEach((img) => {
+      if (state.root?.contains(img) || state.launch?.contains(img)) return;
       const url = imageCandidateFromImg(img, base);
       const detailUrl = absoluteUrl(closestHref(img, base), base);
       if (isGoodImage(url, img) && addImage(url, detailUrl)) added += 1;
     });
 
     doc.querySelectorAll("video").forEach((video) => {
+      if (state.root?.contains(video)) return;
       const url = mediaCandidateFromVideo(video, base);
-      const poster = absoluteUrl(video.getAttribute?.("poster"), base);
+      const poster = state.posterByImage.get(keyForUrl(normalizeMediaUrl(url))) || absoluteUrl(video.getAttribute?.("poster"), base);
       if (isGoodImage(url, video) && addImage(url, "", poster)) added += 1;
     });
 
     doc.querySelectorAll("source[src]").forEach((source) => {
+      if (state.root?.contains(source)) return;
       const url = absoluteUrl(source.getAttribute("src"), base);
       if (isGoodImage(url, source.closest("video") || source) && addImage(url)) added += 1;
     });
@@ -4834,6 +4881,7 @@
     }
 
     doc.querySelectorAll("a[href]").forEach((a) => {
+      if (state.root?.contains(a)) return;
       const href = absoluteUrl(a.getAttribute("href"), base);
       const img = a.querySelector("img");
       if (img && isDetailPhotoPage(href)) {
@@ -4845,6 +4893,7 @@
     });
 
     doc.querySelectorAll("[style]").forEach((el) => {
+      if (state.root?.contains(el)) return;
       for (const url of backgroundImageUrls(el.getAttribute("style"), base)) {
         if (isGoodImage(url, el) && addImage(url)) added += 1;
       }
@@ -4898,6 +4947,9 @@
 
   function resetCollection() {
     invalidateCollectionRequests();
+    stopTileMediaObserver();
+    state.imageLoadObserver?.disconnect();
+    state.imageLoadObserver = null;
     state.images = [];
     state.detailByImage.clear();
     state.photoShowByImage.clear();
@@ -4950,10 +5002,13 @@
   }
 
   function normalizeX810114VideoUrl(url) {
-    return url
-      ? url
-        .replace("https://twimg.moonchan.xyz", "https://video.twimg.com")
-      : "";
+    try {
+      const parsed = new URL(url);
+      if (/^(twimg(?:\.l)?\.moonchan\.xyz|pbs\.moonchan\.xyz)$/i.test(parsed.hostname)) {
+        parsed.hostname = "video.twimg.com"; parsed.port = "";
+      }
+      return parsed.href;
+    } catch { return url || ""; }
   }
 
   function normalizeMediaUrl(url) {
@@ -5166,7 +5221,7 @@
 
   function x810114PosterUrl(item) {
     const raw = x810114ImageValues(item)
-      .map((url) => normalizeX810114ImageUrl(url))
+      .map((url) => fastVideoPosterUrl(url))
       .find((url) => url && isMediaUrl(url) && !isVideoUrl(url));
     return raw || "";
   }
@@ -5195,11 +5250,11 @@
   function videoSourceCandidates(url) {
     try {
       const parsed = new URL(url, location.href);
-      if (!/^(twimg\.moonchan\.xyz|video(?:-cf)?\.twimg\.com)$/i.test(parsed.hostname)) return [url];
+      if (!/^(twimg(?:\.l)?\.moonchan\.xyz|pbs\.moonchan\.xyz|video(?:-cf)?\.twimg\.com)$/i.test(parsed.hostname)) return [url];
       const hosts = parsed.hostname === "video-cf.twimg.com"
         ? ["video-cf.twimg.com", "video.twimg.com", "twimg.moonchan.xyz"]
         : ["video.twimg.com", "video-cf.twimg.com", "twimg.moonchan.xyz"];
-      return hosts.map(host => { const source = new URL(parsed.href); source.hostname = host; return source.href; });
+      return hosts.map(host => { const source = new URL(parsed.href); source.hostname = host; source.port = ""; return source.href; });
     } catch { return [url]; }
   }
 
@@ -5353,7 +5408,7 @@
   }
 
   function createVideoPreviewElement(url, index) {
-    const poster = state.posterByImage.get(keyForUrl(url));
+    const poster = state.posterByImage.get(keyForUrl(url)) || state.previewPosterCache.get(keyForUrl(url));
     if (!poster) {
       if (isCloudDriveMediaUrl(url)) {
         const placeholder = document.createElement("div");
@@ -5363,13 +5418,14 @@
         placeholder.style.setProperty("--xiv-video-ratio", String(ratio));
         return placeholder;
       }
+      if (videoSourceCandidates(url).length > 1) return createVideoPreviewFrame(url);
       const video = createVideoElement(url, {
         autoplay: false,
         controls: false,
         preload: "none",
         keepFirstFrame: true,
-        previewTime: 1,
-        previewMode: isGenericX810114Page() || /\/\/twimg\.moonchan\.xyz\//i.test(url) ? "canvas" : /\/\/video(?:-cf)?\.twimg\.com\//i.test(url) ? "seek" : "canvas",
+        previewTime: 0,
+        previewMode: "seek",
         deferSource: true
       });
       const size = videoSizeFromUrl(url);
@@ -5388,7 +5444,7 @@
     if (index < Math.min(6, eagerLimit)) img.fetchPriority = "high";
     else if (index >= eagerLimit) img.dataset.xivDeferredImage = "true";
     img.decoding = "async";
-    applyInitialAspectRatio(img, poster);
+    applyInitialAspectRatio(img, url, 16 / 9);
     img.referrerPolicy = shouldKeepReferrer(poster) ? "no-referrer-when-downgrade" : "no-referrer";
     img.src = poster;
     img.addEventListener("load", () => {
@@ -5400,6 +5456,8 @@
     }, { once: true });
     img.addEventListener("error", () => {
       if (img.dataset.fallbackTried === "true") {
+        state.posterByImage.delete(keyForUrl(url));
+        state.previewPosterCache.delete(keyForUrl(url));
         const video = createVideoPreviewElement(url, index);
         img.replaceWith(video);
         scheduleMasonryLayout();
@@ -5417,6 +5475,29 @@
     return img;
   }
 
+  function createVideoPreviewFrame(url) {
+    const frame = document.createElement("iframe");
+    frame.className = "xiv-preview-frame";
+    frame.title = "视频首帧预览";
+    frame.setAttribute("aria-hidden", "true");
+    frame.tabIndex = -1;
+    frame.referrerPolicy = "no-referrer";
+    frame.sandbox = "allow-scripts allow-same-origin";
+    frame.style.cssText = "display:block;width:100%;height:auto;border:0;pointer-events:none;aspect-ratio:" + initialMediaRatio(url, 16 / 9);
+    frame.addEventListener("load", () => {
+      if (!frame.isConnected || !state.active || !frame.contentDocument?.body) return;
+      if (frame.contentDocument.querySelector("video")) return;
+      if (frame.__flowLensPreviewVideo) cancelVideoPreview(frame.__flowLensPreviewVideo);
+      const video = createVideoElement(url, { preload: "none", keepFirstFrame: true, previewMode: "seek", previewTime: 0, deferSource: true });
+      video.dataset.previewUrl = url;
+      frame.contentDocument.body.appendChild(video);
+      frame.__flowLensPreviewVideo = video;
+      if (state.settings?.videoPreview !== false) observeVideoPreview(frame);
+    });
+    frame.srcdoc = videoFrameSrcDoc();
+    return frame;
+  }
+
   function videoSizeFromUrl(url) {
     return sizeFromUrl(url);
   }
@@ -5426,8 +5507,9 @@
     state.videoPreviewObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
-        const video = entry.target;
-        state.videoPreviewObserver?.unobserve(video);
+        const target = entry.target;
+        const video = target.__flowLensPreviewVideo || target;
+        state.videoPreviewObserver?.unobserve(target);
         queueVideoPreview(video);
       }
     }, { root: state.stage || null, rootMargin: "360px 0px", threshold: 0.01 });
@@ -5462,7 +5544,7 @@
   }
 
   function videoPreviewDistance(video) {
-    const rect = video.getBoundingClientRect();
+    const rect = (video.ownerDocument?.defaultView?.frameElement || video).getBoundingClientRect();
     const viewportCenter = window.innerHeight / 2;
     if (rect.top <= window.innerHeight && rect.bottom >= 0) return 0;
     return Math.min(Math.abs(rect.top - viewportCenter), Math.abs(rect.bottom - viewportCenter));
@@ -5471,112 +5553,13 @@
   function finishVideoPreviewLoad(video, timer, ready = false) {
     clearTimeout(timer);
     if (video.dataset.previewLoading !== "true") return;
+    video.__flowLensPreviewCleanup?.();
+    video.__flowLensPreviewCleanup = null;
     video.dataset.previewLoading = "false";
     state.videoPreviewLoading = Math.max(0, state.videoPreviewLoading - 1);
-    if (!ready && video.readyState < 2) {
-      const retries = Number(video.dataset.previewRetries || 0);
-      if (retries < 2 && video.isConnected) {
-        video.dataset.previewRetries = String(retries + 1);
-        video.dataset.previewLoaded = "false";
-        video.dataset.previewQueued = "false";
-        clearTimeout(Number(video.dataset.loadTimer || 0));
-        video.removeAttribute("src");
-        video.load();
-        observeVideoPreview(video);
-      } else {
-        loadVideoPreviewViaBlob(video);
-      }
-    }
+    if (ready) captureVideoPreviewFrame(video);
+    else unloadVideoElement(video);
     pumpVideoPreviewQueue();
-  }
-
-  function loadVideoPreviewViaBlob(video) {
-    const url = video?.dataset?.previewUrl || video?.dataset?.sourceUrl || "";
-    if (!video?.isConnected || !url || video.dataset.previewBlobTried === "true") return;
-    if (typeof GM_xmlhttpRequest !== "function") {
-      video.dataset.previewLoaded = "false";
-      video.dataset.previewLoading = "false";
-      return;
-    }
-    video.dataset.previewBlobTried = "true";
-    const failBlobFallback = () => {
-      if (!video.isConnected) return;
-      video.dataset.previewLoaded = "false";
-      video.dataset.previewLoading = "false";
-      video.dataset.previewQueued = "false";
-      pumpVideoPreviewQueue();
-    };
-    GM_xmlhttpRequest({
-      method: "GET",
-      url,
-      responseType: "blob",
-      timeout: 30000,
-      onload: (response) => {
-        if (!video.isConnected) return;
-        if (response.status < 200 || response.status >= 300 || !response.response) {
-          failBlobFallback();
-          return;
-        }
-        const objectUrl = URL.createObjectURL(response.response);
-        let done = false;
-        const cleanup = () => {
-          video.removeEventListener("loadedmetadata", onReady);
-          video.removeEventListener("loadeddata", onReady);
-          video.removeEventListener("seeked", onSeeked);
-          video.removeEventListener("error", onError);
-        };
-        const capture = () => {
-          if (done || !video.isConnected) return;
-          done = true;
-          cleanup();
-          video.dataset.previewLoaded = "true";
-          video.dataset.previewLoading = "false";
-          captureVideoPreviewFrame(video);
-          pumpVideoPreviewQueue();
-        };
-        const onSeeked = () => capture();
-        const onError = () => {
-          if (done) return;
-          done = true;
-          cleanup();
-          video.dataset.previewLoaded = "true";
-          video.dataset.previewLoading = "false";
-          pumpVideoPreviewQueue();
-        };
-        const onReady = () => {
-          if (done || !video.isConnected) return;
-          const duration = Number(video.duration || 0);
-          const target = Number.isFinite(duration) && duration > 2.2 ? Math.min(duration - 0.2, 1.8) : 0;
-          if (Math.abs((video.currentTime || 0) - target) > 0.15) {
-            try {
-              video.currentTime = target;
-              return;
-            } catch {
-              // Some short blobs are not seekable before decode; capture current frame.
-            }
-          }
-          capture();
-        };
-        video.addEventListener("loadedmetadata", onReady);
-        video.addEventListener("loadeddata", onReady);
-        video.addEventListener("seeked", onSeeked);
-        video.addEventListener("error", onError);
-        video.dataset.previewObjectUrl = objectUrl;
-        video.dataset.previewMode = "canvas";
-        video.dataset.previewLoaded = "false";
-        video.dataset.previewLoading = "true";
-        video.dataset.sourceUrl = url;
-        video.preload = "auto";
-        video.src = objectUrl;
-        video.load();
-        window.setTimeout(() => {
-          if (!done && video.readyState >= 2) capture();
-          else if (!done) onError();
-        }, 9000);
-      },
-      onerror: failBlobFallback,
-      ontimeout: failBlobFallback
-    });
   }
 
   function startVideoPreviewLoad(video) {
@@ -5586,16 +5569,31 @@
     video.dataset.previewLoaded = "true";
     video.dataset.previewLoading = "true";
     state.videoPreviewLoading += 1;
-    video.preload = "metadata";
+    video.preload = "auto";
     let timer = 0;
-    const finishReady = () => finishVideoPreviewLoad(video, timer, true);
-    const finishTimeout = () => finishVideoPreviewLoad(video, timer, false);
-    timer = window.setTimeout(finishTimeout, 8000);
-    video.addEventListener("seeked", finishReady, { once: true });
-    if (video.dataset.previewMode !== "canvas") {
-      video.addEventListener("loadeddata", finishReady, { once: true });
-    }
+    const onReady = () => finishVideoPreviewLoad(video, timer, true);
+    const onTimeout = () => finishVideoPreviewLoad(video, timer, false);
+    const onError = () => { if (video.dataset.flSourceFailed === "true") onTimeout(); };
+    video.__flowLensPreviewCleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener("loadeddata", onReady);
+      video.removeEventListener("error", onError);
+    };
+    timer = window.setTimeout(onTimeout, 10000);
+    video.addEventListener("loadeddata", onReady);
+    video.addEventListener("error", onError);
     setVideoSourceWithFallback(video, url, false);
+  }
+
+  function cancelVideoPreview(video) {
+    if (!video) return;
+    video.__flowLensPreviewCleanup?.();
+    video.__flowLensPreviewCleanup = null;
+    if (video.dataset.previewLoading === "true") state.videoPreviewLoading = Math.max(0, state.videoPreviewLoading - 1);
+    video.dataset.previewLoading = "false";
+    state.videoPreviewObserver?.unobserve(video.ownerDocument?.defaultView?.frameElement || video);
+    state.videoPreviewQueue = state.videoPreviewQueue.filter(item => item !== video);
+    unloadVideoElement(video);
   }
 
   function captureVideoPreviewFrame(video) {
@@ -5604,7 +5602,7 @@
     const height = video.videoHeight || 0;
     if (!width || !height) return;
 
-    const maxSide = 900;
+    const maxSide = 400;
     const scale = Math.min(1, maxSide / Math.max(width, height));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(width * scale));
@@ -5614,38 +5612,34 @@
 
     try {
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      if (isMostlyDarkFrame(context, canvas.width, canvas.height)) {
-        const attempts = Number(video.dataset.previewCaptureAttempts || 0);
-        const duration = Number(video.duration || 0);
-        if (attempts < 2 && Number.isFinite(duration) && duration > 2.5) {
-          video.dataset.previewCaptureAttempts = String(attempts + 1);
-          const nextTime = Math.min(duration - 0.25, attempts === 0 ? 2.5 : 4);
-          if (nextTime > video.currentTime + 0.2) {
-            video.currentTime = nextTime;
-            return;
-          }
-        }
-      }
-
       const img = document.createElement("img");
       img.loading = "lazy";
       img.decoding = "async";
       img.alt = "";
-      img.src = canvas.toDataURL("image/jpeg", 0.82);
+      img.src = canvas.toDataURL("image/jpeg", 0.7);
       img.style.aspectRatio = `${width} / ${height}`;
       video.dataset.previewCaptured = "true";
       rememberMediaRatio(video.dataset.previewUrl || video.dataset.sourceUrl || "", width, height);
+      const key = keyForUrl(video.dataset.previewUrl || video.dataset.sourceUrl || "");
+      state.previewPosterCache.delete(key);
+      state.previewPosterCache.set(key, img.src);
+      if (state.previewPosterCache.size > 100) state.previewPosterCache.delete(state.previewPosterCache.keys().next().value);
       clearTimeout(Number(video.dataset.loadTimer || 0));
       const objectUrl = video.dataset.previewObjectUrl || "";
       video.pause();
       video.removeAttribute("src");
       video.load();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
-      video.replaceWith(img);
+      const frame = video.ownerDocument?.defaultView?.frameElement;
+      (frame || video).replaceWith(img);
       scheduleMasonryLayout();
     } catch {
       // If canvas capture is blocked, keep the video preview fallback.
       video.pause();
+      video.preload = "none";
+      const frame = video.ownerDocument?.defaultView?.frameElement;
+      if (frame) frame.style.aspectRatio = `${width} / ${height}`;
+      rememberMediaRatio(video.dataset.previewUrl || video.dataset.sourceUrl || "", width, height);
       scheduleMasonryLayout();
     }
   }
@@ -5858,6 +5852,7 @@
   async function prepareGenericX810114Page() {
     const generation = state.collectionGeneration;
     const isCurrent = () => generation === state.collectionGeneration && !state.collectionController.signal.aborted;
+    collectVideoPosters(document, location.href);
     if (!isX810114ProfilePage()) {
       collectFromDocument(document, location.href);
       updateStatus(`已收集 ${state.images.length} 张`);
@@ -6066,6 +6061,7 @@
     if (doc !== document) return 0;
     let added = 0;
     doc.querySelectorAll("img").forEach((img) => {
+      if (state.root?.contains(img) || state.launch?.contains(img)) return;
       const url = imageCandidateFromImg(img, base);
       if (!url || !isMediaUrl(url) || BAD_IMAGE_RE.test(url) || isAdMediaUrl(url)) return;
       if (STATIC_ASSET_RE.test(url) && !isDiscuzAttachmentUrl(url)) return;
@@ -6944,9 +6940,10 @@
       tile.dataset.url = url;
       tile.dataset.urlKey = key;
       tile.hidden = !mediaMatchesFilter(url);
-      const media = isVideoUrl(url)
-        ? createVideoPreviewElement(url, index)
-        : createImageElement(url, index);
+      const media = index < 18 || typeof IntersectionObserver !== "function"
+        ? createTileMedia(url, index)
+        : createTileMediaPlaceholder(url);
+      tile.dataset.mediaMounted = media.className === "xiv-media-placeholder" ? "false" : "true";
       if (media.tagName === "VIDEO") {
         media.controls = false;
       }
@@ -6989,6 +6986,7 @@
       ensureMasonryColumns();
       appendTilesToMasonry([...fragment.childNodes]);
       observeDeferredImages();
+      observeTileMedia();
     }
     updateCounter();
     if (state.renderQueue.length) {
@@ -7013,6 +7011,83 @@
         state.imageLoadObserver?.unobserve(img);
       }
     }, { root: state.stage, rootMargin: "900px 0px", threshold: 0.01 });
+  }
+
+  function createTileMedia(url, index) {
+    return isVideoUrl(url) ? createVideoPreviewElement(url, index) : createImageElement(url, index);
+  }
+
+  function createTileMediaPlaceholder(url, ratio = initialMediaRatio(url, isVideoUrl(url) ? 16 / 9 : 0.72)) {
+    const node = document.createElement("div");
+    node.className = "xiv-media-placeholder";
+    node.style.cssText = `display:block;width:100%;min-height:96px;max-height:82vh;background:#111;aspect-ratio:${ratio}`;
+    return node;
+  }
+
+  function setTileMediaMounted(tile, mounted, observedRect = null) {
+    if (!tile?.isConnected || (mounted && tile.hidden) || (tile.dataset.mediaMounted === "true") === mounted) return;
+    const url = tile.dataset.url;
+    if (mounted) {
+      const placeholder = tile.querySelector(":scope > .xiv-media-placeholder");
+      if (!placeholder) return;
+      const media = createTileMedia(url, Number(tile.dataset.index));
+      placeholder.replaceWith(media);
+      tile.dataset.mediaMounted = "true";
+      if (media.tagName === "IMG") { media.loading = "eager"; state.imageLoadObserver?.unobserve(media); }
+      return;
+    }
+    const media = tile.querySelector(":scope > img, :scope > video, :scope > iframe, :scope > .xiv-video-placeholder");
+    if (!media) return;
+    const rect = observedRect || media.getBoundingClientRect();
+    const { width, height } = rect;
+    const ratio = width > 0 && height > 0 ? width / height : initialMediaRatio(url, 0.72);
+    const placeholder = createTileMediaPlaceholder(url, ratio);
+    // Keep the occupied height exactly, including max-height constrained images.
+    placeholder.style.maxHeight = "82vh";
+    const video = media.tagName === "VIDEO" ? media : media.__flowLensPreviewVideo;
+    if (video) cancelVideoPreview(video);
+    state.imageLoadObserver?.unobserve(media);
+    media.replaceWith(placeholder);
+    if (media.tagName === "IMG") { media.removeAttribute("src"); media.removeAttribute("srcset"); }
+    if (media.tagName === "IFRAME") { media.__flowLensPreviewVideo = null; media.srcdoc = ""; }
+    tile.dataset.mediaMounted = "false";
+  }
+
+  function ensureTileMediaObserver() {
+    if (state.tileMediaObserver || typeof IntersectionObserver !== "function") return;
+    state.tileMediaObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && !entry.target.hidden) state.nearMediaTiles.add(entry.target);
+        else state.nearMediaTiles.delete(entry.target);
+        if (state.active && state.lightbox?.dataset.active !== "true") setTileMediaMounted(entry.target, entry.isIntersecting && !entry.target.hidden, entry.boundingClientRect);
+      }
+      pumpVideoPreviewQueue();
+    }, { root: state.stage, rootMargin: "1000px 0px", threshold: 0.01 });
+  }
+
+  function observeTileMedia() {
+    ensureTileMediaObserver();
+    if (!state.tileMediaObserver) return;
+    state.grid.querySelectorAll('.xiv-tile:not([data-media-observed])').forEach(tile => {
+      tile.dataset.mediaObserved = "true";
+      state.tileMediaObserver.observe(tile);
+    });
+  }
+
+  function resumeTileMedia() {
+    if (!state.active || state.lightbox?.dataset.active === "true") return;
+    state.nearMediaTiles.forEach(tile => setTileMediaMounted(tile, true));
+    pumpVideoPreviewQueue();
+  }
+
+  function stopTileMediaObserver() {
+    state.tileMediaObserver?.disconnect();
+    state.tileMediaObserver = null;
+    state.nearMediaTiles.clear();
+    state.grid?.querySelectorAll('video, .xiv-preview-frame').forEach(media => {
+      const video = media.__flowLensPreviewVideo || (media.tagName === "VIDEO" ? media : null);
+      if (video) cancelVideoPreview(video);
+    });
   }
 
   function observeDeferredImages() {
@@ -7116,10 +7191,13 @@
       state.masonryColumnHeights = columns.map((column) => columnHeight(column));
     }
     const columnHeights = state.masonryColumnHeights;
+    const widths = columns.map(column => column.clientWidth);
+    const gap = masonryGap();
     for (const tile of tiles) {
       const index = shortestColumnIndex(columnHeights);
+      const height = tile.hidden ? 0 : estimatedTileHeight(tile, columns[index], widths[index], gap);
       columns[index]?.appendChild(tile);
-      if (!tile.hidden) columnHeights[index] += estimatedTileHeight(tile, columns[index]);
+      columnHeights[index] += height;
     }
   }
 
@@ -7132,14 +7210,16 @@
   }
 
   function columnHeight(column) {
-    return [...column.children].reduce((sum, tile) => sum + (tile.hidden ? 0 : estimatedTileHeight(tile, column)), 0);
+    const width = column.clientWidth;
+    const gap = masonryGap();
+    return [...column.children].reduce((sum, tile) => sum + (tile.hidden ? 0 : estimatedTileHeight(tile, column, width, gap)), 0);
   }
 
-  function estimatedTileHeight(tile, column) {
+  function estimatedTileHeight(tile, column, knownWidth = 0, knownGap = -1) {
     const cached = Number(tile.dataset.estimatedHeight || 0);
     if (cached > 20) return cached;
     const url = tile.dataset.url || "";
-    const media = tile.querySelector("img, video");
+    const media = tile.querySelector("img, video, iframe, .xiv-media-placeholder");
     const naturalWidth = media?.naturalWidth || media?.videoWidth || 0;
     const naturalHeight = media?.naturalHeight || media?.videoHeight || 0;
     if (naturalWidth > 0 && naturalHeight > 0) {
@@ -7150,16 +7230,8 @@
       || ratioFromSize(sizeFromUrl(url))
       || ratioFromSize(sizeFromUrl(media?.currentSrc || media?.src || ""))
       || 0;
-    const columnWidth = column?.clientWidth || tile.clientWidth || Math.max(160, Math.floor((state.stage?.clientWidth || window.innerWidth || 1000) / Math.max(1, state.columns)));
-    if (!ratio) {
-      const rect = tile.getBoundingClientRect?.();
-      if (rect?.height > 20) {
-        const measured = rect.height + masonryGap();
-        tile.dataset.estimatedHeight = String(Math.round(measured));
-        return measured;
-      }
-    }
-    const estimated = Math.max(80, columnWidth / (ratio || 0.72)) + masonryGap();
+    const columnWidth = knownWidth || column?.clientWidth || Math.max(160, Math.floor((state.stage?.clientWidth || window.innerWidth || 1000) / Math.max(1, state.columns)));
+    const estimated = Math.max(96, Math.min(columnWidth / (ratio || 0.72), window.innerHeight * 0.82)) + (knownGap >= 0 ? knownGap : masonryGap());
     tile.dataset.estimatedHeight = String(Math.round(estimated));
     return estimated;
   }
@@ -7170,6 +7242,7 @@
 
   function ratioFromStyle(media) {
     const raw = media?.style?.aspectRatio || "";
+    if (/^\s*\d+(?:\.\d+)?\s*$/.test(raw)) return Number(raw);
     const match = raw.match(/^\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*$/);
     if (!match) return 0;
     const width = Number(match[1]);
@@ -7186,6 +7259,19 @@
   function layoutMasonry() {
     if (!state.grid) return;
     if (useSimpleGridLayout()) return;
+    // Media loading must not detach every card: moving an iframe reloads its
+    // document and decoding hundreds of images again makes scrolling stutter.
+    if (state.masonryColumns.length === state.columns && state.masonryColumns.every(column => column.isConnected)) {
+      const width = state.grid.clientWidth;
+      if (state.lastMasonryWidth !== width) {
+        state.grid.querySelectorAll('.xiv-tile[data-estimated-height]').forEach(tile => {
+          if (tile.dataset.estimatedHeight) tile.dataset.estimatedHeight = "";
+        });
+        state.lastMasonryWidth = width;
+      }
+      state.masonryColumnHeights = state.masonryColumns.map(columnHeight);
+      return;
+    }
     withStageScrollPreserved(() => {
       const tiles = allTiles();
       tiles.forEach((tile) => { tile.dataset.estimatedHeight = ""; });
@@ -7248,7 +7334,9 @@
     const stageRect = state.stage.getBoundingClientRect();
     let best = null;
     let bestDistance = Infinity;
-    for (const tile of allTiles()) {
+    const candidates = state.tileMediaObserver ? [...state.nearMediaTiles] : allTiles();
+    for (const tile of candidates) {
+      if (!tile.isConnected || tile.hidden) continue;
       const rect = tile.getBoundingClientRect();
       if (rect.bottom < stageRect.top + 54) continue;
       const distance = Math.abs(rect.top - (stageRect.top + 54));
@@ -7257,7 +7345,7 @@
         bestDistance = distance;
       }
     }
-    return best || allTiles()[0] || null;
+    return best || state.grid?.querySelector(".xiv-tile:not([hidden])") || null;
   }
 
   function currentViewerPosition() {
@@ -8053,6 +8141,8 @@
     stopGenericObserver();
     stopHostOverlayGuard();
     state.active = false;
+    state.grid?.querySelectorAll('.xiv-tile[data-media-mounted="true"]').forEach(tile => setTileMediaMounted(tile, false));
+    stopTileMediaObserver();
     state.galleryQueueCurrentUrl = "";
     state.galleryQueueCurrentTitle = "";
     document.documentElement.classList.remove("xiv-active");
@@ -8224,7 +8314,7 @@
     clearTimeout(state.mediaPreloadTimer);
     clearTimeout(state.highResResolveTimer);
     if (state.renderQueue.length) scheduleRenderQueue();
-    if (resumeAutoScroll) { pumpVideoPreviewQueue(); resumeAutoScrollAfterLightbox(); }
+    if (resumeAutoScroll) { resumeTileMedia(); resumeAutoScrollAfterLightbox(); }
   }
 
   function lightboxArrows() {
@@ -9215,6 +9305,10 @@
       },
       getAdapterStatus() {
         return siteAdapterStatus();
+      },
+      getPerformanceStatus() {
+        const tiles = state.grid?.querySelectorAll(".xiv-tile") || [];
+        return { tiles: tiles.length, mountedMedia: state.grid?.querySelectorAll('.xiv-tile[data-media-mounted="true"]')?.length || 0, previewLoading: state.videoPreviewLoading, previewCached: state.previewPosterCache.size };
       }
     };
   }
@@ -9860,7 +9954,7 @@
 
   function recordHistory() {
     if (!active()) return;
-    const first = visibleTiles()[0];
+    const first = root()?.querySelector('.xiv-tile[data-media-mounted="true"]:not([hidden])') || tiles()[0];
     const stage = document.getElementById("xiv-stage");
     const history = readJson(HISTORY_KEY, []);
     const item = {
@@ -9883,6 +9977,7 @@
 
   function preloadAroundLightbox() {
     clearTimeout(preloadTimer);
+    if (window.__flowLensControl) return; // The core owns the bounded preload queue.
     preloadTimer = window.setTimeout(() => {
       if (!lightboxActive()) return;
       const lb = lightbox();
@@ -9954,7 +10049,7 @@
       if (media) {
         media.decoding = "async";
         if (media.tagName === "IMG" && !media.loading) media.loading = "lazy";
-        if (media.tagName === "VIDEO") media.preload = "metadata";
+        if (media.tagName === "VIDEO" && !media.dataset.previewUrl) media.preload = "metadata";
       }
     }
   }
@@ -9983,7 +10078,10 @@
     if (!root || root === observedRoot) return;
     rootObserver?.disconnect();
     observedRoot = root;
-    rootObserver = new MutationObserver(scheduleApplyAll);
+    rootObserver = new MutationObserver(records => {
+      if (records.some(record => record.type === "attributes" && record.attributeName === "data-active"
+        || [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches?.(".xiv-tile") || node.querySelector?.(".xiv-tile"))))) scheduleApplyAll();
+    });
     rootObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "src"] });
     bootstrapObserver?.disconnect();
     bootstrapObserver = null;
@@ -13094,5 +13192,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.6";
+  window.__FLOWLENS_VERSION__ = "2.0.7";
 })();

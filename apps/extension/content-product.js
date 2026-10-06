@@ -436,7 +436,7 @@
 
   function recordHistory() {
     if (!active()) return;
-    const first = visibleTiles()[0];
+    const first = root()?.querySelector('.xiv-tile[data-media-mounted="true"]:not([hidden])') || tiles()[0];
     const stage = document.getElementById("xiv-stage");
     const history = readJson(HISTORY_KEY, []);
     const item = {
@@ -459,6 +459,7 @@
 
   function preloadAroundLightbox() {
     clearTimeout(preloadTimer);
+    if (window.__flowLensControl) return; // The core owns the bounded preload queue.
     preloadTimer = window.setTimeout(() => {
       if (!lightboxActive()) return;
       const lb = lightbox();
@@ -530,7 +531,7 @@
       if (media) {
         media.decoding = "async";
         if (media.tagName === "IMG" && !media.loading) media.loading = "lazy";
-        if (media.tagName === "VIDEO") media.preload = "metadata";
+        if (media.tagName === "VIDEO" && !media.dataset.previewUrl) media.preload = "metadata";
       }
     }
   }
@@ -559,7 +560,10 @@
     if (!root || root === observedRoot) return;
     rootObserver?.disconnect();
     observedRoot = root;
-    rootObserver = new MutationObserver(scheduleApplyAll);
+    rootObserver = new MutationObserver(records => {
+      if (records.some(record => record.type === "attributes" && record.attributeName === "data-active"
+        || [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches?.(".xiv-tile") || node.querySelector?.(".xiv-tile"))))) scheduleApplyAll();
+    });
     rootObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-active", "src"] });
     bootstrapObserver?.disconnect();
     bootstrapObserver = null;
