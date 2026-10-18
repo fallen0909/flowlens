@@ -7743,11 +7743,12 @@
         || lb.querySelector("img, video") !== media || lb.dataset.dragging === "true" || lb.dataset.flDragging === "true") return;
       const left = Math.max(0, Math.round((lb.scrollWidth - lb.clientWidth) / 2));
       const top = Math.max(0, Math.round((lb.scrollHeight - lb.clientHeight) / 2));
-      lb.scrollTo({ left, top, behavior: "auto" });
+      if (Math.abs(lb.scrollLeft - left) >= 1 || Math.abs(lb.scrollTop - top) >= 1) lb.scrollTo({ left, top, behavior: "auto" });
     };
-    if (media.tagName !== "IMG" || media.complete) run();
-    else media.addEventListener("load", run, { once: true });
-    requestAnimationFrame(run);
+    // Reading scroll extents flushes the new zoom layout. Commit its position
+    // in the same task, without painting at the old position for one frame.
+    run();
+    if (media.tagName === "IMG" && !media.complete) media.addEventListener("load", run, { once: true });
   }
 
   function toggleLightboxZoom() {

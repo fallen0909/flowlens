@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens desktop
 // @namespace    local.flowlens.desktop
-// @version      2.0.10
+// @version      2.0.11
 // @description  FlowLens desktop release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,7 +28,7 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.10";
+  const VERSION = "2.0.11";
   window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-10-18", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
@@ -9091,11 +9091,12 @@
         || lb.querySelector("img, video") !== media || lb.dataset.dragging === "true" || lb.dataset.flDragging === "true") return;
       const left = Math.max(0, Math.round((lb.scrollWidth - lb.clientWidth) / 2));
       const top = Math.max(0, Math.round((lb.scrollHeight - lb.clientHeight) / 2));
-      lb.scrollTo({ left, top, behavior: "auto" });
+      if (Math.abs(lb.scrollLeft - left) >= 1 || Math.abs(lb.scrollTop - top) >= 1) lb.scrollTo({ left, top, behavior: "auto" });
     };
-    if (media.tagName !== "IMG" || media.complete) run();
-    else media.addEventListener("load", run, { once: true });
-    requestAnimationFrame(run);
+    // Reading scroll extents flushes the new zoom layout. Commit its position
+    // in the same task, without painting at the old position for one frame.
+    run();
+    if (media.tagName === "IMG" && !media.complete) media.addEventListener("load", run, { once: true });
   }
 
   function toggleLightboxZoom() {
@@ -13245,5 +13246,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.10";
+  window.__FLOWLENS_VERSION__ = "2.0.11";
 })();

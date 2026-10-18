@@ -13,10 +13,19 @@
   if (window.__flowLensMobileCenterPatch) return;
   window.__flowLensMobileCenterPatch = true;
 
-  let centerTimer = 0;
-  let settleTimer = 0;
+  let centerFrame = 0;
+  let forceCenter = false;
 
   const css = `
+    #xiv-lightbox[data-active="true"] {
+      overflow-anchor: none !important;
+    }
+    #xiv-lightbox[data-active="true"] > img {
+      transform: none !important;
+      will-change: auto !important;
+      backface-visibility: visible !important;
+      -webkit-backface-visibility: visible !important;
+    }
     #xiv-lightbox[data-zoom="actual"] {
       scroll-behavior: auto !important;
       overscroll-behavior: contain !important;
@@ -68,7 +77,7 @@
 
     if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
       img.addEventListener("load", () => {
-        if (isCurrent()) scheduleCenter(true, 0);
+        if (isCurrent()) scheduleCenter(true);
       }, { once: true });
     }
 
@@ -84,23 +93,27 @@
       if (!isCurrent() || centerToken() !== token || lb.dataset.dragging === "true" || lb.dataset.flDragging === "true") return;
       const left = Math.max(0, Math.round((lb.scrollWidth - lb.clientWidth) / 2));
       const top = Math.max(0, Math.round((lb.scrollHeight - lb.clientHeight) / 2));
-      lb.scrollTo({ left, top, behavior: "auto" });
+      if (Math.abs(lb.scrollLeft - left) >= 1 || Math.abs(lb.scrollTop - top) >= 1) lb.scrollTo({ left, top, behavior: "auto" });
     };
 
-    requestAnimationFrame(run);
-    clearTimeout(settleTimer);
-    settleTimer = window.setTimeout(run, 140);
+    run();
   }
 
-  function scheduleCenter(force = false, delay = 0) {
-    clearTimeout(centerTimer);
-    centerTimer = window.setTimeout(() => centerNow(force), delay);
+  function scheduleCenter(force = false) {
+    forceCenter = forceCenter || force;
+    if (centerFrame) return;
+    centerFrame = requestAnimationFrame(() => {
+      centerFrame = 0;
+      const force = forceCenter;
+      forceCenter = false;
+      centerNow(force);
+    });
   }
 
   injectStyle();
 
-  window.addEventListener("resize", () => scheduleCenter(true, 120), { passive: true });
-  window.addEventListener("orientationchange", () => scheduleCenter(true, 260), { passive: true });
+  window.addEventListener("resize", () => scheduleCenter(true), { passive: true });
+  window.addEventListener("orientationchange", () => scheduleCenter(true), { passive: true });
 
   new MutationObserver((mutations) => {
     let shouldCenter = false;
@@ -110,13 +123,14 @@
       if ([...mutation.addedNodes].some((node) => node?.nodeType === 1 && (node.matches?.("#xiv-lightbox img") || node.querySelector?.("#xiv-lightbox img")))) shouldCenter = true;
     }
     if (!isActualMode()) {
-      clearTimeout(centerTimer);
-      clearTimeout(settleTimer);
+      cancelAnimationFrame(centerFrame);
+      centerFrame = 0;
+      forceCenter = false;
       const lb = document.getElementById("xiv-lightbox");
       if (lb) delete lb.dataset.flActualCentered;
       return;
     }
-    if (shouldCenter) scheduleCenter();
+    if (shouldCenter) centerNow();
   }).observe(document.documentElement, {
     childList: true,
     subtree: true,

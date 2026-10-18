@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const core = fs.readFileSync(new URL('../src/core/flowlens-core.js', import.meta.url), 'utf8');
+const core = fs.readFileSync(process.env.FLOWLENS_ZOOM_CORE_SOURCE || new URL('../src/core/flowlens-core.js', import.meta.url), 'utf8');
 const mobile = fs.readFileSync(process.env.FLOWLENS_MOBILE_CENTER_SOURCE || new URL('../src/mobile/mobile-center.js', import.meta.url), 'utf8');
 const names = ['actualZoomCssSize','prepareActualZoomMedia','centerActualLightboxMedia','toggleLightboxZoom','syncLightboxZoomButton','onLightboxClick'];
 const coreFunctions = names.map(name => {
@@ -10,7 +10,7 @@ const coreFunctions = names.map(name => {
 }).join('\n');
 function setup({width=900,height=1200,dpr=3,loaded=true}={}) {
   let now=0,id=0,observer;
-  const timers=new Map(),windowEvents={},events={};
+  const timers=new Map(),windowEvents={},events={},positionWrites=[];
   const style=()=>{
     const props=new Map();
     return {setProperty:(k,v)=>props.set(k,v),getPropertyValue:k=>props.get(k)||'',removeProperty:k=>props.delete(k)};
@@ -27,13 +27,14 @@ function setup({width=900,height=1200,dpr=3,loaded=true}={}) {
     contains:target=>target===button||target===img,
     get scrollWidth(){return Math.max(400,parseFloat(currentImage.style.getPropertyValue('--xiv-actual-width'))||400);},
     get scrollHeight(){return Math.max(600,(parseFloat(currentImage.style.getPropertyValue('--xiv-actual-height'))||533)+56);},
-    scrollTo({left=0,top=0}){this.scrollLeft=left;this.scrollTop=top;}};
+    scrollTo({left=0,top=0}){positionWrites.push({left,top,at:now});this.scrollLeft=left;this.scrollTop=top;}};
   const state={lightbox:lb};
   const c={state,window:{devicePixelRatio:dpr,addEventListener(type,fn){windowEvents[type]=fn;}},
     document:{documentElement:{appendChild(){}},getElementById:id=>id==='xiv-lightbox'?lb:id==='xiv-mobile-center-style'?{}:null,addEventListener(){},createElement:()=>({style:style()})},
     MutationObserver:class{constructor(fn){observer=fn;}observe(){}},
     setTimeout(fn,delay=0){timers.set(++id,{fn,at:now+delay});return id;},clearTimeout:id=>timers.delete(id),
     requestAnimationFrame(fn){timers.set(++id,{fn,at:now+16});return id;},
+    cancelAnimationFrame:id=>timers.delete(id),
     claimEvent(){},zoomInIcon:()=>'+',zoomOutIcon:()=>'-',waitForVideoActualZoom(){throw Error('unexpected video');}};
   c.window.setTimeout=c.setTimeout;
   vm.createContext(c);vm.runInContext(coreFunctions+'\n'+mobile,c);
@@ -46,7 +47,29 @@ function setup({width=900,height=1200,dpr=3,loaded=true}={}) {
     img.complete=true;
     const callbacks=events.load||[];events.load=callbacks.filter(e=>!e.once);callbacks.forEach(e=>e.fn());
   };
-  return {c,img,lb,button,mutate,tick,load,windowEvents,timers,replaceImage(other){currentImage=other;}};
+  return {c,img,lb,button,mutate,tick,load,windowEvents,timers,positionWrites,replaceImage(other){currentImage=other;}};
+}
+
+{
+  const t=setup();const source=t.img.src;
+  t.c.onLightboxClick({target:t.button});t.mutate();t.tick(100);
+  assert.equal(t.positionWrites.length,1,'first-tap centering must not be repeated by core and mobile callbacks');
+  assert.equal(t.positionWrites[0].at,0,'zoom must be centered before the next paint');
+  t.lb.scrollLeft=37;t.lb.scrollTop=51;t.tick(400);
+  assert.equal(t.lb.scrollLeft,37,'a delayed settling pass must not move the already visible zoom');
+  assert.equal(t.lb.scrollTop,51);assert.equal(t.img.src,source);
+  console.log('PASS one first-tap position update before paint, no delayed jump or source replacement');
+}
+
+{
+  const t=setup();t.c.toggleLightboxZoom();t.mutate();t.tick(400);
+  t.lb.clientWidth=500;
+  t.windowEvents.resize();t.windowEvents.resize();t.windowEvents.orientationchange();
+  assert.equal(t.timers.size,1,'viewport events must share one pre-paint update');
+  t.tick(16);assert.equal(t.lb.scrollLeft,50);
+  const writes=t.positionWrites.length;t.tick(400);
+  assert.equal(t.positionWrites.length,writes,'rotation must not schedule a later settling jump');
+  console.log('PASS resize and rotation share one frame without delayed settling writes');
 }
 
 {
