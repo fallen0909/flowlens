@@ -48,7 +48,7 @@
   }
 
   function imageKey(img) {
-    return img?.currentSrc || img?.src || "";
+    return img?.dataset?.sourceUrl || img?.src || img?.currentSrc || "";
   }
 
   function isActualMode() {
@@ -60,30 +60,31 @@
     const lb = lightbox();
     const img = currentImage();
     if (!lb || !img || lb.dataset.zoom !== "actual") return;
-    if (lb.dataset.dragging === "true") return;
+    if (lb.dataset.dragging === "true" || lb.dataset.flDragging === "true") return;
+    const openToken = lb.dataset.openToken;
+    const source = imageKey(img);
+    const isCurrent = () => lightbox() === lb && currentImage() === img
+      && lb.dataset.openToken === openToken && imageKey(img) === source && isActualMode();
 
     if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
-      img.addEventListener("load", () => scheduleCenter(true, 40), { once: true });
-      return;
+      img.addEventListener("load", () => {
+        if (isCurrent()) scheduleCenter(true, 0);
+      }, { once: true });
     }
 
-    const token = [imageKey(img), lb.clientWidth, lb.clientHeight, img.naturalWidth, img.naturalHeight].join("|");
+    const centerToken = () => [source, openToken, lb.clientWidth, lb.clientHeight, img.naturalWidth, img.naturalHeight,
+      img.style.getPropertyValue("--xiv-actual-width"), img.style.getPropertyValue("--xiv-actual-height")].join("|");
+    const token = centerToken();
     if (!force && lb.dataset.flActualCentered === token) return;
     lb.dataset.flActualCentered = token;
 
-    const dpr = Math.max(1, Number(window.devicePixelRatio || 1));
-    const cssWidth = Math.max(1, Math.round(img.naturalWidth / dpr));
-    const cssHeight = Math.max(1, Math.round(img.naturalHeight / dpr));
-    img.style.setProperty("--xiv-actual-width", `${cssWidth}px`);
-    img.style.setProperty("--xiv-actual-height", `${cssHeight}px`);
-
+    // The core owns zoom dimensions, including its 1.5x fallback and wheel zoom.
+    // Recomputing natural size / DPR here can shrink a just-enlarged image.
     const run = () => {
-      if (!isActualMode() || lightbox()?.dataset.dragging === "true") return;
-      const current = lightbox();
-      if (!current) return;
-      const left = Math.max(0, Math.round((current.scrollWidth - current.clientWidth) / 2));
-      const top = Math.max(0, Math.round((current.scrollHeight - current.clientHeight) / 2));
-      current.scrollTo({ left, top, behavior: "auto" });
+      if (!isCurrent() || centerToken() !== token || lb.dataset.dragging === "true" || lb.dataset.flDragging === "true") return;
+      const left = Math.max(0, Math.round((lb.scrollWidth - lb.clientWidth) / 2));
+      const top = Math.max(0, Math.round((lb.scrollHeight - lb.clientHeight) / 2));
+      lb.scrollTo({ left, top, behavior: "auto" });
     };
 
     requestAnimationFrame(run);
@@ -91,32 +92,12 @@
     settleTimer = window.setTimeout(run, 140);
   }
 
-  function scheduleCenter(force = false, delay = 80) {
+  function scheduleCenter(force = false, delay = 0) {
     clearTimeout(centerTimer);
     centerTimer = window.setTimeout(() => centerNow(force), delay);
   }
 
-  function rememberActualBeforeClick(event) {
-    const lb = lightbox();
-    if (!lb || !event.target?.matches?.("#xiv-lightbox img")) return;
-    lb.dataset.flWasActualBeforeClick = lb.dataset.zoom === "actual" ? "true" : "false";
-  }
-
-  function centerAfterZoomClick(event) {
-    const lb = lightbox();
-    if (!lb || !event.target?.matches?.("#xiv-lightbox img")) return;
-    window.setTimeout(() => {
-      const current = lightbox();
-      if (!current) return;
-      const wasActual = current.dataset.flWasActualBeforeClick === "true";
-      if (!wasActual && current.dataset.zoom === "actual") scheduleCenter(true, 30);
-    }, 0);
-  }
-
   injectStyle();
-
-  document.addEventListener("pointerdown", rememberActualBeforeClick, true);
-  document.addEventListener("click", centerAfterZoomClick, true);
 
   window.addEventListener("resize", () => scheduleCenter(true, 120), { passive: true });
   window.addEventListener("orientationchange", () => scheduleCenter(true, 260), { passive: true });
@@ -124,15 +105,22 @@
   new MutationObserver((mutations) => {
     let shouldCenter = false;
     for (const mutation of mutations) {
-      if (mutation.target?.id === "xiv-lightbox" && (mutation.attributeName === "data-zoom" || mutation.attributeName === "data-active")) shouldCenter = true;
+      if (mutation.target?.id === "xiv-lightbox") shouldCenter = true;
       if (mutation.target?.tagName === "IMG" && mutation.target.closest?.("#xiv-lightbox")) shouldCenter = true;
       if ([...mutation.addedNodes].some((node) => node?.nodeType === 1 && (node.matches?.("#xiv-lightbox img") || node.querySelector?.("#xiv-lightbox img")))) shouldCenter = true;
     }
-    if (shouldCenter) scheduleCenter(false, 90);
+    if (!isActualMode()) {
+      clearTimeout(centerTimer);
+      clearTimeout(settleTimer);
+      const lb = document.getElementById("xiv-lightbox");
+      if (lb) delete lb.dataset.flActualCentered;
+      return;
+    }
+    if (shouldCenter) scheduleCenter();
   }).observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["data-zoom", "data-active", "src", "class"]
+    attributeFilter: ["data-zoom", "data-active", "data-open-token", "src", "class"]
   });
 })();

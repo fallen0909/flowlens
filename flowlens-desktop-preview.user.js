@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens desktop
 // @namespace    local.flowlens.desktop
-// @version      2.0.9
+// @version      2.0.10
 // @description  FlowLens desktop release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,7 +28,7 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.9";
+  const VERSION = "2.0.10";
   window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-10-18", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
@@ -9085,11 +9085,13 @@
     if (!lb || lb.dataset.active !== "true" || lb.dataset.zoom !== "actual") return;
     const media = lb.querySelector("img, video");
     if (!media) return;
+    const openToken = lb.dataset.openToken;
     const run = () => {
-      if (!state.lightbox || state.lightbox.dataset.zoom !== "actual" || state.lightbox.dataset.dragging === "true") return;
-      const left = Math.max(0, Math.round((state.lightbox.scrollWidth - state.lightbox.clientWidth) / 2));
-      const top = Math.max(0, Math.round((state.lightbox.scrollHeight - state.lightbox.clientHeight) / 2));
-      state.lightbox.scrollTo({ left, top, behavior: "auto" });
+      if (state.lightbox !== lb || lb.dataset.active !== "true" || lb.dataset.zoom !== "actual" || lb.dataset.openToken !== openToken
+        || lb.querySelector("img, video") !== media || lb.dataset.dragging === "true" || lb.dataset.flDragging === "true") return;
+      const left = Math.max(0, Math.round((lb.scrollWidth - lb.clientWidth) / 2));
+      const top = Math.max(0, Math.round((lb.scrollHeight - lb.clientHeight) / 2));
+      lb.scrollTo({ left, top, behavior: "auto" });
     };
     if (media.tagName !== "IMG" || media.complete) run();
     else media.addEventListener("load", run, { once: true });
@@ -13243,5 +13245,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.9";
+  window.__FLOWLENS_VERSION__ = "2.0.10";
 })();

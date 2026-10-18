@@ -2,7 +2,7 @@
 
 ![瀑光 FlowLens 项目封面](docs/assets/flowlens-hero.png)
 
-> 把网页中的图片和视频，一键整理成沉浸式全屏瀑布流。当前版本：**v2.0.9**。
+> 把网页中的图片和视频，一键整理成沉浸式全屏瀑布流。当前版本：**v2.0.10**。
 
 FlowLens 是一个浏览器工具：它会收集网页上零散、分页、尺寸不一的图片与视频，整理成可连续浏览、筛选、放大、收藏和下载的图片流。电脑端和手机端共享核心代码，手机端额外加载触控、窄屏和折叠屏适配。
 
@@ -19,6 +19,12 @@ FlowLens 是一个浏览器工具：它会收集网页上零散、分页、尺�
 | 安装页 | [打开安装页](https://fallen0909.github.io/flowlens/) | 图形化安装入口 |
 
 当前版本信息见 [version.json](version.json)。
+
+## 2.0.10 更新重点
+
+- 修复手机版大图首次放大后被居中补丁缩回的问题。核心统一设置放大尺寸，手机补丁只负责居中，保留 1.5 倍放大和后续缩放比例。
+- 返回适应屏幕或关闭大图时取消待执行的居中；图片切换后的旧加载回调不再移动新图片，拖动期间不抢位置。
+- 新增手机高像素密度、首次点击、重复放大、横竖屏切换和延迟加载回归测试。
 
 ## 2.0.9 更新重点
 
@@ -168,3 +174,5 @@ GitHub Actions 已改为手动运行，避免普通提交触发不必要的失�
 行为回归：`node tools/test-desktop-behavior.mjs`。xChina 的 DOM 分页回归先执行 `npm install --prefix tools --no-save --package-lock=false linkedom`，再运行 `node tools/test-xchina-gallery.mjs`；测试使用本地模拟页面，无需访问站点。
 
 可见媒体恢复回归：`node tools/test-virtual-media.mjs`，覆盖漏掉观察器通知、屏外回收、滚回恢复、大图暂停和隐藏标签页。
+
+手机大图缩放回归：`node tools/test-mobile-zoom.mjs`，覆盖首次点击后尺寸保持、重复放大、横竖屏切换、延迟加载和切图后的旧回调。

@@ -7737,11 +7737,13 @@
     if (!lb || lb.dataset.active !== "true" || lb.dataset.zoom !== "actual") return;
     const media = lb.querySelector("img, video");
     if (!media) return;
+    const openToken = lb.dataset.openToken;
     const run = () => {
-      if (!state.lightbox || state.lightbox.dataset.zoom !== "actual" || state.lightbox.dataset.dragging === "true") return;
-      const left = Math.max(0, Math.round((state.lightbox.scrollWidth - state.lightbox.clientWidth) / 2));
-      const top = Math.max(0, Math.round((state.lightbox.scrollHeight - state.lightbox.clientHeight) / 2));
-      state.lightbox.scrollTo({ left, top, behavior: "auto" });
+      if (state.lightbox !== lb || lb.dataset.active !== "true" || lb.dataset.zoom !== "actual" || lb.dataset.openToken !== openToken
+        || lb.querySelector("img, video") !== media || lb.dataset.dragging === "true" || lb.dataset.flDragging === "true") return;
+      const left = Math.max(0, Math.round((lb.scrollWidth - lb.clientWidth) / 2));
+      const top = Math.max(0, Math.round((lb.scrollHeight - lb.clientHeight) / 2));
+      lb.scrollTo({ left, top, behavior: "auto" });
     };
     if (media.tagName !== "IMG" || media.complete) run();
     else media.addEventListener("load", run, { once: true });
