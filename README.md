@@ -2,7 +2,7 @@
 
 ![瀑光 FlowLens 项目封面](docs/assets/flowlens-hero.png)
 
-> 把网页中的图片和视频，一键整理成沉浸式全屏瀑布流。当前版本：**v2.0.7**。
+> 把网页中的图片和视频，一键整理成沉浸式全屏瀑布流。当前版本：**v2.0.8**。
 
 FlowLens 是一个浏览器工具：它会收集网页上零散、分页、尺寸不一的图片与视频，整理成可连续浏览、筛选、放大、收藏和下载的图片流。电脑端和手机端共享核心代码，手机端额外加载触控、窄屏和折叠屏适配。
 
@@ -19,6 +19,12 @@ FlowLens 是一个浏览器工具：它会收集网页上零散、分页、尺�
 | 安装页 | [打开安装页](https://fallen0909.github.io/flowlens/) | 图形化安装入口 |
 
 当前版本信息见 [version.json](version.json)。
+
+## 2.0.8 更新重点
+
+- 兼容 xChina 新版 `/photo/编号` 和旧版套图地址，仅收集当前套图编号下的图片，排除侧栏相关套图与推广素材。
+- 从真实分页链接读取页码与地址格式，补齐省略页码；移除 xChina 上盲猜千页的逻辑，末尾自动继续加载。
+- 套图分页按顺序、间隔请求；安全验证页与空套图不记作成功，失败分页保留重试。正常 Cloudflare 统计脚本不再误触验证页判断。
 
 ## 2.0.7 更新重点
 
@@ -152,3 +158,5 @@ node --check flowlens-mobile-all.user.js
 GitHub Actions 已改为手动运行，避免普通提交触发不必要的失败邮件。需要打包时，可在 Actions 页面手动运行 `Verify and package FlowLens`。
 
 完整历史记录请查看 [变更日志](docs/CHANGELOG.md)。
+
+行为回归：`node tools/test-desktop-behavior.mjs`。xChina 的 DOM 分页回归先执行 `npm install --prefix tools --no-save --package-lock=false linkedom`，再运行 `node tools/test-xchina-gallery.mjs`；测试使用本地模拟页面，无需访问站点。

@@ -1,11 +1,11 @@
 {
-  "version": "2.0.7",
+  "version": "2.0.8",
   "desktop": {
-    "version": "2.0.7",
+    "version": "2.0.8",
     "recommendedEntry": "flowlens-desktop.user.js"
   },
   "mobile": {
-    "version": "2.0.7",
+    "version": "2.0.8",
     "entry": "flowlens-mobile-all.user.js",
     "loader": "single-file-bundle"
   }

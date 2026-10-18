@@ -273,7 +273,7 @@
   registerAdapter({
     id: "xchina-photo",
     name: "xchina 图库",
-    match: (url) => /xchina\.co\/photo\/id-/i.test(url),
+    match: (url) => /^https?:\/\/(?:[a-z0-9-]+\.)*xchina\.co\/photo\//i.test(url),
     reason(info, node, config) {
       if (!config.smart) return "";
       const text = [node?.textContent, node?.getAttribute?.("alt"), node?.getAttribute?.("title")].join(" ");

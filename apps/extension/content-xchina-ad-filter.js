@@ -7,7 +7,7 @@
   function isXchinaPhotoPage() {
     try {
       const parsed = new URL(location.href);
-      return /(^|\.)xchina\.co$/i.test(parsed.hostname) && /^\/photo\/id-/i.test(parsed.pathname);
+      return /(^|\.)xchina\.co$/i.test(parsed.hostname) && /^\/photo\//i.test(parsed.pathname);
     } catch {
       return false;
     }
