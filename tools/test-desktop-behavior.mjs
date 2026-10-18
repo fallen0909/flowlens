@@ -32,7 +32,7 @@ const span=(a,b)=>{const start=core.indexOf(a),end=core.indexOf(b,start);assert(
   console.log('PASS offscreen media releases sources, keeps dimensions and selection, and restores the same item');
 }
 {
-  const layout={state:{grid:{clientWidth:1000,querySelectorAll:()=>[],replaceChildren(){throw Error('stable cards were detached');}},lastMasonryWidth:1000,columns:3,masonryColumns:Array.from({length:3},()=>({isConnected:true}))},useSimpleGridLayout:()=>false,columnHeight:()=>800};
+  const layout={state:{grid:{clientWidth:1000,querySelectorAll:()=>[],replaceChildren(){throw Error('stable cards were detached');}},lastMasonryWidth:1000,columns:3,masonryColumns:Array.from({length:3},()=>({isConnected:true}))},scheduleTileMediaReconcile(){},useSimpleGridLayout:()=>false,columnHeight:()=>800};
   vm.createContext(layout);vm.runInContext(span('  function layoutMasonry(', '  function withStageScrollPreserved('),layout);layout.layoutMasonry();assert.deepEqual(Array.from(layout.state.masonryColumnHeights),[800,800,800]);
   console.log('PASS media loads retain masonry cards and do not reload preview frames');
 }

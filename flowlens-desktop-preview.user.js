@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens desktop
 // @namespace    local.flowlens.desktop
-// @version      2.0.8
+// @version      2.0.9
 // @description  FlowLens desktop release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,8 +28,8 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.8";
-  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-10-18", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination"]), source: "src/core/version.js" });
+  const VERSION = "2.0.9";
+  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-10-18", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
 })();
@@ -1492,6 +1492,7 @@
     videoPreviewObserver: null,
     imageLoadObserver: null,
     tileMediaObserver: null,
+    tileMediaReconcileTimer: 0,
     nearMediaTiles: new Set(),
     videoPreviewQueue: [],
     videoPreviewLoading: 0,
@@ -6976,7 +6977,7 @@
     window.addEventListener("beforeunload", saveViewerPosition);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") saveViewerPosition();
-      else pumpVideoPreviewQueue();
+      else { scheduleTileMediaReconcile(); pumpVideoPreviewQueue(); }
     });
     state.root.addEventListener("pointerdown", (event) => {
       const queueOpen = state.galleryQueuePanel?.dataset.open === "true";
@@ -7057,6 +7058,7 @@
         ? createTileMedia(url, index)
         : createTileMediaPlaceholder(url);
       tile.dataset.mediaMounted = media.className === "xiv-media-placeholder" ? "false" : "true";
+      if (tile.dataset.mediaMounted === "true") tile.style.contentVisibility = "visible";
       if (media.tagName === "VIDEO") {
         media.controls = false;
       }
@@ -7138,7 +7140,17 @@
   }
 
   function setTileMediaMounted(tile, mounted, observedRect = null) {
-    if (!tile?.isConnected || (mounted && tile.hidden) || (tile.dataset.mediaMounted === "true") === mounted) return;
+    if (!tile?.isConnected || (mounted && tile.hidden)) return;
+    // Mounted cards already have a small bounded lifetime. Keep their paint and
+    // image loading eager instead of stacking a second browser lazy-load gate.
+    if (tile.style) tile.style.contentVisibility = mounted ? "visible" : "auto";
+    if ((tile.dataset.mediaMounted === "true") === mounted) {
+      if (mounted) {
+        const img = tile.querySelector(":scope > img");
+        if (img) img.loading = "eager";
+      }
+      return;
+    }
     const url = tile.dataset.url;
     if (mounted) {
       const placeholder = tile.querySelector(":scope > .xiv-media-placeholder");
@@ -7185,15 +7197,67 @@
       tile.dataset.mediaObserved = "true";
       state.tileMediaObserver.observe(tile);
     });
+    scheduleTileMediaReconcile();
+  }
+
+  function scheduleTileMediaReconcile() {
+    if (!state.active || state.tileMediaReconcileTimer) return;
+    state.tileMediaReconcileTimer = setTimeout(() => {
+      state.tileMediaReconcileTimer = 0;
+      reconcileTileMedia();
+    }, 120);
+  }
+
+  function reconcileTileMedia() {
+    if (!state.active || !state.stage || !state.grid || state.lightbox?.dataset.active === "true" || document.visibilityState === "hidden") return;
+    const viewport = state.stage.getBoundingClientRect();
+    const top = viewport.top - 1000, bottom = viewport.bottom + 1000;
+    const columns = state.masonryColumns.filter(column => column.isConnected);
+    const groups = columns.length
+      ? columns.map(column => [...column.children].filter(tile => !tile.hidden))
+      : [[...state.grid.querySelectorAll(".xiv-tile:not([hidden])")]];
+    const near = new Set(), updates = [];
+    // Each masonry column is vertically ordered. Search for the visible range
+    // without measuring every card in a large gallery on every scroll.
+    for (const tiles of groups) {
+      let low = 0, high = tiles.length;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (tiles[mid].getBoundingClientRect().bottom < top) low = mid + 1;
+        else high = mid;
+      }
+      for (let i = low; i < tiles.length; i += 1) {
+        const tile = tiles[i], rect = tile.getBoundingClientRect();
+        if (rect.top > bottom) break;
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        near.add(tile);
+        updates.push({ tile, mounted: true, rect });
+      }
+    }
+    for (const tile of state.nearMediaTiles) {
+      if (near.has(tile)) continue;
+      const rect = tile.getBoundingClientRect();
+      if (!tile.isConnected || tile.hidden || rect.bottom < top || rect.top > bottom) {
+        updates.push({ tile, mounted: false, rect });
+      }
+    }
+    // Finish geometry reads before replacing media and triggering layout.
+    for (const { tile, mounted, rect } of updates) {
+      if (mounted) state.nearMediaTiles.add(tile);
+      else state.nearMediaTiles.delete(tile);
+      setTileMediaMounted(tile, mounted, rect);
+    }
+    pumpVideoPreviewQueue();
   }
 
   function resumeTileMedia() {
     if (!state.active || state.lightbox?.dataset.active === "true") return;
-    state.nearMediaTiles.forEach(tile => setTileMediaMounted(tile, true));
-    pumpVideoPreviewQueue();
+    reconcileTileMedia();
   }
 
   function stopTileMediaObserver() {
+    clearTimeout(state.tileMediaReconcileTimer);
+    state.tileMediaReconcileTimer = 0;
     state.tileMediaObserver?.disconnect();
     state.tileMediaObserver = null;
     state.nearMediaTiles.clear();
@@ -7370,6 +7434,7 @@
   }
 
   function layoutMasonry() {
+    scheduleTileMediaReconcile();
     if (!state.grid) return;
     if (useSimpleGridLayout()) return;
     // Media loading must not detach every card: moving an iframe reloads its
@@ -9365,6 +9430,7 @@
   function onScroll() {
     if (!state.stage) return;
     state.lastStageScrollAt = Date.now();
+    scheduleTileMediaReconcile();
     scheduleViewerPositionSave();
     pumpVideoPreviewQueue();
     const nearBottom = state.stage.scrollTop + state.stage.clientHeight > state.stage.scrollHeight - 1800;
@@ -13177,5 +13243,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.8";
+  window.__FLOWLENS_VERSION__ = "2.0.9";
 })();
