@@ -7730,25 +7730,52 @@
 
   function videoGestureSeekTime(video, value) {
     if (!Number.isFinite(video.duration) || video.duration <= 0 || !Number.isFinite(value)) return null;
-    let target = Math.max(0, Math.min(video.duration - 0.05, value));
-    const ranges = video.seekable;
-    if (ranges?.length) {
-      let closest = null, distance = Infinity;
-      for (let i = 0; i < ranges.length; i += 1) {
-        const start = ranges.start(i), end = Math.max(start, ranges.end(i) - 0.05);
-        const candidate = Math.max(start, Math.min(end, target));
-        if (Math.abs(candidate - target) < distance) { closest = candidate; distance = Math.abs(candidate - target); }
-      }
-      target = closest;
-    }
-    return target;
+    // A VOD seek can fetch a new range. Restricting it to the currently
+    // advertised seekable window can silently turn a forward swipe into no-op.
+    return Math.max(0, Math.min(video.duration - 0.05, value));
+  }
+
+  function createVideoGestureSurface(video) {
+    const doc = video.ownerDocument, view = doc.defaultView;
+    const coarse = view.matchMedia?.("(any-pointer: coarse)")?.matches || view.innerWidth <= 820
+      || (typeof window !== "undefined" && window.__flowLensMobileCenterPatch);
+    if (!coarse) return { element: video, cleanup() {} };
+    const element = doc.createElement("div");
+    element.className = "xiv-video-gesture-surface";
+    element.setAttribute("aria-label", "视频手势区：左右滑动快进快退，长按两倍速");
+    element.style.cssText = "position:fixed;z-index:4;background:transparent;touch-action:none;user-select:none;-webkit-user-select:none;pointer-events:auto;";
+    const sync = () => {
+      const rect = video.getBoundingClientRect();
+      const controls = Math.min(64, Math.max(40, rect.height * 0.2));
+      Object.assign(element.style, {left:`${rect.left || 0}px`,top:`${rect.top || 0}px`,width:`${rect.width}px`,height:`${Math.max(0, rect.height - controls)}px`});
+      element.hidden = !video.isConnected || rect.width <= 0 || rect.height <= controls;
+    };
+    (video.closest("#xiv-lightbox") || doc.body).appendChild(element);
+    sync();
+    const resize = view.ResizeObserver ? new view.ResizeObserver(sync) : null;
+    resize?.observe(video);
+    view.addEventListener("resize", sync);
+    view.visualViewport?.addEventListener("resize", sync);
+    doc.addEventListener("scroll", sync, true);
+    video.addEventListener("loadedmetadata", sync);
+    return {element, cleanup() {
+      resize?.disconnect();
+      view.removeEventListener("resize", sync);
+      view.visualViewport?.removeEventListener("resize", sync);
+      doc.removeEventListener("scroll", sync, true);
+      video.removeEventListener("loadedmetadata", sync);
+      element.remove();
+    }};
   }
 
   function installVideoGestures(video) {
     if (video.__flowLensGestureCleanup) return;
     const doc = video.ownerDocument;
     const view = doc.defaultView;
-    let gesture = null, holdTimer = 0, hud = null, suppressUntil = 0;
+    const surface = createVideoGestureSurface(video);
+    const target = surface.element;
+    const rawTouch = "ontouchstart" in view || typeof view.TouchEvent === "function";
+    let gesture = null, holdTimer = 0, feedbackTimer = 0, hud = null, suppressUntil = 0;
     const bindings = [];
     const listen = (target, name, handler, options = false) => {
       target.addEventListener(name, handler, options);
@@ -7756,6 +7783,7 @@
     };
     const claim = event => { event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation?.(); };
     const show = text => {
+      clearTimeout(feedbackTimer);
       if (!hud) {
         hud = doc.createElement("div");
         hud.className = "xiv-video-gesture-hint";
@@ -7769,11 +7797,12 @@
     const hide = () => { if (hud) hud.hidden = true; };
     const reset = () => {
       clearTimeout(holdTimer); holdTimer = 0;
+      clearTimeout(feedbackTimer);
       const old = gesture; gesture = null;
       if (old?.boosted) {
         try { video.playbackRate = old.rate; } catch {}
       }
-      if (old?.captured) { try { video.releasePointerCapture?.(old.id); } catch {} }
+      if (old?.captured) { try { target.releasePointerCapture?.(old.id); } catch {} }
       hide();
     };
     const current = () => gesture && video.isConnected && state.lightbox?.dataset.active === "true"
@@ -7783,14 +7812,15 @@
       return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
     };
     const down = event => {
-      if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+      if (event.pointerType !== "touch" && event.pointerType !== "pen" && !(target !== video && event.pointerType === "mouse")) return;
       if (gesture) { reset(); return; }
       if (event.isPrimary === false || event.button > 0 || state.lightbox?.dataset.active !== "true") return;
       const rect = video.getBoundingClientRect();
       // The bottom native play/seek/volume/fullscreen controls own their input.
       if (rect.width <= 0 || rect.height <= 0 || event.clientY >= rect.bottom - Math.min(56, rect.height * 0.25)) return;
       gesture = {id:event.pointerId,x:event.clientX,y:event.clientY,width:rect.width,time:Number(video.currentTime)||0,
-        rate:video.playbackRate || 1,source:video.dataset.sourceAttempt,mode:"pending",boosted:false,target:null};
+        rate:video.playbackRate || 1,source:video.dataset.sourceAttempt,mode:"pending",boosted:false,target:null,input:event.input || "pointer"};
+      if (target !== video || event.input === "touch") claim(event);
       holdTimer = view.setTimeout(() => {
         if (!current() || gesture.mode !== "pending" || video.paused || video.ended) return;
         try {
@@ -7810,7 +7840,7 @@
         if (Math.abs(dx) < Math.abs(dy) * 1.2) { reset(); return; }
         if (videoGestureSeekTime(video, gesture.time) === null) { reset(); return; }
         gesture.mode = "seek";
-        try { video.setPointerCapture?.(event.pointerId); gesture.captured = true; } catch {}
+        if (gesture.input !== "touch") { try { target.setPointerCapture?.(event.pointerId); gesture.captured = true; } catch {} }
       }
       if (gesture.mode === "hold") { claim(event); return; }
       if (gesture.mode !== "seek") return;
@@ -7823,16 +7853,33 @@
     };
     const up = event => {
       if (!gesture || gesture.id !== event.pointerId) return;
+      // Quick flicks may contain only a final coordinate or lose pointer capture.
+      if (current() && gesture.mode !== "hold" && Number.isFinite(event.clientX)) move(event);
+      if (!gesture) return;
       const consumed = gesture.mode === "seek" || gesture.boosted;
+      const tap = current() && gesture.mode === "pending" && target !== video;
       if (consumed) {
         claim(event);
         suppressUntil = Date.now() + 700;
         state.lightboxSuppressClickUntil = suppressUntil;
       }
+      let feedback = "";
       if (current() && gesture.mode === "seek" && gesture.target !== null) {
-        try { video.currentTime = gesture.target; } catch {}
+        const time = videoGestureSeekTime(video, gesture.target);
+        if (time !== null) {
+          try {
+            video.currentTime = time;
+            feedback = Math.abs(video.currentTime - time) > 1 && !video.seeking ? "视频源未能跳转，请使用底部进度条重试" : `跳转到 ${clock(time)}`;
+          } catch { feedback = "视频源暂不支持跳转"; }
+        }
       }
       reset();
+      if (feedback) { show(feedback); feedbackTimer = view.setTimeout(hide, 1200); }
+      if (tap) {
+        claim(event); suppressUntil = Date.now() + 700;
+        if (video.paused || video.ended) requestVideoPlayback(video, true);
+        else video.pause();
+      }
     };
     const cancel = event => {
       if (!event || event.pointerId === undefined || gesture?.id === event.pointerId) {
@@ -7842,23 +7889,54 @@
     };
     const oldTouchAction = video.style.touchAction;
     video.style.touchAction = "none";
-    listen(video, "pointerdown", down, true);
-    listen(video, "pointermove", move, {capture:true,passive:false});
-    listen(video, "pointerup", up, true);
-    listen(video, "pointercancel", cancel, true);
-    listen(video, "lostpointercapture", cancel, true);
-    listen(video, "click", event => { if (Date.now() < suppressUntil) claim(event); }, true);
-    listen(video, "contextmenu", event => { if (gesture || Date.now() < suppressUntil) claim(event); }, true);
-    listen(video, "pause", () => cancel());
+    const pointer = handler => event => { if (event.pointerType !== "touch" || (!rawTouch && gesture?.input !== "touch")) handler(event); };
+    listen(target, "pointerdown", pointer(down), true);
+    listen(target, "pointermove", pointer(move), {capture:true,passive:false});
+    listen(target, "pointerup", pointer(up), true);
+    listen(target, "pointercancel", pointer(cancel), true);
+    // Listen to raw touch events even when PointerEvent exists. Native video
+    // controls can cancel the pointer stream while touchend is still delivered.
+    const touchEvent = (event, touch) => ({input:"touch",pointerType:"touch",pointerId:touch.identifier,
+      clientX:touch.clientX,clientY:touch.clientY,button:0,isPrimary:true,
+      preventDefault:()=>event.preventDefault(),stopPropagation:()=>event.stopPropagation(),stopImmediatePropagation:()=>event.stopImmediatePropagation?.()});
+    const touchStart = event => {
+      if (event.touches.length !== 1) { cancel(); return; }
+      if (gesture?.input === "pointer") reset();
+      down(touchEvent(event, event.touches[0]));
+    };
+    const touchMove = event => {
+      if (!gesture || gesture.input !== "touch") return;
+      if (event.touches.length !== 1) { cancel(); return; }
+      const touch = [...event.touches].find(t => t.identifier === gesture.id);
+      if (touch) move(touchEvent(event, touch));
+    };
+    const touchEnd = event => {
+      if (!gesture || gesture.input !== "touch") return;
+      const touch = [...event.changedTouches].find(t => t.identifier === gesture.id);
+      if (touch) up(touchEvent(event, touch));
+    };
+    listen(target, "touchstart", touchStart, {capture:true,passive:false});
+    listen(view, "touchmove", touchMove, {capture:true,passive:false});
+    listen(view, "touchend", touchEnd, {capture:true,passive:false});
+    listen(view, "touchcancel", () => cancel(), {capture:true,passive:false});
+    listen(target, "click", event => {
+      if (Date.now() < suppressUntil) { claim(event); return; }
+      if (target !== video) { claim(event); if (video.paused || video.ended) requestVideoPlayback(video, true); else video.pause(); }
+    }, true);
+    listen(target, "contextmenu", event => { if (gesture || Date.now() < suppressUntil) claim(event); }, true);
+    // A native control pause during a drag must not discard the pending seek.
+    listen(video, "pause", () => { if (gesture?.mode !== "seek") cancel(); });
     listen(video, "ended", () => cancel());
     listen(doc, "visibilitychange", () => { if (doc.visibilityState === "hidden") cancel(); });
     listen(view, "blur", () => cancel());
     // A finger may leave the video before a capture was established.
-    listen(view, "pointerup", up, true);
-    listen(view, "pointercancel", cancel, true);
+    listen(view, "pointermove", pointer(move), {capture:true,passive:false});
+    listen(view, "pointerup", pointer(up), true);
+    listen(view, "pointercancel", pointer(cancel), true);
     video.__flowLensGestureCleanup = () => {
       reset();
       bindings.forEach(remove => remove());
+      surface.cleanup();
       hud?.remove();
       video.style.touchAction = oldTouchAction;
       delete video.__flowLensGestureCleanup;
@@ -8152,6 +8230,7 @@
     if (!state.lightbox.contains(event.target)) return;
     if (event.target?.closest?.(".xiv-lightbox-slideshow")) return;
     if (event.target?.closest?.("#xiv-lightbox video")) return;
+    if (event.target?.closest?.(".xiv-video-gesture-surface, .xiv-video-gesture-hint")) return;
     claimEvent(event);
     if (Date.now() < state.lightboxSuppressClickUntil) return;
     if (event.target?.closest?.(".xiv-lightbox-zoom")) {
@@ -8181,6 +8260,7 @@
   function onLightboxPointerDown(event) {
     if (state.lightbox?.dataset.active !== "true" || event.button !== 0) return;
     if (event.target?.closest?.("#xiv-lightbox video")) return;
+    if (event.target?.closest?.(".xiv-video-gesture-surface, .xiv-video-gesture-hint")) return;
     if (event.target?.closest?.(".xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow, .xiv-lightbox-slideshow, .xiv-lightbox-zoom")) return;
     if (state.lightbox.dataset.zoom === "actual" && event.target?.matches?.("img, video")) {
       claimEvent(event);

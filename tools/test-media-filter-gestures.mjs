@@ -47,14 +47,16 @@ class Emitter {
     for(const fn of [...(this.listeners.get(name)||[])])fn(e);return e;
   }
 }
-function fixture(frame=false){
+function fixture(frame=false,{touch=false,coarse=false}={}){
   let now=10000,id=0;const timers=new Map(),hints=[];
   const view=new Emitter();view.setTimeout=(fn,delay)=>{timers.set(++id,{fn,at:now+delay});return id;};
+  view.innerWidth=coarse?390:1024;if(touch)view.TouchEvent=class{};
   const doc=new Emitter();doc.defaultView=view;doc.visibilityState='visible';
   const parent={appendChild(node){hints.push(node);}};
-  doc.body=parent;doc.createElement=()=>({style:{},setAttribute(){},remove(){this.removed=true;}});
+  doc.body=parent;doc.createElement=()=>Object.assign(new Emitter(),{style:{},setAttribute(){},remove(){this.removed=true;}});
   const video=new Emitter();Object.assign(video,{ownerDocument:doc,dataset:{sourceAttempt:'1'},isConnected:true,style:{touchAction:'auto'},playbackRate:1.25,paused:false,ended:false,duration:600,currentTime:100,seekable:{length:1,start:()=>0,end:()=>600},getBoundingClientRect:()=>({width:400,height:300,bottom:300}),setPointerCapture(){},releasePointerCapture(){},closest:()=>frame?null:parent});
-  const c=install({state:{lightbox:{dataset:{active:'true'}}},Date:class extends Date{static now(){return now;}},clearTimeout:id=>timers.delete(id)},['videoGestureSeekTime','installVideoGestures']);
+  video.pause=()=>{video.paused=true;video.emit('pause');};
+  const c=install({state:{lightbox:{dataset:{active:'true'}}},Date:class extends Date{static now(){return now;}},clearTimeout:id=>timers.delete(id),requestVideoPlayback(v){v.paused=false;return Promise.resolve(true);}},['videoGestureSeekTime','createVideoGestureSurface','installVideoGestures']);
   c.installVideoGestures(video);
   const advance=ms=>{now+=ms;for(const [key,t]of [...timers])if(t.at<=now){timers.delete(key);t.fn();}};
   return{video,doc,view,c,hints,timers,advance};
@@ -82,8 +84,33 @@ for(const frame of [false,true]){
   advance(800);video.emit('pointerdown');video.emit('pointermove',{clientX:300});const before=video.currentTime;video.dataset.sourceAttempt='2';video.emit('pointerup');assert.equal(video.currentTime,before);
   video.emit('pointerdown');video.__flowLensGestureCleanup();advance(500);assert.equal(video.playbackRate,1.25);assert.equal(video.style.touchAction,'auto');assert(f.hints.every(h=>h.removed));assert([...view.listeners.values()].every(list=>!list.length));
   assert.equal(c.videoGestureSeekTime({duration:Infinity},10),null);
-  assert.equal(c.videoGestureSeekTime({duration:600,seekable:{length:2,start:i=>i===0?0:200,end:i=>i===0?100:300}},180),200);
+  assert.equal(c.videoGestureSeekTime({duration:600,seekable:{length:2,start:i=>i===0?0:200,end:i=>i===0?100:300}},180),180);
   console.log(`PASS ${frame?'protected-frame':'direct'} player: 450 ms hold, restore rate, bidirectional seek on release, boundaries, native controls, multitouch, cancel, hidden/blur, source changes and teardown`);
+}
+
+for(const frame of [false,true])for(const touchApi of [false,true]){
+  const f=fixture(frame,{touch:touchApi,coarse:true}),{video,view,advance}=f;
+  const surface=f.hints.find(el=>el.className==='xiv-video-gesture-surface');assert(surface);
+  assert.equal(surface.style.height,'240px','native controls must remain uncovered');
+  const point=(x,y=100)=>({identifier:7,clientX:x,clientY:y});
+  const start=x=>surface.emit('touchstart',{touches:[point(x)]});
+  const move=x=>view.emit('touchmove',{touches:[point(x)]});
+  const end=x=>view.emit('touchend',{touches:[],changedTouches:[point(x)]});
+  video.currentTime=100;video.seekable={length:1,start:()=>0,end:()=>110};
+  surface.emit('pointerdown');assert(start(100).claimed);move(300);assert.equal(video.currentTime,100);
+  surface.emit('pointercancel');view.emit('pointercancel');video.pause();
+  end(300);assert.equal(video.currentTime,160,'native pointer cancellation/pause must not discard touch seek or clamp it to downloaded data');
+  assert.match(f.hints.at(-1).textContent,/跳转到/);assert.equal(f.hints.at(-1).hidden,false);advance(1200);assert.equal(f.hints.at(-1).hidden,true);
+  advance(800);start(300);move(100);end(100);assert.equal(video.currentTime,100);
+  advance(800);start(100);end(300);assert.equal(video.currentTime,160,'quick flick with no intermediate move must still seek');
+  advance(800);video.paused=false;start(100);end(100);assert.equal(video.paused,true);assert(surface.emit('click').claimed);
+  advance(800);start(100);end(100);assert.equal(video.paused,false);
+  advance(800);video.paused=false;start(100);advance(450);assert.equal(video.playbackRate,2);end(100);assert.equal(video.playbackRate,1.25);
+  advance(800);start(100);move(300);const before=video.currentTime;view.emit('touchcancel');end(300);assert.equal(video.currentTime,before);
+  advance(800);start(100);move(300);surface.emit('touchstart',{touches:[point(300),{identifier:8,clientX:320,clientY:100}]});end(300);assert.equal(video.currentTime,before);
+  advance(800);start(100);move(300);video.isConnected=false;end(300);assert.equal(video.currentTime,before);
+  video.__flowLensGestureCleanup();assert(surface.removed);assert([...view.listeners.values()].every(list=>!list.length));
+  console.log(`PASS ${frame?'frame':'direct'} raw touch (TouchEvent API ${touchApi}): pointercancel + pause seeks beyond initial range; flick, tap, feedback, hold, cancel and teardown remain correct`);
 }
 
 {
