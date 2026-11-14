@@ -51,9 +51,9 @@ console.log('PASS late response cannot pollute a new gallery');
 {
   let finishNavigation;
   const navState={active:true,navigationGeneration:0,galleryQueueCurrentUrl:'https://site.test/a'};
-  const nav={state:navState,normalizedPageUrl:url=>url,HTTP_PAGE_RE:/^https?:/,isQueueCandidateUrl:()=>true,isSelfieGalleryQueueUrl:()=>false,GENERIC_X810114_RE:/never/,location:{href:'https://site.test/a',origin:'https://site.test'},URL,updateStatus(){},fetchHtml:()=>new Promise(resolve=>finishNavigation=resolve),fetchSelfieGalleryDocument:()=>new Promise(resolve=>finishNavigation=resolve),DOMParser:class{parseFromString(){return {documentElement:{dataset:{}}};}}};
+  const nav={AbortController,state:navState,normalizedPageUrl:url=>url,HTTP_PAGE_RE:/^https?:/,isQueueCandidateUrl:()=>true,isSelfieGalleryQueueUrl:()=>false,GENERIC_X810114_RE:/never/,location:{href:'https://site.test/a',origin:'https://site.test'},URL,updateStatus(){},fetchHtml:()=>new Promise(resolve=>finishNavigation=resolve),fetchSelfieGalleryDocument:()=>new Promise(resolve=>finishNavigation=resolve),DOMParser:class{parseFromString(){return {documentElement:{dataset:{}}};}}};
   vm.createContext(nav);
-  vm.runInContext(span('  async function loadGalleryQueueTargetInPlace(', '  function isSelfieGalleryDocument('),nav);
+  vm.runInContext(span('  function beginGalleryNavigation(', '  function isSelfieGalleryDocument('),nav);
   for (const name of ['loadGalleryQueueTargetInPlace','loadSavedPageInPlace','loadSelfieGalleryQueueTargetInPlace']) {
     const pending=nav[name]('https://site.test/b');
     navState.navigationGeneration++;
@@ -66,9 +66,9 @@ console.log('PASS late response cannot pollute a new gallery');
 {
   let finishApi;
   const apiState={collectionGeneration:0,collectionController:new AbortController(),images:['new-gallery']};
-  const api={state:apiState,x810114ProfileName:()=> 'example',updateStatus(){},fetch:async()=>({ok:true,json:()=>new Promise(resolve=>finishApi=resolve)}),Date,encodeURIComponent};
+  const api={location:{href:'https://x.810114.xyz/example'},state:apiState,x810114ProfileName:()=> 'example',updateStatus(){},fetch:async()=>({ok:true,json:()=>new Promise(resolve=>finishApi=resolve)}),Date,encodeURIComponent};
   vm.createContext(api);
-  vm.runInContext(span('  async function collectX810114ProfileFromApi()', '  async function prepareGenericX810114Page()'),api);
+  vm.runInContext(span('  async function fetchX810114ProfileData(', '  async function prepareGenericX810114Page('),api);
   const pending=api.collectX810114ProfileFromApi();
   await new Promise(resolve=>setImmediate(resolve));
   apiState.collectionGeneration++;

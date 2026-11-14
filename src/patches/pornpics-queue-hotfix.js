@@ -11,6 +11,8 @@
   const PUBLIC_LIST_RE = /^\/(?:[a-z]{2}\/)?public\/?$/i;
   let syncTimer = 0;
   let referrerSeeded = false;
+  let pendingGallery = "";
+  let openGeneration = 0;
 
   function root() { return document.getElementById("xiv-root"); }
   function lightbox() { return document.getElementById("xiv-lightbox"); }
@@ -73,6 +75,9 @@
   }
 
   function currentGalleryUrl() {
+    if (pendingGallery) return pendingGallery;
+    const active = viewerOpen() ? coreApi()?.currentPageBookmarkUrl?.() : "";
+    if (isGalleryUrl(active)) return normalizeUrl(active);
     const stored = normalizeUrl(sessionStorage.getItem(CURRENT_GALLERY_KEY) || "");
     if (isGalleryUrl(stored)) return stored;
     const current = normalizeUrl(location.href);
@@ -185,24 +190,26 @@
 
   async function openGallery(target) {
     if (!target || !isGalleryUrl(target)) return false;
-    try {
-      sessionStorage.setItem(CURRENT_GALLERY_KEY, target);
-      sessionStorage.setItem(AUTO_OPEN_KEY, target);
-    } catch {}
-
     if (viewerOpen() && typeof coreApi()?.loadSavedPage === "function") {
       const wasLightboxOpen = lightbox()?.dataset.active === "true";
       if (wasLightboxOpen) return false;
-      const ok = await coreApi().loadSavedPage(target);
-      if (ok) {
-        try { history.replaceState({ flowlensPornpicsInPlace: true }, "", target); } catch {}
-        window.dispatchEvent(new CustomEvent("flowlens:page-url-changed", { detail: { url: target } }));
-        window.setTimeout(syncButtons, 120);
+      const generation = ++openGeneration;
+      pendingGallery = target;
+      try {
+        const api = coreApi();
+        const ok = await (api.loadGallery ? api.loadGallery(target) : api.loadSavedPage(target));
+        if (generation !== openGeneration || !ok || !viewerOpen()) return false;
+        try { sessionStorage.setItem(CURRENT_GALLERY_KEY, target); sessionStorage.removeItem(AUTO_OPEN_KEY); } catch {}
+        if (!api.loadGallery) {
+          try { history.replaceState({ flowlensPornpicsInPlace: true }, "", target); } catch {}
+          window.dispatchEvent(new CustomEvent("flowlens:page-url-changed", { detail: { url: target } }));
+        }
         return true;
+      } finally {
+        if (generation === openGeneration) { pendingGallery = ""; scheduleSync(0); }
       }
-      return false;
     }
-
+    try { sessionStorage.setItem(CURRENT_GALLERY_KEY, target); sessionStorage.setItem(AUTO_OPEN_KEY, target); } catch {}
     location.href = target;
     return true;
   }

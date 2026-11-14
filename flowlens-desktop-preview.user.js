@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens desktop
 // @namespace    local.flowlens.desktop
-// @version      2.0.11
+// @version      2.0.13
 // @description  FlowLens desktop release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,8 +28,8 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.11";
-  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-10-18", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery"]), source: "src/core/version.js" });
+  const VERSION = "2.0.13";
+  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-14", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
 })();
@@ -553,15 +553,26 @@
   const logs = [];
   const adapters = [];
   let timer = 0;
+  let cachedConfig = null;
+  let compiledTerms = [];
+  let compiledHosts = [];
+  let fullApplyPending = false;
+  const pendingTiles = new Set();
 
   function readConfig() {
-    try { return { ...defaultConfig, ...(JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}) }; }
-    catch { return { ...defaultConfig }; }
+    if (!cachedConfig) {
+      try { cachedConfig = { ...defaultConfig, ...(JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}) }; }
+      catch { cachedConfig = { ...defaultConfig }; }
+      compiledTerms = splitLines(cachedConfig.terms).map(item => item.toLowerCase());
+      compiledHosts = splitLines(cachedConfig.hosts).map(item => item.toLowerCase());
+    }
+    return { ...cachedConfig };
   }
 
   function writeConfig(next) {
     const config = { ...readConfig(), ...next };
     try { localStorage.setItem(STORE_KEY, JSON.stringify(config)); } catch {}
+    cachedConfig = null;
     refreshUi();
     scheduleApply(10);
     return config;
@@ -591,21 +602,25 @@
   }
 
   function reasonFor(value, node = null) {
+    if (!value) return "";
     const config = readConfig();
     if (!config.enabled || !value) return "";
     const info = urlInfo(value);
     const hay = `${info.href} ${info.name} ${node?.textContent || ""}`.toLowerCase();
-    const term = splitLines(config.terms).find((item) => hay.includes(item.toLowerCase()));
+    const term = compiledTerms.find((item) => hay.includes(item));
     if (term) return `关键词：${term}`;
-    const hostRule = splitLines(config.hosts).find((item) => info.host === item.toLowerCase() || info.host.endsWith(`.${item.toLowerCase()}`));
+    const hostRule = compiledHosts.find((item) => info.host === item || info.host.endsWith(`.${item}`));
     if (hostRule) return `来源域名：${hostRule}`;
     const adapterReason = currentAdapter()?.reason?.(info, node, config);
     if (adapterReason) return adapterReason;
     if (config.smart && node) {
       const label = [node.getAttribute?.("alt"), node.getAttribute?.("title"), node.getAttribute?.("aria-label"), node.closest?.("a")?.textContent, node.textContent].join(" ");
       if (/广告|推广|下载|扫码|官方APP|APP下载|sponsor|promo|banner/i.test(label)) return "周边文字";
-      const rect = node.getBoundingClientRect?.();
-      if (rect?.width > 260 && rect?.height > 40 && rect.width / Math.max(1, rect.height) > 2.6) return "横幅比例";
+      // Decoded/source dimensions do not force layout or measure virtual placeholders.
+      const media = node.matches?.("img,video") ? node : node.querySelector?.("img,video");
+      const width = media?.naturalWidth || media?.videoWidth || Number(media?.getAttribute?.("width")) || 0;
+      const height = media?.naturalHeight || media?.videoHeight || Number(media?.getAttribute?.("height")) || 0;
+      if (width > 260 && height > 40 && width / height > 2.6) return "横幅比例";
     }
     return "";
   }
@@ -615,6 +630,7 @@
     const attrs = ["src", "currentSrc", "href", "poster", "file", "zoomfile", "data-file", "data-zoomfile", "data-src", "data-original", "data-lazy-src", "data-url", "data-full", "data-large", "srcset", "data-srcset", "style"];
     for (const attr of attrs) {
       const value = attr === "currentSrc" ? node.currentSrc : node.getAttribute(attr);
+      if (!value) continue;
       const reason = reasonFor(value, node);
       if (reason) return reason;
     }
@@ -653,8 +669,7 @@
     return media?.currentSrc || media?.src || media?.dataset?.sourceUrl || "";
   }
 
-  function decorateTile(tile) {
-    const config = readConfig();
+  function decorateTile(tile, config = readConfig()) {
     if (!config.showTileButton || tile.querySelector(".fl-mf-block")) return;
     const button = document.createElement("button");
     button.type = "button";
@@ -672,17 +687,18 @@
     tile.appendChild(button);
   }
 
-  function finishApply() {
-    window.__flowLensControl?.refreshMediaFilter?.();
+  function finishApply(tiles) {
+    window.__flowLensControl?.refreshMediaFilter?.(tiles);
     window.__flowLensControl?.compactVisibleLabels?.();
     window.dispatchEvent(new CustomEvent("flowlens:media-filter-applied"));
   }
 
-  function applyFilters() {
+  function applyFilters(candidates = null) {
     const config = readConfig();
     document.documentElement.dataset.flMediaFilter = config.enabled ? "true" : "false";
-    document.querySelectorAll("#xiv-grid .xiv-tile").forEach((tile) => {
-      decorateTile(tile);
+    const tiles = candidates ? [...candidates].filter(tile => tile.isConnected) : [...document.querySelectorAll("#xiv-grid .xiv-tile")];
+    tiles.forEach((tile) => {
+      decorateTile(tile, config);
       if (!config.enabled) {
         if (tile.dataset.flFilteredOut === "true") tile.hidden = false;
         delete tile.dataset.flFilteredOut;
@@ -704,12 +720,20 @@
       logBlocked(url, reason);
       window.__flowLensControl.showAdjacent(1);
     }
-    finishApply();
+    finishApply(tiles);
   }
 
-  function scheduleApply(delay = 220) {
-    clearTimeout(timer);
-    timer = setTimeout(applyFilters, delay);
+  function scheduleApply(delay = 220, tiles = null) {
+    if (tiles) tiles.forEach(tile => pendingTiles.add(tile));
+    else fullApplyPending = true;
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = 0;
+      const candidates = fullApplyPending ? null : [...pendingTiles];
+      fullApplyPending = false;
+      pendingTiles.clear();
+      applyFilters(candidates);
+    }, delay);
   }
 
   function installStyle() {
@@ -822,8 +846,27 @@
 
   window.__flowLensMediaFilter = { readConfig, writeConfig, reasonFor, addTerm, registerAdapter, applyFilters };
   installStyle();
-  const observer = new MutationObserver((records) => { if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.id === "xiv-root" || node.matches?.(".xiv-tile") || node.querySelector?.(".xiv-tile"))))) { ensureUi(); scheduleApply(); } });
+  const observer = new MutationObserver((records) => {
+    const added = new Set();
+    for (const record of records) for (const node of record.addedNodes) {
+      if (node.nodeType !== 1) continue;
+      if (node.id === "xiv-root") ensureUi();
+      if (node.matches?.(".xiv-tile")) added.add(node);
+      else node.querySelectorAll?.(".xiv-tile").forEach(tile => added.add(tile));
+    }
+    if (added.size) { ensureUi(); scheduleApply(80, added); }
+  });
   if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("storage", event => {
+    if (event.key !== STORE_KEY && event.key !== null) return;
+    cachedConfig = null;
+    refreshUi();
+    scheduleApply(10);
+  });
+  document.addEventListener("load", event => {
+    const tile = event.target?.closest?.("#xiv-grid .xiv-tile");
+    if (tile) scheduleApply(80, [tile]);
+  }, true);
   document.addEventListener("click", (event) => {
     if (event.target?.closest?.(".fl-mf-section, .fl-mf-block")) scheduleApply(80);
   }, true);
@@ -995,6 +1038,8 @@
   const PUBLIC_LIST_RE = /^\/(?:[a-z]{2}\/)?public\/?$/i;
   let syncTimer = 0;
   let referrerSeeded = false;
+  let pendingGallery = "";
+  let openGeneration = 0;
 
   function root() { return document.getElementById("xiv-root"); }
   function lightbox() { return document.getElementById("xiv-lightbox"); }
@@ -1057,6 +1102,9 @@
   }
 
   function currentGalleryUrl() {
+    if (pendingGallery) return pendingGallery;
+    const active = viewerOpen() ? coreApi()?.currentPageBookmarkUrl?.() : "";
+    if (isGalleryUrl(active)) return normalizeUrl(active);
     const stored = normalizeUrl(sessionStorage.getItem(CURRENT_GALLERY_KEY) || "");
     if (isGalleryUrl(stored)) return stored;
     const current = normalizeUrl(location.href);
@@ -1169,24 +1217,26 @@
 
   async function openGallery(target) {
     if (!target || !isGalleryUrl(target)) return false;
-    try {
-      sessionStorage.setItem(CURRENT_GALLERY_KEY, target);
-      sessionStorage.setItem(AUTO_OPEN_KEY, target);
-    } catch {}
-
     if (viewerOpen() && typeof coreApi()?.loadSavedPage === "function") {
       const wasLightboxOpen = lightbox()?.dataset.active === "true";
       if (wasLightboxOpen) return false;
-      const ok = await coreApi().loadSavedPage(target);
-      if (ok) {
-        try { history.replaceState({ flowlensPornpicsInPlace: true }, "", target); } catch {}
-        window.dispatchEvent(new CustomEvent("flowlens:page-url-changed", { detail: { url: target } }));
-        window.setTimeout(syncButtons, 120);
+      const generation = ++openGeneration;
+      pendingGallery = target;
+      try {
+        const api = coreApi();
+        const ok = await (api.loadGallery ? api.loadGallery(target) : api.loadSavedPage(target));
+        if (generation !== openGeneration || !ok || !viewerOpen()) return false;
+        try { sessionStorage.setItem(CURRENT_GALLERY_KEY, target); sessionStorage.removeItem(AUTO_OPEN_KEY); } catch {}
+        if (!api.loadGallery) {
+          try { history.replaceState({ flowlensPornpicsInPlace: true }, "", target); } catch {}
+          window.dispatchEvent(new CustomEvent("flowlens:page-url-changed", { detail: { url: target } }));
+        }
         return true;
+      } finally {
+        if (generation === openGeneration) { pendingGallery = ""; scheduleSync(0); }
       }
-      return false;
     }
-
+    try { sessionStorage.setItem(CURRENT_GALLERY_KEY, target); sessionStorage.setItem(AUTO_OPEN_KEY, target); } catch {}
     location.href = target;
     return true;
   }
@@ -1370,12 +1420,18 @@
 
   function userscriptRequest(url, options = {}) {
     return new Promise((resolve) => {
+      const signal = options.signal;
+      let request = null;
+      const finish = result => { signal?.removeEventListener("abort", abort); resolve(result); };
+      const abort = () => { request?.abort?.(); finish({ ok: false, error: "request aborted" }); };
+      if (signal?.aborted) { abort(); return; }
+      signal?.addEventListener("abort", abort, { once: true });
       if (typeof GM_xmlhttpRequest !== "function") {
-        resolve({ ok: false, error: "GM_xmlhttpRequest unavailable" });
+        finish({ ok: false, error: "GM_xmlhttpRequest unavailable" });
         return;
       }
 
-      GM_xmlhttpRequest({
+      request = GM_xmlhttpRequest({
         method: options.method || "GET",
         url,
         responseType: options.responseType || "text",
@@ -1385,7 +1441,7 @@
         onload: (response) => {
           const status = Number(response.status || 0);
           if (status >= 200 && status < 300) {
-            resolve({
+            finish({
               ok: true,
               status,
               contentType: response.responseHeaders?.match(/^content-type:\s*([^\r\n]+)/im)?.[1] || "",
@@ -1394,11 +1450,11 @@
             });
             return;
           }
-          resolve({ ok: false, error: `HTTP ${status || "unknown"}` });
+          finish({ ok: false, error: `HTTP ${status || "unknown"}` });
         },
-        onerror: (error) => resolve({ ok: false, error: String(error?.error || error?.message || "request failed") }),
-        onabort: () => resolve({ ok: false, error: "request aborted" }),
-        ontimeout: () => resolve({ ok: false, error: "request timeout" })
+        onerror: (error) => finish({ ok: false, error: String(error?.error || error?.message || "request failed") }),
+        onabort: () => finish({ ok: false, error: "request aborted" }),
+        ontimeout: () => finish({ ok: false, error: "request timeout" })
       });
     });
   }
@@ -1452,10 +1508,12 @@
     detailByImage: new Map(),
     photoShowByImage: new Map(),
     highResByImage: new Map(),
+    highResPending: new Map(),
     posterByImage: new Map(),
     previewPosterCache: new Map(),
     mediaRatioByImage: new Map(),
     videoTimeByImage: new Map(),
+    preferredVideoHost: "",
     favoriteKeys: new Set(),
     savingFavorite: false,
     imageKeys: new Set(),
@@ -1467,11 +1525,20 @@
     galleryContinueTimer: 0,
     collectionGeneration: 0,
     navigationGeneration: 0,
+    navigationController: null,
+    gallerySwitchGeneration: 0,
+    pendingGalleryUrl: "",
+    galleryDocument: null,
+    galleryDocumentUrl: "",
+    viewerClosedAtUrl: "",
     collectionController: new AbortController(),
     pendingPages: new Set(),
     failedPages: new Map(),
     pageLock: null,
     downloading: false,
+    downloadController: null,
+    downloadFailures: [],
+    downloadPanel: null,
     autoScroll: false,
     autoScrollSpeed: 3,
     autoScrollFrame: 0,
@@ -1736,6 +1803,7 @@
       background: #171717; padding: 0; cursor: zoom-in; box-shadow: 0 1px 0 rgba(255,255,255,.08);
       min-height: 96px; contain: layout paint style; content-visibility: auto; contain-intrinsic-size: 260px 360px;
     }
+    #xiv-root #xiv-grid .xiv-tile[hidden] { display: none !important; }
     #xiv-root[data-theme="light"] .xiv-tile {
       background: #fff; box-shadow: 0 1px 14px rgba(0,0,0,.13);
     }
@@ -2237,6 +2305,7 @@
       const host = parsed.hostname;
       const path = parsed.pathname;
       const current = new URL(location.href);
+      if (/\.(?:avif|gif|jpe?g|png|webp|mp4|webm|mov|m4v)$/i.test(path)) return false;
       // 自拍图库 uses opaque internationalized hostnames, but its gallery pages
       // consistently use this path shape. Keep the rule same-origin so generic
       // article pages cannot pollute a gallery queue.
@@ -2562,7 +2631,9 @@
     }
   }
 
-  function refreshGalleryQueue(doc = document, base = location.href) {
+  function refreshGalleryQueue(doc = state.galleryDocument || document, base = state.galleryDocumentUrl || location.href) {
+    // Pagination can add media, but must not replace the current group's navigation.
+    if (state.galleryDocument && doc !== state.galleryDocument && sameGalleryPage(base, activeGalleryQueueUrl()) && !samePageUrl(base, activeGalleryQueueUrl())) return;
     rememberGalleryQueueTitles(doc, base);
     const stored = readStoredGalleryQueue();
     const discovered = collectGalleryQueueFromDocument(doc, base);
@@ -2619,10 +2690,11 @@
   }
 
   function rebuildGalleryQueueFromVisiblePage() {
-    const visibleBase = state.collectionBase || location.href;
-    rememberGalleryQueueTitles(document, visibleBase);
+    const visibleDocument = state.galleryDocument || document;
+    const visibleBase = state.galleryDocumentUrl || location.href;
+    rememberGalleryQueueTitles(visibleDocument, visibleBase);
     const current = isX810114Url(visibleBase) ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
-    const discovered = collectGalleryQueueFromDocument(document, visibleBase);
+    const discovered = collectGalleryQueueFromDocument(visibleDocument, visibleBase);
     const stored = readStoredGalleryQueue();
     const merged = [];
     const seen = new Set();
@@ -2638,8 +2710,8 @@
     }
 
     if (isX810114Url(visibleBase) || isX810114Url(current)) {
-      const sidebar = collectX810114SidebarProfileQueue(document).map(normalizedPageUrl).filter(isQueueCandidateUrl);
-      const docBase = normalizedPageUrl(document.documentElement?.dataset?.xivBase || location.href);
+      const sidebar = collectX810114SidebarProfileQueue(visibleDocument).map(normalizedPageUrl).filter(isQueueCandidateUrl);
+      const docBase = normalizedPageUrl(visibleDocument.documentElement?.dataset?.xivBase || visibleBase);
       if (sidebar.length && samePageUrl(docBase, activeGalleryQueueUrl())) {
         state.x810114ActiveSidebarQueue = sidebar;
       }
@@ -2660,8 +2732,8 @@
     }
 
     const adjacent = isXchinaPhotoUrl(current)
-      ? xchinaAdjacentLinksFromDocument(document, visibleBase)
-      : genericAdjacentLinksFromDocument(document, visibleBase);
+      ? xchinaAdjacentLinksFromDocument(visibleDocument, visibleBase)
+      : genericAdjacentLinksFromDocument(visibleDocument, visibleBase);
     if (adjacent.previous || adjacent.next) {
       if (adjacent.previous) remember(adjacent.previous);
       if (isQueueCandidateUrl(current)) remember(current);
@@ -2716,10 +2788,10 @@
     if (state.galleryQueue.length < 2) rebuildGalleryQueueFromVisiblePage();
     const queue = state.galleryQueue;
     if (queue.length < 2) return "";
-    const activeUrl = isGenericX810114Page() ? normalizedPageUrl(location.href) : activeGalleryQueueUrl();
+    const activeUrl = state.pendingGalleryUrl || activeGalleryQueueUrl();
     const computedIndex = galleryQueueIndexForUrl(queue, activeUrl);
     let index = computedIndex >= 0 ? computedIndex : state.galleryQueueIndex;
-    if (computedIndex >= 0) state.galleryQueueIndex = computedIndex;
+    if (computedIndex >= 0 && !state.pendingGalleryUrl) state.galleryQueueIndex = computedIndex;
     if (index < 0 && isGenericX810114Page() && !isQueueCandidateUrl(activeUrl)) {
       return delta > 0 ? queue[0] : queue[queue.length - 1];
     }
@@ -2731,6 +2803,7 @@
 
   function x810114QueueTarget(delta) {
     if (!isGenericX810114Page()) return "";
+    if (galleryQueueIndexForUrl(state.galleryQueue, state.pendingGalleryUrl || activeGalleryQueueUrl()) >= 0) return galleryQueueTarget(delta);
     const sidebar = state.x810114ActiveSidebarQueue?.length
       ? state.x810114ActiveSidebarQueue
       : collectX810114SidebarProfileQueue(document);
@@ -2987,25 +3060,11 @@
     const target = state.galleryQueue[Number(index)];
     if (!target) return;
     state.galleryQueuePanel.dataset.open = "false";
-    if (samePageUrl(target, activeGalleryQueueUrl())) {
+    if (!state.pendingGalleryUrl && samePageUrl(target, activeGalleryQueueUrl())) {
       updateStatus(`当前已是第 ${Number(index) + 1} 组`);
       return;
     }
-    rememberX810114QueueVisit(target);
-    const selfieTarget = isSelfieGalleryQueueUrl(target);
-    if (!selfieTarget) {
-      try { sessionStorage.setItem(galleryQueueAutoOpenKey(), target); } catch {}
-    }
-    if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
-      try { await state.root?.requestFullscreen?.(); } catch {}
-    }
-    updateStatus(`正在跳转到第 ${Number(index) + 1} 组`);
-    try {
-      if (await loadGalleryQueueTargetInPlace(target)) return;
-    } catch {}
-    if (selfieTarget) return;
-    if (samePageUrl(target, location.href)) location.reload();
-    else location.href = target;
+    return switchGalleryTarget(target, `正在加载第 ${Number(index) + 1} 组`);
   }
 
   function decodeCapturedLink(value) {
@@ -3739,6 +3798,62 @@
     });
   }
 
+  function beginGalleryNavigation() {
+    state.navigationController?.abort();
+    state.navigationController = new AbortController();
+    const generation = ++state.navigationGeneration;
+    return { signal: state.navigationController.signal, isCurrent: () => state.active && generation === state.navigationGeneration };
+  }
+
+  function galleryDocumentHasMedia(doc, base) {
+    if (!doc?.documentElement) return false;
+    doc.documentElement.dataset.xivBase = base;
+    if (isXchinaPhotoUrl(base)) return collectXchinaPhotoUrls(doc, base, () => true) > 0;
+    if (isPornpicsGalleryPage(base)) return collectPornpicsGalleryUrls(doc, base, () => true) > 0;
+    return [...doc.querySelectorAll("img,video,source,a[href]")].some(node => {
+      const url = node.tagName === "IMG" ? imageCandidateFromImg(node, base)
+        : node.tagName === "VIDEO" ? mediaCandidateFromVideo(node, base)
+        : absoluteUrl(node.getAttribute("src") || node.getAttribute("href"), base);
+      return isGoodImage(url, node);
+    }) || [...doc.querySelectorAll("[style]")].some(node => backgroundImageUrls(node.getAttribute("style"), base).some(url => isGoodImage(url, node)));
+  }
+
+  async function switchGalleryTarget(target, message = "正在加载组图") {
+    if (!state.active) return false;
+    const targetUrl = normalizedPageUrl(target);
+    if (!targetUrl || !isQueueCandidateUrl(targetUrl)) return false;
+    const request = ++state.gallerySwitchGeneration;
+    state.pendingGalleryUrl = targetUrl;
+    if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
+      try { state.root?.requestFullscreen?.()?.catch?.(() => {}); } catch {}
+    }
+    // A different origin cannot be committed using pushState.
+    if (new URL(targetUrl).origin !== location.origin) {
+      state.navigationGeneration += 1;
+      state.navigationController?.abort();
+      try { sessionStorage.setItem(galleryQueueAutoOpenKey(), targetUrl); } catch {}
+      location.href = targetUrl;
+      return true;
+    }
+    updateStatus(message);
+    const operation = loadGalleryQueueTargetInPlace(targetUrl);
+    const navigation = state.navigationGeneration;
+    try {
+      const loaded = await operation;
+      if (!state.active || request !== state.gallerySwitchGeneration || navigation !== state.navigationGeneration) return false;
+      if (loaded) {
+        rememberX810114QueueVisit(targetUrl);
+        try { sessionStorage.removeItem(galleryQueueAutoOpenKey()); } catch {}
+      } else updateStatus("组图加载失败或没有可用媒体，已保留当前组，可重试");
+      return loaded;
+    } catch {
+      if (state.active && request === state.gallerySwitchGeneration && navigation === state.navigationGeneration) updateStatus("组图加载失败，已保留当前组，可重试");
+      return false;
+    } finally {
+      if (request === state.gallerySwitchGeneration) state.pendingGalleryUrl = "";
+    }
+  }
+
   async function loadGalleryQueueTargetInPlace(target) {
     const targetUrl = normalizedPageUrl(target);
     if (!targetUrl || !isQueueCandidateUrl(targetUrl)) return false;
@@ -3753,23 +3868,22 @@
       return loadSelfieGalleryQueueTargetInPlace(targetUrl);
     }
 
-    const navigation = ++state.navigationGeneration;
-    const isCurrent = () => state.active && navigation === state.navigationGeneration;
-    const virtualSelfieNavigation = false;
+    const { signal, isCurrent } = beginGalleryNavigation();
     const previousQueueUrl = state.galleryQueueCurrentUrl;
     const genericTarget = GENERIC_X810114_RE.test(targetUrl);
     let targetDoc = null;
     let queueDoc = null;
+    const profileRequest = genericTarget ? fetchX810114ProfileData(targetUrl, signal).catch(() => null) : null;
     if (!genericTarget) {
       let html = "";
       try {
-        html = await fetchHtml(targetUrl, previousQueueUrl || location.href);
+        html = await fetchHtml(targetUrl, previousQueueUrl || location.href, signal);
         targetDoc = new DOMParser().parseFromString(html, "text/html");
       } catch {
         if (!isCurrent()) return false;
         if (!isKnownGalleryUrl(targetUrl)) return false;
         try {
-          targetDoc = await fetchSameOriginDocumentViaFrame(targetUrl);
+          targetDoc = await fetchSameOriginDocumentViaFrame(targetUrl, 18000, signal);
         } catch {
           return false;
         }
@@ -3779,31 +3893,26 @@
       queueDoc = targetDoc;
     } else {
       try {
-        const html = await fetchHtml(targetUrl, previousQueueUrl || location.href);
+        const html = await fetchHtml(targetUrl, previousQueueUrl || location.href, signal);
         queueDoc = new DOMParser().parseFromString(html, "text/html");
         queueDoc.documentElement.dataset.xivBase = targetUrl;
       } catch {
         queueDoc = null;
       }
     }
+    const profileData = profileRequest ? await profileRequest : null;
     if (!isCurrent()) return false;
+    const hasProfileMedia = profileData?.timeline?.some(item => !isBlockedPromoItem(item) && MEDIA_EXT.test(x810114MediaUrl(item)));
+    if (!hasProfileMedia && !galleryDocumentHasMedia(targetDoc || queueDoc, targetUrl)) return false;
+    // Commit the URL before clearing the old cards so a pushState failure is harmless.
+    try { history.pushState({ flowlensGalleryQueue: true }, "", targetUrl); } catch { return false; }
     updateStatus("正在加载下一组");
     saveViewerPosition();
     closeLightbox(false);
     stopGenericObserver();
     resetCollection();
-    if (virtualSelfieNavigation) {
-      // Android Chromium exits Fullscreen when 自拍图库 changes history. Keep the
-      // browser URL stable and switch the collected document in place instead.
-      state.galleryQueueCurrentUrl = targetUrl;
-    } else {
-      try {
-        history.pushState({ flowlensGalleryQueue: true }, "", targetUrl);
-      } catch {
-        return false;
-      }
-      state.galleryQueueCurrentUrl = targetUrl;
-    }
+    state.galleryQueueCurrentUrl = targetUrl;
+    state.collectionBase = targetUrl;
     state.active = true;
     state.root.dataset.active = "true";
     state.root.dataset.theme = state.theme;
@@ -3814,20 +3923,26 @@
     state.galleryQueueCurrentTitle = targetDoc ? pageTitleFromDocument(targetDoc, targetUrl) : "";
 
     if (genericTarget) {
-      await prepareGenericX810114Page();
-      if (!isCurrent()) return false;
-      if (!state.x810114ApiMode) startGenericObserver();
+      if (hasProfileMedia) applyX810114ProfileData(profileData);
+      else collectFromDocument(queueDoc, targetUrl);
     } else {
       collectFromDocument(targetDoc, targetUrl);
       if (isPhotoGalleryPage(targetUrl)) {
         discoverNearbyPages();
         fetchRemainingPages(galleryFetchLimit());
-      } else if (!virtualSelfieNavigation && !isPornpicsGalleryPage(targetUrl)) {
-        startGenericObserver();
       }
     }
 
-    refreshGalleryQueue(queueDoc || targetDoc || document, targetUrl);
+    if (!state.images.length) return false;
+    if (queueDoc || targetDoc) {
+      state.galleryDocument = queueDoc || targetDoc;
+      state.galleryDocumentUrl = targetUrl;
+    }
+    if (!queueDoc && !targetDoc) {
+      state.galleryDocument = new DOMParser().parseFromString("<html><body></body></html>", "text/html");
+      state.galleryDocumentUrl = targetUrl;
+    }
+    refreshGalleryQueue(state.galleryDocument, targetUrl);
     renderImages();
     applyMediaFilter();
     updateCounter();
@@ -3844,19 +3959,18 @@
     const targetUrl = normalizedPageUrl(target);
     if (!targetUrl || !HTTP_PAGE_RE.test(targetUrl)) return false;
 
-    const navigation = ++state.navigationGeneration;
-    const isCurrent = () => state.active && navigation === state.navigationGeneration;
+    const { signal, isCurrent } = beginGalleryNavigation();
     let html = "";
     let doc = null;
     try {
       updateStatus("正在读取收藏页面");
-      html = await fetchHtml(targetUrl, state.galleryQueueCurrentUrl || location.href);
+      html = await fetchHtml(targetUrl, state.galleryQueueCurrentUrl || location.href, signal);
       doc = new DOMParser().parseFromString(html, "text/html");
     } catch {
       if (!isCurrent()) return false;
       if (isXchinaPhotoUrl(targetUrl)) {
         try {
-          doc = await fetchSameOriginDocumentViaFrame(targetUrl);
+          doc = await fetchSameOriginDocumentViaFrame(targetUrl, 18000, signal);
         } catch {}
       }
       if (!isCurrent()) return false;
@@ -3867,12 +3981,13 @@
     }
 
     if (!isCurrent()) return false;
-    if (!doc?.documentElement) {
+    if (!galleryDocumentHasMedia(doc, targetUrl)) {
       updateStatus("收藏页面无法解析，已保留当前图片流");
       return false;
     }
 
     const previousUrl = state.galleryQueueCurrentUrl || location.href;
+    const previousDoc = state.galleryDocument || document;
     saveViewerPosition();
     closeLightbox(false);
     stopGenericObserver();
@@ -3893,8 +4008,8 @@
     if (!state.images.length) {
       resetCollection();
       state.galleryQueueCurrentUrl = previousUrl;
-      collectFromDocument(document, location.href);
-      refreshGalleryQueue(document, location.href);
+      collectFromDocument(previousDoc, previousUrl);
+      refreshGalleryQueue(previousDoc, previousUrl);
       renderImages();
       applyMediaFilter();
       updateCounter();
@@ -3912,12 +4027,11 @@
   }
 
   async function loadSelfieGalleryQueueTargetInPlace(targetUrl) {
-    const navigation = ++state.navigationGeneration;
-    const isCurrent = () => state.active && navigation === state.navigationGeneration;
+    const { signal, isCurrent } = beginGalleryNavigation();
     const previousQueueUrl = state.galleryQueueCurrentUrl || location.href;
     let doc = null;
     try {
-      doc = await fetchSelfieGalleryDocument(targetUrl, previousQueueUrl);
+      doc = await fetchSelfieGalleryDocument(targetUrl, previousQueueUrl, signal);
     } catch {
       if (!isCurrent()) return false;
       updateStatus("下一组加载失败，已保留当前全屏");
@@ -3925,6 +4039,8 @@
     }
 
     if (!isCurrent()) return false;
+    if (!galleryDocumentHasMedia(doc, targetUrl)) return false;
+    const previousDoc = state.galleryDocument || document;
     doc.documentElement.dataset.xivBase = targetUrl;
     updateStatus("正在切换下一组");
     saveViewerPosition();
@@ -3947,8 +4063,9 @@
       // Do not navigate the browser as a fallback: that would force Android to
       // leave Fullscreen. Restore the current document instead.
       state.galleryQueueCurrentUrl = previousQueueUrl;
-      collectFromDocument(document, location.href);
-      refreshGalleryQueue(document, location.href);
+      resetCollection();
+      collectFromDocument(previousDoc, previousQueueUrl);
+      refreshGalleryQueue(previousDoc, previousQueueUrl);
       renderImages();
       applyMediaFilter();
       updateCounter();
@@ -3971,20 +4088,21 @@
     return images > 0 && /(?:上一组|下一组)/.test(text);
   }
 
-  async function fetchSelfieGalleryDocument(targetUrl, referrer) {
+  async function fetchSelfieGalleryDocument(targetUrl, referrer, signal = null) {
     // Some 自拍图库 routes return the home page to fetch/XHR. Prefer it when it
     // is a genuine detail document, then retry as a same-origin frame so the
     // request has browser-navigation semantics without changing the top page.
     try {
-      const html = await fetchHtml(targetUrl, referrer);
+      const html = await fetchHtml(targetUrl, referrer, signal);
       const doc = new DOMParser().parseFromString(html, "text/html");
       if (isSelfieGalleryDocument(doc)) return doc;
     } catch {
       // Continue with the Tampermonkey request and frame fallbacks.
     }
 
+    signal?.throwIfAborted();
     try {
-      const response = await fetchTextViaBackground(targetUrl, referrer);
+      const response = await waitWithSignal(fetchTextViaBackground(targetUrl, referrer, signal), signal);
       if (response?.ok) {
         const doc = new DOMParser().parseFromString(response.text || "", "text/html");
         if (isSelfieGalleryDocument(doc)) return doc;
@@ -3993,14 +4111,18 @@
       // The frame attempt below is the navigation-context fallback.
     }
 
+    signal?.throwIfAborted();
     return new Promise((resolve, reject) => {
       const frame = document.createElement("iframe");
       const timeout = window.setTimeout(() => finish(new Error("selfie gallery frame timeout")), 18000);
       let settled = false;
+      const onAbort = () => finish(new DOMException("Navigation cancelled", "AbortError"));
+      signal?.addEventListener("abort", onAbort, { once: true });
       function finish(error, doc = null) {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
         frame.remove();
         if (error) reject(error);
         else resolve(doc);
@@ -4028,38 +4150,13 @@
   }
 
   async function navigateGalleryQueue(delta) {
-    refreshGalleryQueue();
-    rebuildGalleryQueueFromVisiblePage();
+    if (state.galleryQueue.length < 2) { refreshGalleryQueue(); rebuildGalleryQueueFromVisiblePage(); }
     const target = x810114QueueTarget(delta) || galleryQueueTarget(delta);
     if (!target) {
       updateStatus("没有可切换的套图");
       return;
     }
-    rememberX810114QueueVisit(target);
-    const selfieTarget = isSelfieGalleryQueueUrl(target);
-    if (!selfieTarget) {
-      try {
-        sessionStorage.setItem(galleryQueueAutoOpenKey(), target);
-      } catch {
-        // Auto-open is best-effort.
-      }
-    }
-    if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
-      try {
-        await state.root?.requestFullscreen?.();
-      } catch {
-        // Fullscreen must be requested from the user gesture; if blocked, auto-open still works.
-      }
-    }
-    try {
-      if (await loadGalleryQueueTargetInPlace(target)) return;
-    } catch {
-      // Fall back to page navigation when in-place loading is blocked.
-    }
-    if (selfieTarget) return;
-    updateStatus(delta > 0 ? "打开下一组" : "打开上一组");
-    if (samePageUrl(target, location.href)) location.reload();
-    else location.href = target;
+    return switchGalleryTarget(target, delta > 0 ? "正在加载下一组" : "正在加载上一组");
   }
 
   function maybeAutoOpenFromGalleryQueue() {
@@ -4800,7 +4897,7 @@
     return added;
   }
 
-  function collectPornpicsGalleryUrls(doc, base) {
+  function collectPornpicsGalleryUrls(doc, base, accept = addImage) {
     const urls = new Set();
     doc.querySelectorAll("#main #tiles a[href], #tiles a[href]").forEach((link) => {
       if (!isPornpicsMainGalleryNode(link)) return;
@@ -4817,9 +4914,9 @@
     });
     let added = 0;
     for (const url of urls) {
-      if (addImage(url)) added += 1;
+      if (accept(url)) added += 1;
     }
-    state.expectedImages = state.images.length;
+    if (accept === addImage) state.expectedImages = state.images.length;
     return added;
   }
 
@@ -4843,6 +4940,10 @@
 
   function collectFromDocument(doc, base) {
     let added = 0;
+    if (samePageUrl(base, activeGalleryQueueUrl())) {
+      state.galleryDocument = doc;
+      state.galleryDocumentUrl = base;
+    }
     state.collectionBase = base;
     doc.documentElement.dataset.xivBase = base;
     collectVideoPosters(doc, base);
@@ -4969,6 +5070,12 @@
 
   function resetCollection() {
     invalidateCollectionRequests();
+    state.downloadController?.abort();
+    state.downloadPanel?.remove();
+    state.downloadPanel = null;
+    state.downloadFailures = [];
+    clearOldMediaPreloads(true);
+    clearTimeout(state.masonryLayoutTimer);
     stopTileMediaObserver();
     state.imageLoadObserver?.disconnect();
     state.imageLoadObserver = null;
@@ -4976,6 +5083,7 @@
     state.detailByImage.clear();
     state.photoShowByImage.clear();
     state.highResByImage.clear();
+    state.highResPending.clear();
     state.posterByImage.clear();
     state.mediaRatioByImage.clear();
     state.videoTimeByImage.clear();
@@ -5006,9 +5114,9 @@
       .find((node) => pattern.test((node.textContent || "").replace(/\s+/g, "")));
   }
 
-  function x810114ProfileName() {
+  function x810114ProfileName(url = location.href) {
     try {
-      const parsed = new URL(location.href);
+      const parsed = new URL(url);
       if (parsed.hostname !== "x.810114.xyz") return "";
       const name = parsed.pathname.split("/").filter(Boolean)[0] || "";
       return /^[A-Za-z0-9_]{2,64}$/.test(name) ? name : "";
@@ -5163,7 +5271,7 @@
     return nodes.length ? nodes : [doc.body || doc.documentElement];
   }
 
-  function collectXchinaPhotoUrls(doc, base) {
+  function collectXchinaPhotoUrls(doc, base, accept = addImage) {
     const album = siteAlbumIdFromUrl(base);
     if (!album) return 0;
     const urls = new Set();
@@ -5200,7 +5308,7 @@
 
     let added = 0;
     for (const url of urls) {
-      if (addImage(url)) added += 1;
+      if (accept(url)) added += 1;
     }
     return added;
   }
@@ -5280,6 +5388,7 @@
       const hosts = parsed.hostname === "video-cf.twimg.com"
         ? ["video-cf.twimg.com", "video.twimg.com", "twimg.moonchan.xyz"]
         : ["video.twimg.com", "video-cf.twimg.com", "twimg.moonchan.xyz"];
+      if (hosts.includes(state.preferredVideoHost)) hosts.sort((a, b) => Number(b === state.preferredVideoHost) - Number(a === state.preferredVideoHost));
       return hosts.map(host => { const source = new URL(parsed.href); source.hostname = host; source.port = ""; return source.href; });
     } catch { return [url]; }
   }
@@ -5701,10 +5810,18 @@
     delete video.dataset.flSourceFailed;
     video.src = video.dataset.sourceUrl;
     video.load();
+    const mobile = window.matchMedia?.("(pointer: coarse)")?.matches || window.innerWidth <= 820;
+    const earlyFallback = mobile && request.autoplay && request.sources.length > 1;
     video.dataset.loadTimer = String(window.setTimeout(() => {
       if (videoSourceRequests.get(video) !== request || !video.isConnected || video.readyState >= 2 || video.dataset.played === "true") return;
+      if (earlyFallback && video.readyState >= 1) {
+        video.dataset.loadTimer = String(window.setTimeout(() => {
+          if (videoSourceRequests.get(video) === request && video.isConnected && video.readyState < 2 && video.dataset.played !== "true") advanceVideoSource(video);
+        }, 3500));
+        return;
+      }
       advanceVideoSource(video);
-    }, request.autoplay ? 6000 : 5000));
+    }, earlyFallback ? 2500 : request.autoplay ? 6000 : 5000));
     if (request.autoplay && video.isConnected) requestVideoPlayback(video);
   }
 
@@ -5838,6 +5955,10 @@
     video.addEventListener("playing", () => {
       video.dataset.played = "true";
       clearTimeout(Number(video.dataset.loadTimer || 0));
+      const request = videoSourceRequests.get(video);
+      if (request?.sources.length > 1) {
+        try { state.preferredVideoHost = new URL(video.currentSrc || video.src).hostname; } catch {}
+      }
     });
     video.addEventListener("error", () => {
       advanceVideoSource(video);
@@ -5850,17 +5971,25 @@
     return video;
   }
 
-  async function collectX810114ProfileFromApi() {
-    const generation = state.collectionGeneration;
-    const signal = state.collectionController.signal;
-    const name = x810114ProfileName();
-    if (!name) return false;
-    updateStatus("读取站点数据");
+  async function fetchX810114ProfileData(url, signal) {
+    const name = x810114ProfileName(url);
+    if (!name) return null;
     const apiUrl = `https://x.moonchan.xyz/api/twitter/${encodeURIComponent(name)}.json.gz?t=${new Date().toISOString().slice(0, 10)}`;
     const res = await fetch(apiUrl, { credentials: "omit", cache: "no-store", signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (signal.aborted || generation !== state.collectionGeneration) return false;
+    return res.json();
+  }
+
+  async function collectX810114ProfileFromApi() {
+    const generation = state.collectionGeneration;
+    const signal = state.collectionController.signal;
+    updateStatus("读取站点数据");
+    const data = await fetchX810114ProfileData(location.href, signal);
+    if (!data || signal.aborted || generation !== state.collectionGeneration) return false;
+    return applyX810114ProfileData(data);
+  }
+
+  function applyX810114ProfileData(data) {
     const timeline = Array.isArray(data.timeline) ? data.timeline : [];
     state.expectedImages = Number(data.total_urls || timeline.length || 0);
     let added = 0;
@@ -5875,12 +6004,12 @@
     return added > 0;
   }
 
-  async function prepareGenericX810114Page() {
+  async function prepareGenericX810114Page(sourceDoc = document, sourceUrl = location.href) {
     const generation = state.collectionGeneration;
     const isCurrent = () => generation === state.collectionGeneration && !state.collectionController.signal.aborted;
-    collectVideoPosters(document, location.href);
+    collectVideoPosters(sourceDoc, sourceUrl);
     if (!isX810114ProfilePage()) {
-      collectFromDocument(document, location.href);
+      collectFromDocument(sourceDoc, sourceUrl);
       updateStatus(`已收集 ${state.images.length} 张`);
       return;
     }
@@ -5891,14 +6020,14 @@
       updateStatus("接口失败，改用页面收集");
     }
     if (!isCurrent()) return;
-    const expand = findButtonByText(/展开全部/);
+    const expand = sourceDoc === document ? findButtonByText(/展开全部/) : null;
     if (expand) {
       updateStatus("正在展开全部");
       expand.click();
       await sleep(900);
     }
     if (!isCurrent()) return;
-    collectFromDocument(document, location.href);
+    collectFromDocument(sourceDoc, sourceUrl);
     updateStatus(`已收集 ${state.images.length} 张`);
   }
 
@@ -7054,7 +7183,7 @@
       tile.dataset.url = url;
       tile.dataset.urlKey = key;
       tile.hidden = !mediaMatchesFilter(url);
-      const media = index < 18 || typeof IntersectionObserver !== "function"
+      const media = !tile.hidden && (index < 18 || typeof IntersectionObserver !== "function")
         ? createTileMedia(url, index)
         : createTileMediaPlaceholder(url);
       tile.dataset.mediaMounted = media.className === "xiv-media-placeholder" ? "false" : "true";
@@ -7200,12 +7329,13 @@
     scheduleTileMediaReconcile();
   }
 
-  function scheduleTileMediaReconcile() {
+  function scheduleTileMediaReconcile(delay = 120) {
+    if (delay === 0 && state.tileMediaReconcileTimer) { clearTimeout(state.tileMediaReconcileTimer); state.tileMediaReconcileTimer = 0; }
     if (!state.active || state.tileMediaReconcileTimer) return;
     state.tileMediaReconcileTimer = setTimeout(() => {
       state.tileMediaReconcileTimer = 0;
       reconcileTileMedia();
-    }, 120);
+    }, delay);
   }
 
   function reconcileTileMedia() {
@@ -7306,6 +7436,8 @@
       // Filter persistence is best-effort.
     }
     applyMediaFilter();
+    if (state.stage) state.stage.scrollTop = 0;
+    scheduleTileMediaReconcile(0);
     updateCounter();
   }
 
@@ -7319,15 +7451,26 @@
     return state.images.filter(mediaMatchesFilter);
   }
 
-  function applyMediaFilter() {
+  function applyMediaFilter(candidates = null) {
     let changed = false;
-    allTiles().forEach((tile) => {
-      const blocked = tile.dataset.flDuplicate === "true" || !!window.__flowLensMediaFilter?.reasonFor?.(tile.dataset.url, tile);
+    (candidates || allTiles()).forEach((tile) => {
+      const blocked = tile.dataset.flDuplicate === "true" || tile.dataset.flFilteredOut === "true" || !!window.__flowLensMediaFilter?.reasonFor?.(tile.dataset.url, tile);
       const hidden = !mediaMatchesFilter(tile.dataset.url || "") || blocked;
       if (tile.hidden !== hidden) { tile.hidden = hidden; changed = true; }
+      if (hidden && tile.dataset.mediaMounted === "true") setTileMediaMounted(tile, false);
       if (tile.style.display) tile.style.removeProperty("display");
     });
-    if (changed) layoutMasonry();
+    if (changed) compactFilteredMasonry();
+  }
+
+  function compactFilteredMasonry() {
+    if (!state.grid) return;
+    const tiles = allTiles();
+    ensureMasonryColumns();
+    state.masonryColumnHeights = state.masonryColumns.map(() => 0);
+    // Repack only when visibility changes. Ordinary loads keep stable cards.
+    appendTilesToMasonry(tiles);
+    scheduleTileMediaReconcile(0);
   }
 
   function rebuildMasonry() {
@@ -7500,7 +7643,7 @@
 
   function positionStorageKey() {
     try {
-      const parsed = new URL(location.href);
+      const parsed = new URL(activeGalleryQueueUrl());
       return `xiv-viewer-position:${parsed.origin}${parsed.pathname}`;
     } catch {
       return `xiv-viewer-position:${location.href.split("#")[0]}`;
@@ -7765,10 +7908,11 @@
     return bytes;
   }
 
-  function fetchImageViaBackground(url) {
+  function fetchImageViaBackground(url, signal = null) {
     if (xivUserscriptMode) {
       return userscriptRequest(url, {
         responseType: "arraybuffer",
+        signal,
         headers: {
           "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
         }
@@ -7801,10 +7945,11 @@
     });
   }
 
-  function fetchTextViaBackground(url, referrer = location.href) {
+  function fetchTextViaBackground(url, referrer = location.href, signal = null) {
     if (xivUserscriptMode) {
       return userscriptRequest(url, {
         responseType: "text",
+        signal,
         headers: {
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
@@ -7837,25 +7982,38 @@
     });
   }
 
-  async function fetchHtml(url, referrer = location.href) {
+  function waitWithSignal(promise, signal) {
+    if (!signal) return promise;
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(new DOMException("Operation cancelled", "AbortError"));
+      Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+      if (signal.aborted) { abort(); return; }
+      signal.addEventListener("abort", abort, { once: true });
+    });
+  }
+
+  async function fetchHtml(url, referrer = location.href, signal = null) {
+    signal?.throwIfAborted();
     let lastError = "";
     try {
-      const res = await fetch(url, { credentials: "include", cache: "no-store", referrer });
+      const res = await fetch(url, { credentials: "include", cache: "no-store", referrer, signal });
       if (res.ok) return await res.text();
       lastError = `HTTP ${res.status}`;
     } catch (error) {
       lastError = error?.message || String(error);
     }
 
-    const res = await fetchTextViaBackground(url, referrer);
+    signal?.throwIfAborted();
+    const res = await waitWithSignal(fetchTextViaBackground(url, referrer, signal), signal);
     if (res?.ok) return res.text || "";
     throw new Error(res?.error || lastError || "fetch failed");
   }
 
-  async function fetchImageBytes(url) {
+  async function fetchImageBytes(url, signal = null) {
     let lastError = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const res = await fetchImageViaBackground(url);
+      signal?.throwIfAborted();
+      const res = await waitWithSignal(fetchImageViaBackground(url, signal), signal);
       if (res?.ok && res.base64) {
         return {
           bytes: base64ToBytes(res.base64),
@@ -7863,11 +8021,12 @@
         };
       }
       lastError = res?.error || "background failed";
-      await sleep(260 + attempt * 500);
+      await waitWithSignal(sleep(260 + attempt * 500), signal);
     }
 
     try {
-      const res = await fetch(url, { credentials: "include", cache: "force-cache" });
+      signal?.throwIfAborted();
+      const res = await fetch(url, { credentials: "include", cache: "force-cache", signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return {
         bytes: new Uint8Array(await res.arrayBuffer()),
@@ -7971,6 +8130,17 @@
   async function resolveHighResUrl(imageUrl, quiet = false) {
     const key = keyForUrl(imageUrl);
     if (state.highResByImage.has(key)) return state.highResByImage.get(key);
+    if (state.highResPending.has(key)) return state.highResPending.get(key);
+    const generation = state.collectionGeneration;
+    const pending = resolveHighResUncached(imageUrl, quiet, generation);
+    state.highResPending.set(key, pending);
+    try { return await pending; }
+    finally { if (state.highResPending.get(key) === pending) state.highResPending.delete(key); }
+  }
+
+  async function resolveHighResUncached(imageUrl, quiet, generation) {
+    const key = keyForUrl(imageUrl);
+    if (state.highResByImage.has(key)) return state.highResByImage.get(key);
     const directOriginal = siteAlbumOriginalImageUrl(imageUrl);
     if (directOriginal && directOriginal !== imageUrl && isFavoriteImageUrl(directOriginal)) {
       state.highResByImage.set(key, directOriginal);
@@ -7987,26 +8157,29 @@
     try {
       if (!quiet) updateStatus("解析高清图");
       let targetUrl = detailUrl;
-      let html = await fetchHtml(targetUrl, location.href);
+      const referrerBase = activeGalleryQueueUrl();
+      const signal = state.collectionController.signal;
+      let html = await fetchHtml(targetUrl, referrerBase, signal);
       let doc = new DOMParser().parseFromString(html, "text/html");
       const photoShowUrl = isPhotoShowPage(targetUrl) ? targetUrl : findPhotoShowUrl(doc, targetUrl);
       if (photoShowUrl) {
+        if (generation !== state.collectionGeneration) return imageUrl;
         state.photoShowByImage.set(key, photoShowUrl);
         const referrer = targetUrl;
         targetUrl = photoShowUrl;
         try {
-          html = await fetchHtml(targetUrl, referrer);
+          html = await fetchHtml(targetUrl, referrer, signal);
           doc = new DOMParser().parseFromString(html, "text/html");
         } catch {
           targetUrl = referrer;
         }
       }
       const candidates = detailImageCandidates(doc, targetUrl);
+      if (generation !== state.collectionGeneration || signal.aborted) return imageUrl;
       const highRes = await chooseLargestImage(candidates, imageUrl);
-      state.highResByImage.set(key, highRes);
+      if (generation === state.collectionGeneration && !signal.aborted) state.highResByImage.set(key, highRes);
       return highRes;
     } catch {
-      state.highResByImage.set(key, imageUrl);
       return imageUrl;
     }
   }
@@ -8042,7 +8215,21 @@
     return { time, date: (year << 9) | (month << 5) | day };
   }
 
-  function makeZip(files) {
+  async function crc32Async(bytes, signal = null) {
+    crc32(new Uint8Array());
+    const table = crc32.table;
+    let crc = 0xffffffff;
+    for (let start = 0; start < bytes.length; start += 1024 * 1024) {
+      signal?.throwIfAborted();
+      const end = Math.min(bytes.length, start + 1024 * 1024);
+      for (let i = start; i < end; i += 1) crc = table[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+      await sleep(0);
+    }
+    signal?.throwIfAborted();
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  async function makeZip(files, signal = null) {
     const encoder = new TextEncoder();
     const chunks = [];
     const central = [];
@@ -8052,7 +8239,7 @@
     for (const file of files) {
       const name = encoder.encode(file.name);
       const data = file.data;
-      const crc = crc32(data);
+      const crc = await crc32Async(data, signal);
       const local = [];
       writeU32(local, 0x04034b50);
       writeU16(local, 20);
@@ -8105,14 +8292,17 @@
     return new Blob([...chunks, ...central, new Uint8Array(end)], { type: "application/zip" });
   }
 
-  async function waitForGalleryFetch() {
-    while (state.fetching) await sleep(180);
+  async function waitForGalleryFetch(signal = state.collectionController.signal) {
+    signal?.throwIfAborted();
+    while (state.fetching) await waitWithSignal(sleep(180), signal);
     while (state.fetchedPages.size < state.pageUrls.size) {
+      signal?.throwIfAborted();
       const before = state.fetchedPages.size;
-      await fetchRemainingPages(GALLERY_FETCH_BATCH, true);
-      while (state.fetching) await sleep(180);
+      await waitWithSignal(fetchRemainingPages(GALLERY_FETCH_BATCH, true), signal);
+      while (state.fetching) await waitWithSignal(sleep(180), signal);
       if (state.fetchedPages.size === before) break;
     }
+    signal?.throwIfAborted();
   }
 
   function urlsForScope(scope = "all") {
@@ -8136,7 +8326,8 @@
   }
 
   async function exportLinks() {
-    await waitForGalleryFetch();
+    try { await waitForGalleryFetch(); }
+    catch (error) { if (error?.name !== "AbortError") updateStatus("链接导出失败，可重试"); return; }
     const urls = urlsForScope(state.mediaFilter === "all" ? "all" : "filtered");
     if (!urls.length) {
       updateStatus("没有可导出的链接");
@@ -8146,55 +8337,117 @@
     updateStatus(`已导出 ${urls.length} 条链接`);
   }
 
-  async function downloadZip(scope = "all") {
-    if (state.downloading) return;
-    state.downloading = true;
-    state.lastDownloadScope = scope;
+  function showDownloadTask(text, running = false) {
+    if (!state.active || !state.root) return;
+    let panel = state.downloadPanel;
+    if (!panel?.isConnected) {
+      panel = document.createElement("div");
+      panel.id = "xiv-download-task";
+      panel.setAttribute("role", "status");
+      panel.style.cssText = "position:fixed;right:16px;bottom:20px;z-index:2147483646;max-width:calc(100vw - 32px);padding:14px;border-radius:12px;background:#20242c;color:#fff;box-shadow:0 4px 24px #0006;font:13px/1.5 system-ui;";
+      panel.innerHTML = '<div data-download-status></div><div style="display:flex;gap:8px;margin-top:8px"><button type="button" data-download-cancel>取消</button><button type="button" data-download-retry>重试失败项</button><button type="button" data-download-list>导出失败列表</button><button type="button" data-download-close>关闭</button></div>';
+      panel.querySelector("[data-download-cancel]").onclick = () => state.downloadController?.abort();
+      panel.querySelector("[data-download-retry]").onclick = () => downloadZip("retry");
+      panel.querySelector("[data-download-list]").onclick = () => downloadTextFile(state.downloadFailures.map(item => `${item.url}\t${item.error}`).join("\n"), "flowlens-download-failures.txt");
+      panel.querySelector("[data-download-close]").onclick = () => { panel.remove(); state.downloadPanel = null; };
+      state.root.appendChild(panel);
+      state.downloadPanel = panel;
+    }
+    panel.querySelector("[data-download-status]").textContent = text;
+    panel.querySelector("[data-download-cancel]").hidden = !running;
+    panel.querySelector("[data-download-retry]").hidden = running || !state.downloadFailures.length;
+    panel.querySelector("[data-download-list]").hidden = running || !state.downloadFailures.length;
+    panel.querySelector("[data-download-close]").hidden = running;
+  }
 
+  async function saveDownloadBlob(blob, name) {
+    const objectUrl = URL.createObjectURL(blob);
     try {
-      updateStatus("准备下载");
-      await waitForGalleryFetch();
-      const urls = urlsForScope(scope);
-      if (!urls.length) {
-        updateStatus(scope === "favorites" ? "还没有收藏" : "没有图片");
-        return;
-      }
+      const a = document.createElement("a");
+      a.href = objectUrl; a.download = name;
+      document.documentElement.appendChild(a); a.click(); a.remove();
+      // Release each part before starting the next; otherwise object URLs keep
+      // every completed archive alive while the remaining files download.
+      await sleep(1500);
+    } finally { URL.revokeObjectURL(objectUrl); }
+  }
 
-      const files = [];
-      let failed = 0;
-      let lastError = "";
+  async function downloadZip(scope = "all") {
+    if (state.downloading || !state.active) return;
+    if (typeof scope !== "string") scope = "all";
+    state.downloading = true;
+    const controller = new AbortController();
+    state.downloadController = controller;
+    const signal = controller.signal;
+    const generation = state.collectionGeneration;
+    const current = () => state.active && generation === state.collectionGeneration;
+    const progress = text => { if (current()) { updateStatus(text); showDownloadTask(text, true); } };
+    const retry = scope === "retry" ? state.downloadFailures.map(item => item.url) : null;
+    const failures = [];
+    let files = [], bytes = 0, saved = 0, part = 0;
+    const maxPartBytes = 64 * 1024 * 1024;
+    const prefix = scope === "favorites" ? "flowlens-favorites" : "photo-stream";
+    const batchId = Date.now();
+    const flush = async () => {
+      if (!files.length) return;
+      signal.throwIfAborted();
+      progress(`正在打包第 ${part + 1} 包（${files.length} 项）`);
+      const zip = await makeZip(files, signal);
+      signal.throwIfAborted();
+      const count = files.length;
+      files = []; bytes = 0;
+      await saveDownloadBlob(zip, `${prefix}-${batchId}-part-${++part}.zip`);
+      saved += count;
+    };
+    try {
+      progress("准备下载（大图库自动分包）");
+      if (!retry) await waitForGalleryFetch(signal);
+      signal.throwIfAborted();
+      const urls = retry || urlsForScope(scope);
+      if (!urls.length) { progress("没有可下载的媒体"); return; }
+      state.downloadFailures = [];
       for (let i = 0; i < urls.length; i += 1) {
-        updateStatus(`下载 ${i + 1}/${urls.length}`);
+        signal.throwIfAborted();
+        progress(`下载 ${i + 1}/${urls.length}，已保存 ${saved} 项`);
         try {
-          const highResUrl = await resolveHighResUrl(urls[i]);
-          const result = await fetchImageBytes(highResUrl);
-          const bytes = result.bytes;
+          const highResUrl = await waitWithSignal(resolveHighResUrl(urls[i], true), signal);
+          signal.throwIfAborted();
+          const result = await fetchImageBytes(highResUrl, signal);
+          signal.throwIfAborted();
+          if (bytes + result.bytes.length > maxPartBytes) await flush();
           const ext = extensionFromUrl(highResUrl, result.contentType || "");
-          files.push({ name: `${String(files.length + 1).padStart(3, "0")}.${ext}`, data: bytes });
+          const name = `${String(i + 1).padStart(4, "0")}.${ext}`;
+          if (result.bytes.length > maxPartBytes) {
+            await saveDownloadBlob(new Blob([result.bytes]), `${prefix}-${batchId}-${name}`);
+            saved += 1;
+          } else {
+            files.push({name, data: result.bytes}); bytes += result.bytes.length;
+          }
         } catch (error) {
-          lastError = error?.message || String(error);
-          failed += 1;
+          if (signal.aborted) throw error;
+          failures.push({url: urls[i], error: error?.message || String(error)});
         }
       }
-
-      if (!files.length) {
-        updateStatus("下载失败");
-        return;
+      await flush();
+      signal.throwIfAborted();
+      if (current()) {
+        state.downloadFailures = failures;
+        const message = `已发起保存 ${saved} 项，失败 ${failures.length} 项`;
+        updateStatus(message); showDownloadTask(message);
       }
-
-      updateStatus("正在打包");
-      const zip = makeZip(files);
-      const objectUrl = URL.createObjectURL(zip);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = `${scope === "favorites" ? "flowlens-favorites" : "photo-stream"}-${files.length}.zip`;
-      document.documentElement.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
-      updateStatus(failed ? `已打包 ${files.length} 张，失败 ${failed} 张` : `已打包 ${files.length} 张`);
+    } catch (error) {
+      if (current()) {
+        state.downloadFailures = failures;
+        const message = signal.aborted ? `已取消，已发起保存 ${saved} 项；未保存的分包已释放` : `下载未完成：${error?.message || error}`;
+        updateStatus(message); showDownloadTask(message);
+      }
     } finally {
-      state.downloading = false;
+      files = [];
+      if (state.downloadController === controller) {
+        state.downloading = false;
+        state.downloadController = null;
+        if (current() && state.downloadPanel) showDownloadTask(state.downloadPanel.querySelector("[data-download-status]").textContent);
+      }
     }
   }
 
@@ -8257,10 +8510,16 @@
       return;
     }
 
+    const sourceDoc = state.galleryDocument && state.viewerClosedAtUrl === location.href ? state.galleryDocument : document;
+    const sourceUrl = sourceDoc === document ? location.href : state.galleryDocumentUrl;
     const navigation = ++state.navigationGeneration;
+    state.navigationController?.abort();
+    state.galleryDocument = sourceDoc;
+    state.galleryDocumentUrl = sourceUrl;
     resetCollection();
-    state.galleryQueueCurrentUrl = normalizedPageUrl(location.href);
-    state.galleryQueueCurrentTitle = pageTitleFromDocument(document, location.href);
+    state.galleryQueueCurrentUrl = normalizedPageUrl(sourceUrl);
+    state.collectionBase = sourceUrl;
+    state.galleryQueueCurrentTitle = pageTitleFromDocument(sourceDoc, sourceUrl);
     startViewerPositionRestore();
     closeHostPhotoViewer();
     state.active = true;
@@ -8274,20 +8533,20 @@
     }
 
     if (!state.images.length) {
-      state.fetchedPages.add(location.href);
-      state.pageUrls.add(location.href);
+      state.fetchedPages.add(sourceUrl);
+      state.pageUrls.add(sourceUrl);
       if (isGenericX810114Page()) {
-        await prepareGenericX810114Page();
+        await prepareGenericX810114Page(sourceDoc, sourceUrl);
         if (!state.active || navigation !== state.navigationGeneration) return;
       } else {
-        collectFromDocument(document, location.href);
+        collectFromDocument(sourceDoc, sourceUrl);
       }
       if (isGenericX810114Page()) {
-        if (!state.x810114ApiMode) startGenericObserver();
-      } else if (isPhotoGalleryPage()) {
+        if (!state.x810114ApiMode && sourceDoc === document) startGenericObserver();
+      } else if (isPhotoGalleryPage(sourceUrl)) {
         discoverNearbyPages();
         fetchRemainingPages(galleryFetchLimit());
-      } else {
+      } else if (sourceDoc === document) {
         startGenericObserver();
       }
     } else if (isGenericX810114Page() || !isPhotoGalleryPage()) {
@@ -8305,7 +8564,14 @@
 
   async function closeViewer() {
     if (!state.root) return;
+    state.viewerClosedAtUrl = location.href;
     state.navigationGeneration += 1;
+    state.navigationController?.abort();
+    state.gallerySwitchGeneration += 1;
+    state.pendingGalleryUrl = "";
+    state.downloadController?.abort();
+    state.downloadPanel?.remove();
+    state.downloadPanel = null;
     invalidateCollectionRequests();
     closePanels();
     saveViewerPosition();
@@ -8335,10 +8601,11 @@
     }
   }
 
-  function clearOldMediaPreloads() {
+  function clearOldMediaPreloads(all = false) {
     const now = Date.now();
     for (const [key, item] of state.mediaPreloadCache) {
-      if (!item || (now - item.time < 45000 && state.mediaPreloadCache.size < 16)) continue;
+      if (!all && item && now - item.time < 45000 && state.mediaPreloadCache.size < 16) continue;
+      if (!item) { state.mediaPreloadCache.delete(key); continue; }
       const media = item.media;
       try {
         if (media?.tagName === "VIDEO") {
@@ -8346,6 +8613,8 @@
           media.removeAttribute("src");
           media.load();
         }
+        media?.remove?.();
+        if (media?.tagName === "IMG") media.removeAttribute("src");
       } catch {
         // Ignore preload teardown failures.
       }
@@ -8356,7 +8625,8 @@
   function preloadMediaUrl(url, videoBudget) {
     if (!url) return videoBudget;
     const key = keyForUrl(url);
-    if (state.mediaPreloadCache.has(key)) return videoBudget;
+    const cached = state.mediaPreloadCache.get(key);
+    if (cached && Date.now() - cached.time < 45000) return videoBudget;
     clearOldMediaPreloads();
     if (isVideoUrl(url)) {
       if (videoBudget <= 0) return videoBudget;
@@ -8389,21 +8659,22 @@
     clearTimeout(state.mediaPreloadTimer);
     state.mediaPreloadTimer = setTimeout(() => {
       if (state.lightbox?.dataset.active !== "true" || !state.images.length) return;
-      const offsets = [1, 2, -1];
       const urls = [];
       const seen = new Set();
-      for (const offset of offsets) {
+      // Walk consecutive eligible items, including when the gallery is filtered.
+      for (const [direction, count] of [[1, 2], [-1, 1]]) {
         let index = centerIndex;
-        for (let step = 0; step < state.images.length; step += 1) {
-          index = (index + offset + state.images.length) % state.images.length;
+        let found = 0;
+        for (let step = 0; step < state.images.length - 1 && found < count; step += 1) {
+          index = (index + direction + state.images.length) % state.images.length;
           const url = state.images[index];
           if (!mediaMatchesFilter(url)) continue;
           const key = keyForUrl(url);
           if (!seen.has(key)) {
             seen.add(key);
             urls.push(url);
+            found += 1;
           }
-          break;
         }
       }
       let videoBudget = 1;
@@ -8464,6 +8735,10 @@
     const thumbUrl = state.images[index];
     ensureLightboxChrome();
     state.lightbox.dataset.active = "true";
+    // Stop in-flight grid previews, not just queued work, while the player loads.
+    state.grid?.querySelectorAll('.xiv-tile[data-media-mounted="true"]').forEach(tile => {
+      if (isVideoUrl(tile.dataset.url || "")) setTileMediaMounted(tile, false);
+    });
     if (isVideoUrl(thumbUrl)) {
       setLightboxVideo(thumbUrl);
       state.root.dataset.lightboxActive = "true";
@@ -8491,6 +8766,7 @@
     state.lightbox.dataset.zoom = "fit";
     clearTimeout(state.mediaPreloadTimer);
     clearTimeout(state.highResResolveTimer);
+    clearOldMediaPreloads(true);
     if (state.renderQueue.length) scheduleRenderQueue();
     if (resumeAutoScroll) { resumeTileMedia(); resumeAutoScrollAfterLightbox(); }
   }
@@ -8850,6 +9126,143 @@
     }
   }
 
+  function videoGestureSeekTime(video, value) {
+    if (!Number.isFinite(video.duration) || video.duration <= 0 || !Number.isFinite(value)) return null;
+    let target = Math.max(0, Math.min(video.duration - 0.05, value));
+    const ranges = video.seekable;
+    if (ranges?.length) {
+      let closest = null, distance = Infinity;
+      for (let i = 0; i < ranges.length; i += 1) {
+        const start = ranges.start(i), end = Math.max(start, ranges.end(i) - 0.05);
+        const candidate = Math.max(start, Math.min(end, target));
+        if (Math.abs(candidate - target) < distance) { closest = candidate; distance = Math.abs(candidate - target); }
+      }
+      target = closest;
+    }
+    return target;
+  }
+
+  function installVideoGestures(video) {
+    if (video.__flowLensGestureCleanup) return;
+    const doc = video.ownerDocument;
+    const view = doc.defaultView;
+    let gesture = null, holdTimer = 0, hud = null, suppressUntil = 0;
+    const bindings = [];
+    const listen = (target, name, handler, options = false) => {
+      target.addEventListener(name, handler, options);
+      bindings.push(() => target.removeEventListener(name, handler, options));
+    };
+    const claim = event => { event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation?.(); };
+    const show = text => {
+      if (!hud) {
+        hud = doc.createElement("div");
+        hud.className = "xiv-video-gesture-hint";
+        hud.setAttribute("role", "status");
+        hud.style.cssText = "position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:2147483647;padding:9px 16px;border-radius:20px;background:#000b;color:#fff;font:600 15px/1.4 system-ui;pointer-events:none;white-space:nowrap";
+        (video.closest("#xiv-lightbox") || doc.body).appendChild(hud);
+      }
+      hud.textContent = text;
+      hud.hidden = false;
+    };
+    const hide = () => { if (hud) hud.hidden = true; };
+    const reset = () => {
+      clearTimeout(holdTimer); holdTimer = 0;
+      const old = gesture; gesture = null;
+      if (old?.boosted) {
+        try { video.playbackRate = old.rate; } catch {}
+      }
+      if (old?.captured) { try { video.releasePointerCapture?.(old.id); } catch {} }
+      hide();
+    };
+    const current = () => gesture && video.isConnected && state.lightbox?.dataset.active === "true"
+      && gesture.source === video.dataset.sourceAttempt;
+    const clock = seconds => {
+      const value = Math.max(0, Math.floor(seconds));
+      return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
+    };
+    const down = event => {
+      if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+      if (gesture) { reset(); return; }
+      if (event.isPrimary === false || event.button > 0 || state.lightbox?.dataset.active !== "true") return;
+      const rect = video.getBoundingClientRect();
+      // The bottom native play/seek/volume/fullscreen controls own their input.
+      if (rect.width <= 0 || rect.height <= 0 || event.clientY >= rect.bottom - Math.min(56, rect.height * 0.25)) return;
+      gesture = {id:event.pointerId,x:event.clientX,y:event.clientY,width:rect.width,time:Number(video.currentTime)||0,
+        rate:video.playbackRate || 1,source:video.dataset.sourceAttempt,mode:"pending",boosted:false,target:null};
+      holdTimer = view.setTimeout(() => {
+        if (!current() || gesture.mode !== "pending" || video.paused || video.ended) return;
+        try {
+          video.playbackRate = 2;
+          gesture.boosted = true; gesture.mode = "hold";
+          suppressUntil = Date.now() + 800;
+          show("2× 播放 · 松手恢复");
+        } catch { reset(); }
+      }, 450);
+    };
+    const move = event => {
+      if (!gesture || gesture.id !== event.pointerId) return;
+      if (!current()) { reset(); return; }
+      const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+      if (gesture.mode === "pending" && Math.max(Math.abs(dx), Math.abs(dy)) > 12) {
+        clearTimeout(holdTimer);
+        if (Math.abs(dx) < Math.abs(dy) * 1.2) { reset(); return; }
+        if (videoGestureSeekTime(video, gesture.time) === null) { reset(); return; }
+        gesture.mode = "seek";
+        try { video.setPointerCapture?.(event.pointerId); gesture.captured = true; } catch {}
+      }
+      if (gesture.mode === "hold") { claim(event); return; }
+      if (gesture.mode !== "seek") return;
+      claim(event);
+      const span = Math.min(120, Math.max(15, video.duration * 0.25));
+      gesture.target = videoGestureSeekTime(video, gesture.time + dx / gesture.width * span);
+      if (gesture.target === null) return;
+      const delta = Math.round(gesture.target - gesture.time);
+      show(`${delta >= 0 ? "快进 +" : "快退 "}${delta}秒  ${clock(gesture.target)} / ${clock(video.duration)}`);
+    };
+    const up = event => {
+      if (!gesture || gesture.id !== event.pointerId) return;
+      const consumed = gesture.mode === "seek" || gesture.boosted;
+      if (consumed) {
+        claim(event);
+        suppressUntil = Date.now() + 700;
+        state.lightboxSuppressClickUntil = suppressUntil;
+      }
+      if (current() && gesture.mode === "seek" && gesture.target !== null) {
+        try { video.currentTime = gesture.target; } catch {}
+      }
+      reset();
+    };
+    const cancel = event => {
+      if (!event || event.pointerId === undefined || gesture?.id === event.pointerId) {
+        if (gesture?.boosted || gesture?.mode === "seek") suppressUntil = Date.now() + 700;
+        reset();
+      }
+    };
+    const oldTouchAction = video.style.touchAction;
+    video.style.touchAction = "none";
+    listen(video, "pointerdown", down, true);
+    listen(video, "pointermove", move, {capture:true,passive:false});
+    listen(video, "pointerup", up, true);
+    listen(video, "pointercancel", cancel, true);
+    listen(video, "lostpointercapture", cancel, true);
+    listen(video, "click", event => { if (Date.now() < suppressUntil) claim(event); }, true);
+    listen(video, "contextmenu", event => { if (gesture || Date.now() < suppressUntil) claim(event); }, true);
+    listen(video, "pause", () => cancel());
+    listen(video, "ended", () => cancel());
+    listen(doc, "visibilitychange", () => { if (doc.visibilityState === "hidden") cancel(); });
+    listen(view, "blur", () => cancel());
+    // A finger may leave the video before a capture was established.
+    listen(view, "pointerup", up, true);
+    listen(view, "pointercancel", cancel, true);
+    video.__flowLensGestureCleanup = () => {
+      reset();
+      bindings.forEach(remove => remove());
+      hud?.remove();
+      video.style.touchAction = oldTouchAction;
+      delete video.__flowLensGestureCleanup;
+    };
+  }
+
   function videoFrameSrcDoc() {
     return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}video{display:block;width:100%;height:100%;object-fit:contain;background:#000}</style></head><body></body></html>`;
   }
@@ -8893,6 +9306,7 @@
         window.dispatchEvent(new CustomEvent("flowlens:video-ended", { detail: { url } }));
       });
       frameDoc.body.appendChild(video);
+      installVideoGestures(video);
       setVideoSourceWithFallback(video, url, true);
       requestVideoPlayback(video);
     }, { once: true });
@@ -8928,11 +9342,13 @@
     video.addEventListener("loadedmetadata", () => updateLightboxZoomHint(video));
     video.addEventListener("loadeddata", () => updateLightboxZoomHint(video));
     state.lightbox.appendChild(video);
+    installVideoGestures(video);
     requestVideoPlayback(video);
   }
 
   function unloadVideoElement(video) {
     if (!video) return;
+    video.__flowLensGestureCleanup?.();
     try {
       rememberVideoTime(video);
       video.pause();
@@ -9442,7 +9858,7 @@
 
   function installControlApi() {
     window.__flowLensControl = {
-      refreshMediaFilter() { applyMediaFilter(); updateCounter(); },
+      refreshMediaFilter(tiles) { applyMediaFilter(tiles); updateCounter(); },
       getMediaFilter() {
         return state.mediaFilter;
       },
@@ -9483,6 +9899,7 @@
       loadSavedPage(url) {
         return loadSavedPageInPlace(url);
       },
+      loadGallery(url) { return switchGalleryTarget(url); },
       getSessionSnapshot() {
         return currentViewerPosition();
       },
@@ -10238,6 +10655,11 @@
   }
 
   function applyAll() {
+    if (!active()) {
+      mediaObserver?.disconnect();
+      mediaObserver = null;
+      return;
+    }
     injectStyle();
     ensureHelp();
     observeTiles();
@@ -10275,6 +10697,12 @@
   bootstrapObserver = new MutationObserver(observeViewerRoot);
   bootstrapObserver.observe(document.documentElement, { childList: true, subtree: true });
   observeViewerRoot();
+  window.addEventListener("flowlens:page-url-changed", () => {
+    mediaObserver?.disconnect();
+    mediaObserver = null;
+    document.querySelectorAll('#xiv-grid .xiv-tile[data-fl-observed="true"]').forEach(tile => delete tile.dataset.flObserved);
+    scheduleApplyAll();
+  });
   window.addEventListener("scroll", scheduleHistory, { passive: true });
   window.addEventListener("resize", scheduleApplyAll, { passive: true });
 })();
@@ -12274,6 +12702,7 @@
   }
 
   function onPointerDown(event) {
+    if (event.target?.tagName === "VIDEO") return;
     const box = lightbox();
     if (!box || box.dataset.active !== "true" || box.dataset.flShortcutZoom !== "true") return;
     if (!event.target?.closest?.("#xiv-lightbox img, #xiv-lightbox video, #xiv-lightbox iframe")) return;
@@ -12351,258 +12780,20 @@
   if (window.__flowLensIosSmoothPatch) return;
   window.__flowLensIosSmoothPatch = true;
 
-  const STYLE_ID = "flowlens-lightbox-ios-smooth-style";
-  const PRELOAD_OFFSETS = [1, 2, 3, 4, -1, -2];
-  const preloadCache = new Map();
-  const internalSrcSets = new WeakSet();
-  const pendingTokens = new WeakMap();
-
-  function installStyle() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
-      #xiv-lightbox[data-active="true"] {
-        contain: none !important;
-        -webkit-font-smoothing: antialiased;
-      }
-      #xiv-lightbox img.xiv-fl-smooth-media,
-      #xiv-lightbox video.xiv-fl-smooth-media,
-      #xiv-lightbox iframe.xiv-fl-smooth-media,
-      #xiv-lightbox .xiv-video-frame.xiv-fl-smooth-media {
-        opacity: 1 !important;
-        transform: translate3d(0, 0, 0) !important;
-        transition: none !important;
-        will-change: transform !important;
-        backface-visibility: hidden !important;
-        -webkit-backface-visibility: hidden !important;
-        filter: none !important;
-      }
-      #xiv-lightbox img.xiv-fl-smooth-decoded {
-        image-rendering: auto;
-      }
-    `;
-    document.documentElement.appendChild(style);
-  }
-
-  function activeLightbox() {
-    const node = document.getElementById("xiv-lightbox");
-    return node?.dataset.active === "true" ? node : null;
-  }
-
-  function coreApi() {
-    return window.__flowLensControl || null;
-  }
-
-  function normalizeUrl(value) {
-    const text = String(value || "");
-    if (!text) return "";
-    if (/^(?:blob|data):/i.test(text)) return text;
-    try {
-      const parsed = new URL(text, location.href);
-      parsed.hash = "";
-      return parsed.href;
-    } catch {
-      return text.replace(/#.*$/, "");
+  // The core owns image sources and the bounded neighbour preload queue.
+  // An async src setter can commit an old image after navigation; a second
+  // Image cache also retains the entire gallery. Keep this patch visual only.
+  const style = document.createElement("style");
+  style.id = "flowlens-lightbox-ios-smooth-style";
+  style.textContent = `
+    #xiv-lightbox[data-active="true"] { contain: none !important; }
+    #xiv-lightbox img, #xiv-lightbox video {
+      opacity: 1 !important;
+      transition: none !important;
+      backface-visibility: visible !important;
     }
-  }
-
-  function sameUrl(a, b) {
-    const left = normalizeUrl(a);
-    const right = normalizeUrl(b);
-    return !!left && !!right && left === right;
-  }
-
-  function isVideoUrl(url) {
-    return /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i.test(String(url || ""));
-  }
-
-  function referrerPolicyFor(url, fallback = "") {
-    if (fallback) return fallback;
-    try {
-      const parsed = new URL(url, location.href);
-      return /(^|\.)(xchina\.co|155picpic\.com)$/i.test(parsed.hostname) ? "no-referrer-when-downgrade" : "no-referrer";
-    } catch {
-      return "no-referrer";
-    }
-  }
-
-  function warmImage(url, referrerPolicy = "") {
-    const key = normalizeUrl(url);
-    if (!key || isVideoUrl(key) || /^(?:blob|data):/i.test(key)) return Promise.resolve(false);
-
-    const cached = preloadCache.get(key);
-    if (cached && Date.now() - cached.time < 90000) return cached.promise;
-
-    const img = new Image();
-    img.decoding = "async";
-    try { img.fetchPriority = "high"; } catch {}
-    img.referrerPolicy = referrerPolicyFor(key, referrerPolicy);
-
-    let done = false;
-    let timer = 0;
-    const finish = (ok) => {
-      if (done) return ok;
-      done = true;
-      clearTimeout(timer);
-      return ok;
-    };
-
-    const waitLoad = new Promise((resolve) => {
-      img.onload = () => resolve(finish(true));
-      img.onerror = () => resolve(finish(false));
-      timer = window.setTimeout(() => resolve(finish(false)), 2600);
-    });
-
-    img.src = key;
-    const decode = img.decode ? img.decode().then(() => true, () => false) : waitLoad;
-    const promise = Promise.race([decode, waitLoad]).then((ok) => ok !== false);
-    preloadCache.set(key, { promise, time: Date.now(), image: img });
-    return promise;
-  }
-
-  function markSmoothMedia(media) {
-    if (!media || !media.classList) return;
-    if (!media.classList.contains("xiv-fl-smooth-media")) media.classList.add("xiv-fl-smooth-media");
-  }
-
-  function shouldSmoothSwap(img, nextUrl) {
-    if (!img || img.tagName !== "IMG") return false;
-    if (internalSrcSets.has(img)) return false;
-    const lb = activeLightbox();
-    if (!lb || !lb.contains(img)) return false;
-    const target = normalizeUrl(nextUrl);
-    if (!target || /^(?:blob|data):/i.test(target)) return false;
-    const current = normalizeUrl(img.currentSrc || img.src || "");
-    if (!current || sameUrl(current, target)) return false;
-    return true;
-  }
-
-  function findImageSrcDescriptor() {
-    let proto = HTMLImageElement.prototype;
-    while (proto) {
-      const descriptor = Object.getOwnPropertyDescriptor(proto, "src");
-      if (descriptor?.get && descriptor?.set) return descriptor;
-      proto = Object.getPrototypeOf(proto);
-    }
-    return null;
-  }
-
-  function installSmoothSrcSetter() {
-    const descriptor = findImageSrcDescriptor();
-    if (!descriptor || HTMLImageElement.prototype.__flowLensSmoothSrcInstalled) return;
-
-    Object.defineProperty(HTMLImageElement.prototype, "src", {
-      configurable: true,
-      enumerable: descriptor.enumerable,
-      get: descriptor.get,
-      set(value) {
-        const url = String(value || "");
-        if (!shouldSmoothSwap(this, url)) {
-          descriptor.set.call(this, value);
-          return;
-        }
-        smoothSetSrc(this, url, descriptor);
-      }
-    });
-
-    Object.defineProperty(HTMLImageElement.prototype, "__flowLensSmoothSrcInstalled", {
-      configurable: false,
-      enumerable: false,
-      value: true
-    });
-  }
-
-  async function smoothSetSrc(img, url, descriptor) {
-    const token = `${Date.now()}:${Math.random()}`;
-    pendingTokens.set(img, token);
-    markSmoothMedia(img);
-
-    await Promise.race([
-      warmImage(url, img.referrerPolicy || ""),
-      new Promise((resolve) => window.setTimeout(resolve, 180))
-    ]);
-    if (!img.isConnected || pendingTokens.get(img) !== token) return;
-
-    const onReady = () => {
-      if (pendingTokens.get(img) !== token) return;
-      pendingTokens.delete(img);
-      img.classList.add("xiv-fl-smooth-decoded");
-      markSmoothMedia(img);
-      warmAdjacentFromLightbox();
-    };
-
-    img.addEventListener("load", onReady, { once: true });
-    img.addEventListener("error", onReady, { once: true });
-
-    internalSrcSets.add(img);
-    try {
-      descriptor.set.call(img, url);
-    } finally {
-      queueMicrotask(() => internalSrcSets.delete(img));
-    }
-
-    if (img.complete) window.setTimeout(onReady, 0);
-    window.setTimeout(onReady, 140);
-  }
-
-  function sortedTiles() {
-    return [...document.querySelectorAll("#xiv-grid .xiv-tile")]
-      .sort((a, b) => Number(a.dataset.index || 0) - Number(b.dataset.index || 0));
-  }
-
-  function warmAroundIndex(index) {
-    const tiles = sortedTiles();
-    if (!tiles.length || !Number.isFinite(index)) return;
-    for (const offset of [0, ...PRELOAD_OFFSETS]) {
-      const tile = tiles[index + offset];
-      const url = tile?.dataset.url || "";
-      if (url && !isVideoUrl(url)) warmImage(url);
-    }
-  }
-
-  function warmAdjacentFromLightbox() {
-    const index = Number(coreApi()?.getLightboxIndex?.());
-    if (Number.isFinite(index)) warmAroundIndex(index);
-  }
-
-  function bindTilePreload() {
-    document.addEventListener("pointerdown", (event) => {
-      const tile = event.target?.closest?.("#xiv-grid .xiv-tile");
-      if (!tile) return;
-      warmAroundIndex(Number(tile.dataset.index || 0));
-    }, true);
-  }
-
-  function decorateLightboxMedia(root = activeLightbox()) {
-    if (!root) return;
-    root.querySelectorAll("img, video, iframe, .xiv-video-frame").forEach(markSmoothMedia);
-    warmAdjacentFromLightbox();
-  }
-
-  function observeLightbox() {
-    const observer = new MutationObserver((mutations) => {
-      let shouldDecorate = false;
-      for (const mutation of mutations) {
-        if (mutation.target?.id === "xiv-lightbox") shouldDecorate = true;
-        if ([...mutation.addedNodes].some((node) => node?.nodeType === 1 && (node.matches?.("#xiv-lightbox img, #xiv-lightbox video, #xiv-lightbox iframe, #xiv-lightbox .xiv-video-frame") || node.querySelector?.("#xiv-lightbox img, #xiv-lightbox video, #xiv-lightbox iframe, #xiv-lightbox .xiv-video-frame")))) {
-          shouldDecorate = true;
-        }
-      }
-      if (shouldDecorate) requestAnimationFrame(() => decorateLightboxMedia());
-    });
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-active", "src", "class"]
-    });
-  }
-
-  installStyle();
-  installSmoothSrcSetter();
-  bindTilePreload();
-  observeLightbox();
+  `;
+  document.documentElement.appendChild(style);
 })();
 
 // FlowLens module: src/patches/lightbox-gallery-swipe.js
@@ -13246,5 +13437,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.11";
+  window.__FLOWLENS_VERSION__ = "2.0.13";
 })();

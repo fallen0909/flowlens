@@ -403,6 +403,7 @@
   }
 
   function onPointerDown(event) {
+    if (event.target?.tagName === "VIDEO") return;
     const box = lightbox();
     if (!box || box.dataset.active !== "true" || box.dataset.flShortcutZoom !== "true") return;
     if (!event.target?.closest?.("#xiv-lightbox img, #xiv-lightbox video, #xiv-lightbox iframe")) return;

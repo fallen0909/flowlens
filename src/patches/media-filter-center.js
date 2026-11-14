@@ -15,15 +15,26 @@
   const logs = [];
   const adapters = [];
   let timer = 0;
+  let cachedConfig = null;
+  let compiledTerms = [];
+  let compiledHosts = [];
+  let fullApplyPending = false;
+  const pendingTiles = new Set();
 
   function readConfig() {
-    try { return { ...defaultConfig, ...(JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}) }; }
-    catch { return { ...defaultConfig }; }
+    if (!cachedConfig) {
+      try { cachedConfig = { ...defaultConfig, ...(JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}) }; }
+      catch { cachedConfig = { ...defaultConfig }; }
+      compiledTerms = splitLines(cachedConfig.terms).map(item => item.toLowerCase());
+      compiledHosts = splitLines(cachedConfig.hosts).map(item => item.toLowerCase());
+    }
+    return { ...cachedConfig };
   }
 
   function writeConfig(next) {
     const config = { ...readConfig(), ...next };
     try { localStorage.setItem(STORE_KEY, JSON.stringify(config)); } catch {}
+    cachedConfig = null;
     refreshUi();
     scheduleApply(10);
     return config;
@@ -53,21 +64,25 @@
   }
 
   function reasonFor(value, node = null) {
+    if (!value) return "";
     const config = readConfig();
     if (!config.enabled || !value) return "";
     const info = urlInfo(value);
     const hay = `${info.href} ${info.name} ${node?.textContent || ""}`.toLowerCase();
-    const term = splitLines(config.terms).find((item) => hay.includes(item.toLowerCase()));
+    const term = compiledTerms.find((item) => hay.includes(item));
     if (term) return `关键词：${term}`;
-    const hostRule = splitLines(config.hosts).find((item) => info.host === item.toLowerCase() || info.host.endsWith(`.${item.toLowerCase()}`));
+    const hostRule = compiledHosts.find((item) => info.host === item || info.host.endsWith(`.${item}`));
     if (hostRule) return `来源域名：${hostRule}`;
     const adapterReason = currentAdapter()?.reason?.(info, node, config);
     if (adapterReason) return adapterReason;
     if (config.smart && node) {
       const label = [node.getAttribute?.("alt"), node.getAttribute?.("title"), node.getAttribute?.("aria-label"), node.closest?.("a")?.textContent, node.textContent].join(" ");
       if (/广告|推广|下载|扫码|官方APP|APP下载|sponsor|promo|banner/i.test(label)) return "周边文字";
-      const rect = node.getBoundingClientRect?.();
-      if (rect?.width > 260 && rect?.height > 40 && rect.width / Math.max(1, rect.height) > 2.6) return "横幅比例";
+      // Decoded/source dimensions do not force layout or measure virtual placeholders.
+      const media = node.matches?.("img,video") ? node : node.querySelector?.("img,video");
+      const width = media?.naturalWidth || media?.videoWidth || Number(media?.getAttribute?.("width")) || 0;
+      const height = media?.naturalHeight || media?.videoHeight || Number(media?.getAttribute?.("height")) || 0;
+      if (width > 260 && height > 40 && width / height > 2.6) return "横幅比例";
     }
     return "";
   }
@@ -77,6 +92,7 @@
     const attrs = ["src", "currentSrc", "href", "poster", "file", "zoomfile", "data-file", "data-zoomfile", "data-src", "data-original", "data-lazy-src", "data-url", "data-full", "data-large", "srcset", "data-srcset", "style"];
     for (const attr of attrs) {
       const value = attr === "currentSrc" ? node.currentSrc : node.getAttribute(attr);
+      if (!value) continue;
       const reason = reasonFor(value, node);
       if (reason) return reason;
     }
@@ -115,8 +131,7 @@
     return media?.currentSrc || media?.src || media?.dataset?.sourceUrl || "";
   }
 
-  function decorateTile(tile) {
-    const config = readConfig();
+  function decorateTile(tile, config = readConfig()) {
     if (!config.showTileButton || tile.querySelector(".fl-mf-block")) return;
     const button = document.createElement("button");
     button.type = "button";
@@ -134,17 +149,18 @@
     tile.appendChild(button);
   }
 
-  function finishApply() {
-    window.__flowLensControl?.refreshMediaFilter?.();
+  function finishApply(tiles) {
+    window.__flowLensControl?.refreshMediaFilter?.(tiles);
     window.__flowLensControl?.compactVisibleLabels?.();
     window.dispatchEvent(new CustomEvent("flowlens:media-filter-applied"));
   }
 
-  function applyFilters() {
+  function applyFilters(candidates = null) {
     const config = readConfig();
     document.documentElement.dataset.flMediaFilter = config.enabled ? "true" : "false";
-    document.querySelectorAll("#xiv-grid .xiv-tile").forEach((tile) => {
-      decorateTile(tile);
+    const tiles = candidates ? [...candidates].filter(tile => tile.isConnected) : [...document.querySelectorAll("#xiv-grid .xiv-tile")];
+    tiles.forEach((tile) => {
+      decorateTile(tile, config);
       if (!config.enabled) {
         if (tile.dataset.flFilteredOut === "true") tile.hidden = false;
         delete tile.dataset.flFilteredOut;
@@ -166,12 +182,20 @@
       logBlocked(url, reason);
       window.__flowLensControl.showAdjacent(1);
     }
-    finishApply();
+    finishApply(tiles);
   }
 
-  function scheduleApply(delay = 220) {
-    clearTimeout(timer);
-    timer = setTimeout(applyFilters, delay);
+  function scheduleApply(delay = 220, tiles = null) {
+    if (tiles) tiles.forEach(tile => pendingTiles.add(tile));
+    else fullApplyPending = true;
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = 0;
+      const candidates = fullApplyPending ? null : [...pendingTiles];
+      fullApplyPending = false;
+      pendingTiles.clear();
+      applyFilters(candidates);
+    }, delay);
   }
 
   function installStyle() {
@@ -284,8 +308,27 @@
 
   window.__flowLensMediaFilter = { readConfig, writeConfig, reasonFor, addTerm, registerAdapter, applyFilters };
   installStyle();
-  const observer = new MutationObserver((records) => { if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.id === "xiv-root" || node.matches?.(".xiv-tile") || node.querySelector?.(".xiv-tile"))))) { ensureUi(); scheduleApply(); } });
+  const observer = new MutationObserver((records) => {
+    const added = new Set();
+    for (const record of records) for (const node of record.addedNodes) {
+      if (node.nodeType !== 1) continue;
+      if (node.id === "xiv-root") ensureUi();
+      if (node.matches?.(".xiv-tile")) added.add(node);
+      else node.querySelectorAll?.(".xiv-tile").forEach(tile => added.add(tile));
+    }
+    if (added.size) { ensureUi(); scheduleApply(80, added); }
+  });
   if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("storage", event => {
+    if (event.key !== STORE_KEY && event.key !== null) return;
+    cachedConfig = null;
+    refreshUi();
+    scheduleApply(10);
+  });
+  document.addEventListener("load", event => {
+    const tile = event.target?.closest?.("#xiv-grid .xiv-tile");
+    if (tile) scheduleApply(80, [tile]);
+  }, true);
   document.addEventListener("click", (event) => {
     if (event.target?.closest?.(".fl-mf-section, .fl-mf-block")) scheduleApply(80);
   }, true);

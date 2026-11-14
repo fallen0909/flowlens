@@ -537,6 +537,11 @@
   }
 
   function applyAll() {
+    if (!active()) {
+      mediaObserver?.disconnect();
+      mediaObserver = null;
+      return;
+    }
     injectStyle();
     ensureHelp();
     observeTiles();
@@ -574,6 +579,12 @@
   bootstrapObserver = new MutationObserver(observeViewerRoot);
   bootstrapObserver.observe(document.documentElement, { childList: true, subtree: true });
   observeViewerRoot();
+  window.addEventListener("flowlens:page-url-changed", () => {
+    mediaObserver?.disconnect();
+    mediaObserver = null;
+    document.querySelectorAll('#xiv-grid .xiv-tile[data-fl-observed="true"]').forEach(tile => delete tile.dataset.flObserved);
+    scheduleApplyAll();
+  });
   window.addEventListener("scroll", scheduleHistory, { passive: true });
   window.addEventListener("resize", scheduleApplyAll, { passive: true });
 })();
