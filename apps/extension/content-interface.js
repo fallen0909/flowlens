@@ -32,6 +32,30 @@
     #xiv-root[data-active] .xiv-btn:focus-visible, #xiv-root[data-active] .xiv-select:focus-visible,
     #xiv-root[data-active] .xiv-tile:focus-visible { outline: 3px solid var(--fl-accent); outline-offset: 3px; }
     #xiv-root[data-active] .xiv-btn:disabled { opacity: .35; }
+    #xiv-root #xiv-lightbox :is(.xiv-lightbox-zoom, .xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-slideshow, .xiv-lightbox-arrow) {
+      box-sizing: border-box !important;
+      width: 42px !important; height: 42px !important;
+      min-width: 42px !important; min-height: 42px !important;
+      padding: 0 !important; border-radius: 999px !important;
+      border: 1px solid var(--fl-border) !important;
+      background: var(--fl-surface) !important; color: var(--fl-text) !important;
+      box-shadow: none !important; backdrop-filter: none !important;
+      display: flex !important; align-items: center !important; justify-content: center !important;
+      opacity: 1 !important; font-size: 0 !important; line-height: 0 !important;
+      text-indent: 0 !important; touch-action: manipulation;
+    }
+    #xiv-root #xiv-lightbox .xiv-lightbox-arrow { margin-top: -21px !important; }
+    #xiv-root #xiv-lightbox :is(.xiv-lightbox-zoom, .xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-slideshow, .xiv-lightbox-arrow) svg {
+      display: block !important; width: 18px !important; height: 18px !important;
+      min-width: 18px !important; min-height: 18px !important;
+      margin: 0 !important; padding: 0 !important; flex: 0 0 18px !important;
+      transform: none !important; stroke-width: 2 !important;
+    }
+    #xiv-root #xiv-lightbox .xiv-lightbox-arrow::before,
+    #xiv-root #xiv-lightbox .xiv-lightbox-arrow::after { content: none !important; display: none !important; }
+    #xiv-root #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] { color: #e11d48 !important; }
+    #xiv-root #xiv-lightbox .xiv-lightbox-zoom[data-active="true"] { color: var(--fl-accent) !important; }
+    #xiv-root #xiv-lightbox button:focus-visible { outline: 3px solid var(--fl-accent); outline-offset: 3px; }
     #xiv-root[data-active] .xiv-panel {
       background: var(--fl-surface); color: var(--fl-text);
       border: 1px solid var(--fl-border); border-radius: 20px;
@@ -49,6 +73,10 @@
       #xiv-root[data-active] .xiv-btn:not(:disabled):hover { opacity: .8; }
     }
     @media (pointer: coarse), (max-width: 820px) {
+      #xiv-root #xiv-lightbox :is(.xiv-lightbox-zoom, .xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-slideshow, .xiv-lightbox-arrow) {
+        width: 44px !important; height: 44px !important; min-width: 44px !important; min-height: 44px !important;
+      }
+      #xiv-root #xiv-lightbox .xiv-lightbox-arrow { margin-top: -22px !important; }
       #xiv-root[data-active] .xiv-btn { min-width: 44px; min-height: 44px; }
       #xiv-root[data-active="true"] #xiv-topbar .xiv-btn {
         min-width: 44px !important; width: 44px !important; height: 44px !important;

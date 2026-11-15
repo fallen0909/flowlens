@@ -7436,7 +7436,7 @@
   }
 
   function lightboxArrows() {
-    return `<button class="xiv-lightbox-zoom" type="button" title="放大（之后可滚轮缩放、拖动查看）">${zoomInIcon()}</button><button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><div class="xiv-lightbox-arrow" data-side="left">‹</div><div class="xiv-lightbox-arrow" data-side="right">›</div>`;
+    return `<button class="xiv-lightbox-zoom" type="button" title="放大（之后可滚轮缩放、拖动查看）">${zoomInIcon()}</button><button class="xiv-lightbox-fav" type="button" title="\u6536\u85cf">${heartIcon()}</button><button class="xiv-lightbox-close" type="button" title="关闭">${closeIcon()}</button><button class="xiv-lightbox-arrow" type="button" data-side="left" aria-label="上一张"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button><button class="xiv-lightbox-arrow" type="button" data-side="right" aria-label="下一张"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>`;
   }
 
   function ensureLightboxChrome() {
