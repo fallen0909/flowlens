@@ -191,6 +191,7 @@
     restoringPosition: false,
     positionSaveTimer: 0,
     renderQueue: [],
+    renderScanIndex: 0,
     renderFrame: 0,
     renderBatchSize: 14,
     renderStartedAt: 0,
@@ -3293,6 +3294,13 @@
     state.imageKeys.delete(key);
     const index = state.images.indexOf(url);
     if (index >= 0) state.images.splice(index, 1);
+    if (index >= 0) {
+      state.renderScanIndex = Math.min(state.renderScanIndex || 0, index);
+      // Pending cards refer to collection indices. Removing an earlier image
+      // must shift those indices before the next animation frame consumes them.
+      state.renderQueue = state.renderQueue.filter(item => item.key !== key);
+      for (const item of state.renderQueue) if (item.index > index) item.index -= 1;
+    }
     state.rejectedCount += 1;
     state.grid?.querySelector(`[data-url-key="${CSS.escape(key)}"]`)?.remove();
     syncTileIndexes();
@@ -3684,6 +3692,7 @@
     cancelAnimationFrame(state.renderFrame);
     state.renderFrame = 0;
     state.renderQueue = [];
+    state.renderScanIndex = 0;
     state.renderStartedAt = 0;
     state.imageKeys.clear();
     state.renderedKeys.clear();
@@ -5784,7 +5793,9 @@
   function renderImages() {
     if (!state.grid) return;
     let queued = 0;
-    for (let i = 0; i < state.images.length; i += 1) {
+    // Collection growth is append-only; rejection rewinds this cursor and
+    // collection reset clears it. Quality upgrades update their existing tile.
+    for (let i = Math.min(state.renderScanIndex || 0, state.images.length); i < state.images.length; i += 1) {
       const url = state.images[i];
       const key = keyForUrl(url);
       if (state.renderedKeys.has(key)) continue;
@@ -5792,8 +5803,8 @@
       state.renderQueue.push({ url, index: i, key });
       queued += 1;
     }
+    state.renderScanIndex = state.images.length;
     if (queued) scheduleRenderQueue();
-    syncTileIndexes();
     updateCounter();
     scheduleRestoreViewerPosition();
   }
@@ -6438,7 +6449,7 @@
 
   function updateCounter() {
     if (!state.counter) return;
-    const visibleCount = filteredImages().length;
+    const visibleCount = state.mediaFilter === "all" ? state.images.length : filteredImages().length;
     const suffix = state.mediaFilter === "all" ? "" : ` / 显示 ${visibleCount}`;
     const expected = isPornpicsGalleryPage() ? 0 : state.expectedImages;
     const text = expected ? `${state.images.length}/${state.expectedImages} 张${suffix}` : `${state.images.length} 张${suffix}`;

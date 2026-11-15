@@ -5,6 +5,26 @@ import { parseHTML } from 'linkedom';
 const core = fs.readFileSync(new URL('../src/core/flowlens-core.js', import.meta.url), 'utf8');
 const extract = name => core.match(new RegExp(`  (?:async )?function ${name}\\([^]*?\\n  \\}`))[0];
 {
+  let keyReads = 0, indexSyncs = 0, scans = 0;
+  const state = { grid: { querySelector() { return null; } }, images: [], imageKeys: new Set(), renderedKeys: new Set(), renderQueue: [], mediaFilter: 'all', counter: { textContent: '' }, rejectedCount: 0 };
+  const c = { state, CSS: { escape: value => value }, keyForUrl(value) { keyReads++; return value; },
+    scheduleRenderQueue() {}, syncTileIndexes() { indexSyncs++; }, scheduleRestoreViewerPosition() {}, layoutMasonry() {},
+    filteredImages() { scans++; return state.images; }, isPornpicsGalleryPage: () => false };
+  vm.createContext(c); vm.runInContext(['renderImages','rejectImage','updateCounter'].map(extract).join('\n'), c);
+  for (let i = 0; i < 150; i++) {
+    state.images.push(...Array.from({length: 20}, (_, j) => `photo-${i*20+j}`)); c.renderImages();
+  }
+  assert.equal(keyReads, 3000); assert.equal(indexSyncs, 0); assert.equal(scans, 0);
+  assert.equal(state.renderQueue.length, 3000);
+  c.renderImages(); assert.equal(keyReads, 3000);
+  c.rejectImage('photo-1');
+  assert.equal(state.renderQueue.length, 2999); assert.equal(indexSyncs, 1);
+  assert(state.renderQueue.every(item => state.images[item.index] === item.url));
+  c.renderImages(); assert.equal(state.renderQueue.length, 2999);
+  state.mediaFilter = 'image'; c.updateCounter(); assert.equal(scans, 1);
+  console.log('PASS 150 appends inspect 3,000 new URLs, no append index rescan or all-mode filter scan; pending-card rejection preserves identity');
+}
+{
   const { document } = parseHTML('<html><body><div id="grid"></div></body></html>');
   const grid = document.getElementById('grid');
   let gridScans = 0, observed = 0, images = 0;
