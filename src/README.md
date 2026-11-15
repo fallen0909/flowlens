@@ -2,6 +2,12 @@
 
 这里放 FlowLens 的正式源码。
 
+完整职责、运行路径和维护规则见 [架构说明](../docs/ARCHITECTURE.md)。构建清单统一放在 `config/modules.json`，用 `npm run build` 生成两端入口；`npm test` 运行全部回归。
+
+## ui
+
+- `interface.js`：共享外观变量、圆角、按钮反馈、触控尺寸、减少动态效果与焦点样式。纯视觉模块，不持有媒体和导航状态。
+
 ## core
 
 两端共同依赖的核心脚本：

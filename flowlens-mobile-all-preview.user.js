@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens mobile
 // @namespace    local.flowlens.mobile.all
-// @version      2.0.16
+// @version      2.0.17
 // @description  FlowLens mobile release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,7 +28,7 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.16";
+  const VERSION = "2.0.17";
   window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-15", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
@@ -7144,8 +7144,11 @@
     window.addEventListener("keypress", onKeyRelease, true);
     window.addEventListener("beforeunload", saveViewerPosition);
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") saveViewerPosition();
-      else { scheduleTileMediaReconcile(); pumpVideoPreviewQueue(); }
+      if (document.visibilityState === "hidden") {
+        saveViewerPosition();
+        cancelAnimationFrame(state.renderFrame);
+        state.renderFrame = 0;
+      } else { scheduleRenderQueue(); scheduleTileMediaReconcile(); pumpVideoPreviewQueue(); }
     });
     state.root.addEventListener("pointerdown", (event) => {
       const queueOpen = state.galleryQueuePanel?.dataset.open === "true";
@@ -7195,6 +7198,7 @@
 
   function scheduleRenderQueue() {
     if (state.renderFrame || !state.renderQueue.length) return;
+    if (document.visibilityState === "hidden") return;
     if (state.lightbox?.dataset.active === "true") return;
     state.renderFrame = requestAnimationFrame(processRenderQueue);
   }
@@ -7202,6 +7206,7 @@
   function processRenderQueue() {
     state.renderFrame = 0;
     if (!state.grid || !state.renderQueue.length) return;
+    if (document.visibilityState === "hidden") return;
     if (state.lightbox?.dataset.active === "true") return;
     const fragment = document.createDocumentFragment();
     const start = performance.now();
@@ -7209,7 +7214,7 @@
     const maxBatch = state.renderStartedAt ? state.renderBatchSize : Math.max(10, Math.min(24, state.renderBatchSize + 6));
     if (!state.renderStartedAt) state.renderStartedAt = Date.now();
 
-    while (state.renderQueue.length && created < maxBatch && performance.now() - start < 8) {
+    while (state.renderQueue.length && created < maxBatch && performance.now() - start < 5) {
       const item = state.renderQueue.shift();
       const index = Math.max(0, Math.min(state.images.length - 1, item.index));
       const url = state.images[index] || item.url;
@@ -7266,10 +7271,11 @@
       created += 1;
     }
     if (fragment.childNodes.length) {
+      const addedTiles = [...fragment.childNodes];
       ensureMasonryColumns();
-      appendTilesToMasonry([...fragment.childNodes]);
-      observeDeferredImages();
-      observeTileMedia();
+      appendTilesToMasonry(addedTiles);
+      observeDeferredImages(addedTiles);
+      observeTileMedia(addedTiles);
     }
     updateCounter();
     if (state.renderQueue.length) {
@@ -7352,16 +7358,17 @@
       for (const entry of entries) {
         if (entry.isIntersecting && !entry.target.hidden) state.nearMediaTiles.add(entry.target);
         else state.nearMediaTiles.delete(entry.target);
-        if (state.active && state.lightbox?.dataset.active !== "true") setTileMediaMounted(entry.target, entry.isIntersecting && !entry.target.hidden, entry.boundingClientRect);
+        if (state.active && document.visibilityState !== "hidden" && state.lightbox?.dataset.active !== "true") setTileMediaMounted(entry.target, entry.isIntersecting && !entry.target.hidden, entry.boundingClientRect);
       }
       pumpVideoPreviewQueue();
     }, { root: state.stage, rootMargin: "1000px 0px", threshold: 0.01 });
   }
 
-  function observeTileMedia() {
+  function observeTileMedia(tiles = null) {
     ensureTileMediaObserver();
     if (!state.tileMediaObserver) return;
-    state.grid.querySelectorAll('.xiv-tile:not([data-media-observed])').forEach(tile => {
+    (tiles || state.grid.querySelectorAll('.xiv-tile:not([data-media-observed])')).forEach(tile => {
+      if (tile.dataset.mediaObserved) return;
       tile.dataset.mediaObserved = "true";
       state.tileMediaObserver.observe(tile);
     });
@@ -7436,10 +7443,12 @@
     });
   }
 
-  function observeDeferredImages() {
+  function observeDeferredImages(tiles = null) {
     ensureImageLoadObserver();
     if (!state.imageLoadObserver) return;
-    state.grid?.querySelectorAll('img[data-xiv-deferred-image="true"]').forEach((img) => {
+    const images = tiles ? tiles.flatMap(tile => [...tile.querySelectorAll('img[data-xiv-deferred-image="true"]')])
+      : state.grid?.querySelectorAll('img[data-xiv-deferred-image="true"]');
+    images?.forEach((img) => {
       state.imageLoadObserver.observe(img);
     });
   }
@@ -9190,20 +9199,32 @@
       Object.assign(element.style, {left:`${rect.left || 0}px`,top:`${rect.top || 0}px`,width:`${rect.width}px`,height:`${Math.max(0, rect.height - controls)}px`});
       element.hidden = !video.isConnected || rect.width <= 0 || rect.height <= controls;
     };
+    let frame = 0, disposed = false;
+    const scheduleSync = () => {
+      if (disposed || frame) return;
+      frame = view.requestAnimationFrame(() => {
+        frame = 0;
+        if (!disposed) sync();
+      });
+    };
     (video.closest("#xiv-lightbox") || doc.body).appendChild(element);
     sync();
-    const resize = view.ResizeObserver ? new view.ResizeObserver(sync) : null;
+    const resize = view.ResizeObserver ? new view.ResizeObserver(scheduleSync) : null;
     resize?.observe(video);
-    view.addEventListener("resize", sync);
-    view.visualViewport?.addEventListener("resize", sync);
-    doc.addEventListener("scroll", sync, true);
-    video.addEventListener("loadedmetadata", sync);
+    view.addEventListener("resize", scheduleSync);
+    view.visualViewport?.addEventListener("resize", scheduleSync);
+    view.visualViewport?.addEventListener("scroll", scheduleSync);
+    doc.addEventListener("scroll", scheduleSync, { capture: true, passive: true });
+    video.addEventListener("loadedmetadata", scheduleSync);
     return {element, cleanup() {
+      disposed = true;
+      if (frame) view.cancelAnimationFrame(frame);
       resize?.disconnect();
-      view.removeEventListener("resize", sync);
-      view.visualViewport?.removeEventListener("resize", sync);
-      doc.removeEventListener("scroll", sync, true);
-      video.removeEventListener("loadedmetadata", sync);
+      view.removeEventListener("resize", scheduleSync);
+      view.visualViewport?.removeEventListener("resize", scheduleSync);
+      view.visualViewport?.removeEventListener("scroll", scheduleSync);
+      doc.removeEventListener("scroll", scheduleSync, true);
+      video.removeEventListener("loadedmetadata", scheduleSync);
       element.remove();
     }};
   }
@@ -13557,6 +13578,82 @@
   installButtons();
 })();
 
+// FlowLens module: src/ui/interface.js
+(() => {
+  // Visual layer only. Media lifetime, gesture recognition and navigation stay
+  // in the core; this module installs no observers, timers or input handlers.
+  if (document.getElementById('flowlens-interface-style')) return;
+  const style = document.createElement('style');
+  style.id = 'flowlens-interface-style';
+  style.textContent = `
+    #xiv-root {
+      --fl-accent: #0a84ff;
+      --fl-surface: #202124;
+      --fl-border: rgba(255,255,255,.14);
+      --fl-text: #f5f5f7;
+      --fl-duration: 160ms;
+      --fl-ease: cubic-bezier(.22,.68,0,1);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      color-scheme: dark;
+    }
+    #xiv-root[data-theme="light"] {
+      --fl-accent: #007aff; --fl-surface: #fff;
+      --fl-border: rgba(0,0,0,.1); --fl-text: #1d1d1f;
+      color-scheme: light; background: #f2f2f7;
+    }
+    #xiv-root[data-active] .xiv-btn, #xiv-root[data-active] .xiv-select {
+      border-color: var(--fl-border); font-weight: 600;
+      background: var(--fl-surface); color: var(--fl-text);
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+      touch-action: manipulation;
+      transition: transform var(--fl-duration) var(--fl-ease), opacity var(--fl-duration) ease;
+    }
+    #xiv-root[data-active] .xiv-btn:not(:disabled):active { transform: scale(.94); opacity: .72; }
+    #xiv-root[data-active] .xiv-btn:focus-visible, #xiv-root[data-active] .xiv-select:focus-visible,
+    #xiv-root[data-active] .xiv-tile:focus-visible { outline: 3px solid var(--fl-accent); outline-offset: 3px; }
+    #xiv-root[data-active] .xiv-btn:disabled { opacity: .35; }
+    #xiv-root[data-active] .xiv-panel {
+      background: var(--fl-surface); color: var(--fl-text);
+      border: 1px solid var(--fl-border); border-radius: 20px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.22);
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+      overscroll-behavior: contain;
+    }
+    #xiv-root[data-active] .xiv-panel[data-open="true"] { animation: fl-panel-enter 180ms var(--fl-ease); }
+    #xiv-root[data-active] .xiv-panel input, #xiv-root[data-active] .xiv-panel select { accent-color: var(--fl-accent); }
+    #xiv-root[data-active] .xiv-tile { border-radius: 12px; box-shadow: none; }
+    #xiv-root[data-active] .xiv-video-mark { backdrop-filter: none; background: rgba(20,20,22,.8); box-shadow: none; }
+    #xiv-root[data-active] .xiv-tile img, #xiv-root[data-active] .xiv-tile video { transform: none; backface-visibility: visible; }
+    @keyframes fl-panel-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @media (hover: hover) and (pointer: fine) {
+      #xiv-root[data-active] .xiv-btn:not(:disabled):hover { opacity: .8; }
+    }
+    @media (pointer: coarse), (max-width: 820px) {
+      #xiv-root[data-active] .xiv-btn { min-width: 44px; min-height: 44px; }
+      #xiv-root[data-active="true"] #xiv-topbar .xiv-btn {
+        min-width: 44px !important; width: 44px !important; height: 44px !important;
+        flex: 0 0 44px !important;
+      }
+      #xiv-root[data-active="true"] #xiv-topbar .xiv-actions {
+        min-width: 0 !important; flex: 0 1 auto !important;
+        overflow-x: auto !important; overflow-y: hidden !important;
+        justify-content: flex-start !important; touch-action: pan-x;
+      }
+      #xiv-root[data-active] .xiv-select { min-height: 44px; font-size: 16px; }
+      #xiv-root[data-active] .xiv-panel input:not([type="range"]):not([type="checkbox"]),
+      #xiv-root[data-active] .xiv-panel select { font-size: 16px; min-height: 44px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #xiv-root[data-active] .xiv-btn, #xiv-root[data-active] .xiv-select { transition: none !important; }
+      #xiv-root[data-active] .xiv-panel { animation: none !important; }
+      #xiv-root[data-active] .xiv-btn:active { transform: none !important; }
+    }
+    @media (prefers-contrast: more) { #xiv-root { --fl-border: currentColor; } }
+  `;
+  document.documentElement.appendChild(style);
+})();
+
 // FlowLens module: src/mobile/mobile-center.js
 (() => {
   if (window.__flowLensMobileCenterPatch) return;
@@ -13690,5 +13787,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.16";
+  window.__FLOWLENS_VERSION__ = "2.0.17";
 })();

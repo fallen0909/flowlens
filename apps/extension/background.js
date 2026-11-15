@@ -25,7 +25,8 @@ const BASE_FEATURE_SCRIPTS = [
   "content-lightbox-icons-unified.js",
   "content-page-bookmarks.js",
   "content-video-cover-strategy.js",
-  "content-diagnostics-log.js"
+  "content-diagnostics-log.js",
+  "content-interface.js"
 ];
 
 function featureScriptsForUrl(value) {

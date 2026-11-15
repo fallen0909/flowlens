@@ -5746,8 +5746,11 @@
     window.addEventListener("keypress", onKeyRelease, true);
     window.addEventListener("beforeunload", saveViewerPosition);
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") saveViewerPosition();
-      else { scheduleTileMediaReconcile(); pumpVideoPreviewQueue(); }
+      if (document.visibilityState === "hidden") {
+        saveViewerPosition();
+        cancelAnimationFrame(state.renderFrame);
+        state.renderFrame = 0;
+      } else { scheduleRenderQueue(); scheduleTileMediaReconcile(); pumpVideoPreviewQueue(); }
     });
     state.root.addEventListener("pointerdown", (event) => {
       const queueOpen = state.galleryQueuePanel?.dataset.open === "true";
@@ -5797,6 +5800,7 @@
 
   function scheduleRenderQueue() {
     if (state.renderFrame || !state.renderQueue.length) return;
+    if (document.visibilityState === "hidden") return;
     if (state.lightbox?.dataset.active === "true") return;
     state.renderFrame = requestAnimationFrame(processRenderQueue);
   }
@@ -5804,6 +5808,7 @@
   function processRenderQueue() {
     state.renderFrame = 0;
     if (!state.grid || !state.renderQueue.length) return;
+    if (document.visibilityState === "hidden") return;
     if (state.lightbox?.dataset.active === "true") return;
     const fragment = document.createDocumentFragment();
     const start = performance.now();
@@ -5811,7 +5816,7 @@
     const maxBatch = state.renderStartedAt ? state.renderBatchSize : Math.max(10, Math.min(24, state.renderBatchSize + 6));
     if (!state.renderStartedAt) state.renderStartedAt = Date.now();
 
-    while (state.renderQueue.length && created < maxBatch && performance.now() - start < 8) {
+    while (state.renderQueue.length && created < maxBatch && performance.now() - start < 5) {
       const item = state.renderQueue.shift();
       const index = Math.max(0, Math.min(state.images.length - 1, item.index));
       const url = state.images[index] || item.url;
@@ -5868,10 +5873,11 @@
       created += 1;
     }
     if (fragment.childNodes.length) {
+      const addedTiles = [...fragment.childNodes];
       ensureMasonryColumns();
-      appendTilesToMasonry([...fragment.childNodes]);
-      observeDeferredImages();
-      observeTileMedia();
+      appendTilesToMasonry(addedTiles);
+      observeDeferredImages(addedTiles);
+      observeTileMedia(addedTiles);
     }
     updateCounter();
     if (state.renderQueue.length) {
@@ -5954,16 +5960,17 @@
       for (const entry of entries) {
         if (entry.isIntersecting && !entry.target.hidden) state.nearMediaTiles.add(entry.target);
         else state.nearMediaTiles.delete(entry.target);
-        if (state.active && state.lightbox?.dataset.active !== "true") setTileMediaMounted(entry.target, entry.isIntersecting && !entry.target.hidden, entry.boundingClientRect);
+        if (state.active && document.visibilityState !== "hidden" && state.lightbox?.dataset.active !== "true") setTileMediaMounted(entry.target, entry.isIntersecting && !entry.target.hidden, entry.boundingClientRect);
       }
       pumpVideoPreviewQueue();
     }, { root: state.stage, rootMargin: "1000px 0px", threshold: 0.01 });
   }
 
-  function observeTileMedia() {
+  function observeTileMedia(tiles = null) {
     ensureTileMediaObserver();
     if (!state.tileMediaObserver) return;
-    state.grid.querySelectorAll('.xiv-tile:not([data-media-observed])').forEach(tile => {
+    (tiles || state.grid.querySelectorAll('.xiv-tile:not([data-media-observed])')).forEach(tile => {
+      if (tile.dataset.mediaObserved) return;
       tile.dataset.mediaObserved = "true";
       state.tileMediaObserver.observe(tile);
     });
@@ -6038,10 +6045,12 @@
     });
   }
 
-  function observeDeferredImages() {
+  function observeDeferredImages(tiles = null) {
     ensureImageLoadObserver();
     if (!state.imageLoadObserver) return;
-    state.grid?.querySelectorAll('img[data-xiv-deferred-image="true"]').forEach((img) => {
+    const images = tiles ? tiles.flatMap(tile => [...tile.querySelectorAll('img[data-xiv-deferred-image="true"]')])
+      : state.grid?.querySelectorAll('img[data-xiv-deferred-image="true"]');
+    images?.forEach((img) => {
       state.imageLoadObserver.observe(img);
     });
   }
@@ -7792,20 +7801,32 @@
       Object.assign(element.style, {left:`${rect.left || 0}px`,top:`${rect.top || 0}px`,width:`${rect.width}px`,height:`${Math.max(0, rect.height - controls)}px`});
       element.hidden = !video.isConnected || rect.width <= 0 || rect.height <= controls;
     };
+    let frame = 0, disposed = false;
+    const scheduleSync = () => {
+      if (disposed || frame) return;
+      frame = view.requestAnimationFrame(() => {
+        frame = 0;
+        if (!disposed) sync();
+      });
+    };
     (video.closest("#xiv-lightbox") || doc.body).appendChild(element);
     sync();
-    const resize = view.ResizeObserver ? new view.ResizeObserver(sync) : null;
+    const resize = view.ResizeObserver ? new view.ResizeObserver(scheduleSync) : null;
     resize?.observe(video);
-    view.addEventListener("resize", sync);
-    view.visualViewport?.addEventListener("resize", sync);
-    doc.addEventListener("scroll", sync, true);
-    video.addEventListener("loadedmetadata", sync);
+    view.addEventListener("resize", scheduleSync);
+    view.visualViewport?.addEventListener("resize", scheduleSync);
+    view.visualViewport?.addEventListener("scroll", scheduleSync);
+    doc.addEventListener("scroll", scheduleSync, { capture: true, passive: true });
+    video.addEventListener("loadedmetadata", scheduleSync);
     return {element, cleanup() {
+      disposed = true;
+      if (frame) view.cancelAnimationFrame(frame);
       resize?.disconnect();
-      view.removeEventListener("resize", sync);
-      view.visualViewport?.removeEventListener("resize", sync);
-      doc.removeEventListener("scroll", sync, true);
-      video.removeEventListener("loadedmetadata", sync);
+      view.removeEventListener("resize", scheduleSync);
+      view.visualViewport?.removeEventListener("resize", scheduleSync);
+      view.visualViewport?.removeEventListener("scroll", scheduleSync);
+      doc.removeEventListener("scroll", scheduleSync, true);
+      video.removeEventListener("loadedmetadata", scheduleSync);
       element.remove();
     }};
   }

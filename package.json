@@ -1,0 +1,11 @@
+{
+  "name": "flowlens",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node tools/build-release.mjs",
+    "test": "node tools/test-all.mjs",
+    "check": "node tools/validate-release.mjs"
+  },
+  "devDependencies": { "linkedom": "0.18.13" }
+}

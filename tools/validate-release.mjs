@@ -108,11 +108,23 @@ assert(unifiedIcons.includes("contain: none !important") && unifiedIcons.include
 const pageBookmarks = await text("src/patches/page-bookmarks.js");
 assert(pageBookmarks.includes("fl-page-bookmark-settings") && pageBookmarks.includes("#xiv-topbar .fl-page-bookmark-btn"), "page bookmarks were not moved into settings");
 
-const sourceSync = await text("tools/sync-extension-sources.mjs");
-const sourcePairs = [...sourceSync.matchAll(/"([^"]+\.js)"\s*:\s*"([^"]+\.js)"/g)].map((match) => [match[1], match[2]]);
+const modulesConfig = JSON.parse(await text("config/modules.json"));
+const sourcePairs = Object.entries(modulesConfig.extensionSources);
 assert(sourcePairs.length >= 20, "extension source map is unexpectedly incomplete");
 for (const [source, target] of sourcePairs) {
   assert(await text(source) === await text(target), `${target} has drifted from ${source}`);
+}
+for (const path of [files.desktop, files.mobile]) {
+  const bundle = await text(path);
+  const modules = [...modulesConfig.userscriptShared, ...(path === files.mobile ? modulesConfig.userscriptMobile : [])];
+  assert(new Set(modules).size === modules.length, `${path} has duplicate modules`);
+  let previous = -1;
+  for (const module of modules) {
+    const marker = `// FlowLens module: ${module}`;
+    const position = bundle.indexOf(marker);
+    assert(position > previous, `${path}: missing or misordered ${module}`);
+    previous = position;
+  }
 }
 
 const versionCenter = await text(files.versionCenter);

@@ -25,35 +25,8 @@ const outputSuffix = process.env.FLOWLENS_OUTPUT_SUFFIX || "";
 if (!/^[A-Za-z0-9._/-]+$/.test(rawRef)) throw new Error(`Invalid raw ref: ${rawRef}`);
 if (outputSuffix && !/^-[a-z0-9-]+$/.test(outputSuffix)) throw new Error(`Invalid output suffix: ${outputSuffix}`);
 const baseUrl = `https://raw.githubusercontent.com/fallen0909/flowlens/${rawRef}`;
-const shared = [
-  "src/core/version.js",
-  "src/core/global-settings.js",
-  "src/patches/x810114-safe-start.js",
-  "src/patches/item-gallery.js",
-  "src/patches/xchina-ad-filter.js",
-  "src/patches/media-filter-center.js",
-  "src/patches/site-adapter-center.js",
-  "src/patches/pornpics-queue-hotfix.js",
-  "src/patches/visible-sequence-safe.js",
-  "src/patches/lightbox-event-guard.js",
-  "src/core/flowlens-core.js",
-  "src/core/optimizer.js",
-  "src/patches/product.js",
-  "src/patches/fixes.js",
-  "src/patches/ui-cleanup.js",
-  "src/patches/lightbox-stable.js",
-  "src/patches/settings-compact.js",
-  "src/patches/zhihu.js",
-  "src/patches/topfix.js",
-  "src/patches/media-sync.js",
-  "src/patches/lightbox-enhance.js",
-  "src/patches/lightbox-ios-smooth.js",
-  "src/patches/lightbox-gallery-swipe.js",
-  "src/patches/lightbox-icon-dom-fix.js",
-  "src/patches/lightbox-icons-unified.js",
-  "src/patches/lightbox-toolbar-stable.js",
-  "src/patches/page-bookmarks.js"
-];
+const modulesConfig = JSON.parse(await readFile(resolve(root, "config/modules.json"), "utf8"));
+const shared = modulesConfig.userscriptShared;
 
 function header({ name, namespace, description, output, sources }) {
   return `// ==UserScript==
@@ -114,7 +87,7 @@ await build({
   namespace: "local.flowlens.mobile.all",
   description: "FlowLens mobile release.",
   output: "flowlens-mobile-all.user.js",
-  additions: ["src/mobile/mobile-center.js"]
+  additions: modulesConfig.userscriptMobile
 });
 
 console.log(`Built FlowLens userscript bundles v${version}`);
