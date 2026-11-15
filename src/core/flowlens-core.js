@@ -988,13 +988,15 @@
 
     function scan(root) {
       if (!root) return;
-      try {
-        const filter = doc.defaultView?.NodeFilter || window.NodeFilter;
-        const walker = doc.createTreeWalker(root, filter.SHOW_TEXT);
-        let node = null;
-        while ((node = walker.nextNode())) namesFrom(node.nodeValue).forEach(add);
-      } catch {
-        namesFrom(root.textContent || "").forEach(add);
+      // React renders ["@", username, count] as separate text nodes. Read the
+      // complete handle label, without joining neighbouring account cards or
+      // interpreting the footer's email address as another account.
+      const labels = [root, ...Array.from(root.querySelectorAll?.("*") || [])];
+      for (const label of labels) {
+        if (label.closest?.("#xiv-root, script, style, footer")) continue;
+        const text = String(label.textContent || "").trim();
+        const match = text.match(/^@\s*([A-Za-z0-9_]{2,64})(?:\s*[·•]\s*\d+\s*媒体)?$/);
+        if (match) add(match[1]);
       }
     }
 
@@ -1002,6 +1004,7 @@
     const viewportWidth = Number(win?.innerWidth || 0);
     const candidates = Array.from(doc.querySelectorAll?.("aside, section, div") || [])
       .map((el) => {
+        if (el.closest?.("#xiv-root, footer")) return null;
         const text = el.innerText || el.textContent || "";
         const names = namesFrom(text);
         if (names.length < 2) return null;
@@ -1019,8 +1022,8 @@
       .filter(Boolean)
       .sort((a, b) => b.score - a.score);
 
-    const best = candidates[0]?.el || null;
-    if (best) scan(best);
+    const best = candidates[0]?.el || doc.body || doc.documentElement;
+    scan(best);
     return found;
   }
 
