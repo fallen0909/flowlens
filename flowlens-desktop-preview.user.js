@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens desktop
 // @namespace    local.flowlens.desktop
-// @version      2.0.19
+// @version      2.0.20
 // @description  FlowLens desktop release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,7 +28,7 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.19";
+  const VERSION = "2.0.20";
   window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-15", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
@@ -13626,8 +13626,8 @@
     #xiv-root[data-active] .xiv-btn:disabled { opacity: .35; }
     #xiv-root #xiv-lightbox :is(.xiv-lightbox-zoom, .xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-slideshow, .xiv-lightbox-arrow) {
       box-sizing: border-box !important;
-      width: 42px !important; height: 42px !important;
-      min-width: 42px !important; min-height: 42px !important;
+      width: 48px !important; height: 48px !important;
+      min-width: 48px !important; min-height: 48px !important;
       padding: 0 !important; border-radius: 999px !important;
       border: 1px solid var(--fl-border) !important;
       background: var(--fl-surface) !important; color: var(--fl-text) !important;
@@ -13636,11 +13636,11 @@
       opacity: 1 !important; font-size: 0 !important; line-height: 0 !important;
       text-indent: 0 !important; touch-action: manipulation;
     }
-    #xiv-root #xiv-lightbox .xiv-lightbox-arrow { margin-top: -21px !important; }
+    #xiv-root #xiv-lightbox .xiv-lightbox-arrow { margin-top: -24px !important; }
     #xiv-root #xiv-lightbox :is(.xiv-lightbox-zoom, .xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-slideshow, .xiv-lightbox-arrow) svg {
-      display: block !important; width: 18px !important; height: 18px !important;
-      min-width: 18px !important; min-height: 18px !important;
-      margin: 0 !important; padding: 0 !important; flex: 0 0 18px !important;
+      display: block !important; width: 28px !important; height: 28px !important;
+      min-width: 28px !important; min-height: 28px !important;
+      margin: 0 !important; padding: 0 !important; flex: 0 0 28px !important;
       transform: none !important; stroke-width: 2 !important;
     }
     #xiv-root #xiv-lightbox .xiv-lightbox-arrow::before,
@@ -13666,9 +13666,9 @@
     }
     @media (pointer: coarse), (max-width: 820px) {
       #xiv-root #xiv-lightbox :is(.xiv-lightbox-zoom, .xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-slideshow, .xiv-lightbox-arrow) {
-        width: 44px !important; height: 44px !important; min-width: 44px !important; min-height: 44px !important;
+        width: 48px !important; height: 48px !important; min-width: 48px !important; min-height: 48px !important;
       }
-      #xiv-root #xiv-lightbox .xiv-lightbox-arrow { margin-top: -22px !important; }
+      #xiv-root #xiv-lightbox .xiv-lightbox-arrow { margin-top: -24px !important; }
       #xiv-root[data-active] .xiv-btn { min-width: 44px; min-height: 44px; }
       #xiv-root[data-active="true"] #xiv-topbar .xiv-btn {
         min-width: 44px !important; width: 44px !important; height: 44px !important;
@@ -13695,5 +13695,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.19";
+  window.__FLOWLENS_VERSION__ = "2.0.20";
 })();
