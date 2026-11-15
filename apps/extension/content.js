@@ -130,6 +130,8 @@
     navigationController: null,
     gallerySwitchGeneration: 0,
     pendingGalleryUrl: "",
+    galleryQueueCursorUrl: "",
+    galleryNavigationError: "",
     galleryDocument: null,
     galleryDocumentUrl: "",
     viewerClosedAtUrl: "",
@@ -1259,7 +1261,8 @@
       if (sidebar.length && samePageUrl(docBase, activeGalleryQueueUrl())) {
         state.x810114ActiveSidebarQueue = sidebar;
       }
-      const primary = discovered.length > stored.length ? discovered : stored;
+      const liveSidebar = sidebar.length ? sidebar : state.x810114ActiveSidebarQueue || [];
+      const primary = liveSidebar.length ? liveSidebar : discovered.length > stored.length ? discovered : stored;
       const secondary = primary === discovered ? stored : discovered;
       primary.forEach(remember);
       secondary.forEach(remember);
@@ -1317,7 +1320,8 @@
       if (sidebar.length && samePageUrl(docBase, activeGalleryQueueUrl())) {
         state.x810114ActiveSidebarQueue = sidebar;
       }
-      const primary = discovered.length > stored.length ? discovered : stored;
+      const liveSidebar = sidebar.length ? sidebar : state.x810114ActiveSidebarQueue || [];
+      const primary = liveSidebar.length ? liveSidebar : discovered.length > stored.length ? discovered : stored;
       const secondary = primary === discovered ? stored : discovered;
       primary.forEach(remember);
       secondary.forEach(remember);
@@ -1390,7 +1394,7 @@
     if (state.galleryQueue.length < 2) rebuildGalleryQueueFromVisiblePage();
     const queue = state.galleryQueue;
     if (queue.length < 2) return "";
-    const activeUrl = state.pendingGalleryUrl || activeGalleryQueueUrl();
+    const activeUrl = state.pendingGalleryUrl || state.galleryQueueCursorUrl || activeGalleryQueueUrl();
     const computedIndex = galleryQueueIndexForUrl(queue, activeUrl);
     let index = computedIndex >= 0 ? computedIndex : state.galleryQueueIndex;
     if (computedIndex >= 0 && !state.pendingGalleryUrl) state.galleryQueueIndex = computedIndex;
@@ -1405,40 +1409,18 @@
 
   function x810114QueueTarget(delta) {
     if (!isGenericX810114Page()) return "";
-    if (galleryQueueIndexForUrl(state.galleryQueue, state.pendingGalleryUrl || activeGalleryQueueUrl()) >= 0) return galleryQueueTarget(delta);
     const sidebar = state.x810114ActiveSidebarQueue?.length
-      ? state.x810114ActiveSidebarQueue
-      : collectX810114SidebarProfileQueue(document);
-    const stored = readStoredGalleryQueue();
-    const queue = (sidebar.length ? sidebar : stored)
-      .map(normalizedPageUrl)
-      .filter(isQueueCandidateUrl);
-    if (!queue.length) return "";
-    const activeUrl = activeGalleryQueueUrl();
-    let index = galleryQueueIndexForUrl(queue, activeUrl);
-    const recent = new Set((state.x810114RecentQueue || []).map((url) => normalizedPageUrl(url).toLowerCase()).filter(Boolean));
+      ? state.x810114ActiveSidebarQueue : collectX810114SidebarProfileQueue(document);
+    const activeUrl = state.pendingGalleryUrl || state.galleryQueueCursorUrl || activeGalleryQueueUrl();
+    const queues = [sidebar, state.galleryQueue, readStoredGalleryQueue()]
+      .map(list => [...new Set((list || []).map(normalizedPageUrl).filter(isQueueCandidateUrl))]);
+    const queue = queues.find(list => galleryQueueIndexForUrl(list, activeUrl) >= 0) || queues.find(list => list.length > 1) || [];
+    if (queue.length < 2) return "";
+    const index = galleryQueueIndexForUrl(queue, activeUrl);
     const direction = delta >= 0 ? 1 : -1;
-
-    function usable(url) {
-      return url && !samePageUrl(url, activeUrl);
-    }
-
-    if (index >= 0) {
-      for (let step = 1; step <= queue.length; step += 1) {
-        const candidate = queue[(index + step * direction + queue.length) % queue.length];
-        if (usable(candidate) && !recent.has(candidate.toLowerCase())) return candidate;
-      }
-      for (let step = 1; step <= queue.length; step += 1) {
-        const candidate = queue[(index + step * direction + queue.length) % queue.length];
-        if (usable(candidate)) return candidate;
-      }
-      return "";
-    }
-
-    const ordered = direction > 0 ? queue : queue.slice().reverse();
-    return ordered.find((candidate) => usable(candidate) && !recent.has(candidate.toLowerCase()))
-      || ordered.find(usable)
-      || "";
+    const target = index >= 0 ? queue[(index + direction + queue.length) % queue.length]
+      : direction > 0 ? queue[0] : queue[queue.length - 1];
+    return samePageUrl(target, activeUrl) ? "" : target;
   }
 
   function rememberX810114QueueVisit(target) {
@@ -2403,6 +2385,7 @@
   function beginGalleryNavigation() {
     state.navigationController?.abort();
     state.navigationController = new AbortController();
+    state.galleryNavigationError = "";
     const generation = ++state.navigationGeneration;
     return { signal: state.navigationController.signal, isCurrent: () => state.active && generation === state.navigationGeneration };
   }
@@ -2426,6 +2409,7 @@
     if (!targetUrl || !isQueueCandidateUrl(targetUrl)) return false;
     const request = ++state.gallerySwitchGeneration;
     state.pendingGalleryUrl = targetUrl;
+    let loaded = false;
     if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
       try { state.root?.requestFullscreen?.()?.catch?.(() => {}); } catch {}
     }
@@ -2441,18 +2425,23 @@
     const operation = loadGalleryQueueTargetInPlace(targetUrl);
     const navigation = state.navigationGeneration;
     try {
-      const loaded = await operation;
+      loaded = await operation;
       if (!state.active || request !== state.gallerySwitchGeneration || navigation !== state.navigationGeneration) return false;
       if (loaded) {
         rememberX810114QueueVisit(targetUrl);
         try { sessionStorage.removeItem(galleryQueueAutoOpenKey()); } catch {}
-      } else updateStatus("组图加载失败或没有可用媒体，已保留当前组，可重试");
+      } else updateStatus(state.galleryNavigationError
+        ? `组图读取失败：${state.galleryNavigationError}；已保留当前组，再点下一组可继续，组列表可重试`
+        : "此组暂无可用媒体，已保留当前组；再点下一组可继续，组列表可重试");
       return loaded;
     } catch {
       if (state.active && request === state.gallerySwitchGeneration && navigation === state.navigationGeneration) updateStatus("组图加载失败，已保留当前组，可重试");
       return false;
     } finally {
-      if (request === state.gallerySwitchGeneration) state.pendingGalleryUrl = "";
+      if (request === state.gallerySwitchGeneration) {
+        state.pendingGalleryUrl = "";
+        if (state.active && navigation === state.navigationGeneration) state.galleryQueueCursorUrl = loaded ? "" : targetUrl;
+      }
     }
   }
 
@@ -2475,7 +2464,10 @@
     const genericTarget = GENERIC_X810114_RE.test(targetUrl);
     let targetDoc = null;
     let queueDoc = null;
-    const profileRequest = genericTarget ? fetchX810114ProfileData(targetUrl, signal).catch(() => null) : null;
+    const profileRequest = genericTarget ? fetchX810114ProfileData(targetUrl, signal).catch(error => {
+      if (isCurrent()) state.galleryNavigationError = error?.message || String(error);
+      return null;
+    }) : null;
     if (!genericTarget) {
       let html = "";
       try {
@@ -2493,14 +2485,6 @@
       if (!targetDoc?.documentElement) return false;
       targetDoc.documentElement.dataset.xivBase = targetUrl;
       queueDoc = targetDoc;
-    } else {
-      try {
-        const html = await fetchHtml(targetUrl, previousQueueUrl || location.href, signal);
-        queueDoc = new DOMParser().parseFromString(html, "text/html");
-        queueDoc.documentElement.dataset.xivBase = targetUrl;
-      } catch {
-        queueDoc = null;
-      }
     }
     const profileData = profileRequest ? await profileRequest : null;
     if (!isCurrent()) return false;
@@ -2522,7 +2506,8 @@
     state.suppressLightboxUntil = Date.now() + 600;
     state.fetchedPages.add(targetUrl);
     state.pageUrls.add(targetUrl);
-    state.galleryQueueCurrentTitle = targetDoc ? pageTitleFromDocument(targetDoc, targetUrl) : "";
+    state.galleryQueueCurrentTitle = targetDoc ? pageTitleFromDocument(targetDoc, targetUrl)
+      : String(profileData?.account_info?.nick || profileData?.username || x810114ProfileName(targetUrl));
 
     if (genericTarget) {
       if (hasProfileMedia) applyX810114ProfileData(profileData);
@@ -4576,17 +4561,68 @@
   async function fetchX810114ProfileData(url, signal) {
     const name = x810114ProfileName(url);
     if (!name) return null;
-    const apiUrl = `https://x.moonchan.xyz/api/twitter/${encodeURIComponent(name)}.json.gz?t=${new Date().toISOString().slice(0, 10)}`;
-    const res = await fetch(apiUrl, { credentials: "omit", cache: "no-store", signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    const stamp = new Date().toISOString().slice(0, 10);
+    const base = "https://x.moonchan.xyz/api/twitter";
+    const urls = [`${base}/v2/users/${encodeURIComponent(name)}/timeline?t=${stamp}`,
+      `${base}/${encodeURIComponent(name)}.json.gz?t=${stamp}`];
+    const errors = [];
+    const validate = data => {
+      if (!data || !Array.isArray(data.timeline) || data.error) throw new Error(data?.error || "站点数据格式不正确");
+      if (Number(data.total_urls) > 0 && !data.timeline.length) throw new Error("站点返回了不完整的分组数据");
+      if (data.username && data.username.toLowerCase() !== name.toLowerCase()) throw new Error("站点返回了其他分组的数据");
+      return data;
+    };
+    for (const apiUrl of urls) {
+      signal?.throwIfAborted();
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      signal?.addEventListener("abort", abort, { once: true });
+      const timer = setTimeout(abort, 8000);
+      try {
+        const res = await fetch(apiUrl, { credentials: "omit", cache: "no-store", signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = validate(await res.json());
+        signal?.throwIfAborted();
+        return data;
+      } catch (error) {
+        signal?.throwIfAborted();
+        errors.push(controller.signal.aborted ? "接口读取超时" : error?.message || String(error));
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+      }
+      // Tampermonkey/extension transport can recover a blocked cross-origin
+      // page request while preserving cancellation and bounded timeouts.
+      const backgroundController = new AbortController();
+      const abortBackground = () => backgroundController.abort();
+      signal?.addEventListener("abort", abortBackground, { once: true });
+      const backgroundTimer = setTimeout(abortBackground, 8000);
+      try {
+        const res = await waitWithSignal(fetchTextViaBackground(apiUrl, url, backgroundController.signal, 8000), backgroundController.signal);
+        signal?.throwIfAborted();
+        if (!res?.ok) throw new Error(res?.error || "备用读取失败");
+        return validate(JSON.parse(res.text || ""));
+      } catch (error) {
+        signal?.throwIfAborted();
+        errors.push(backgroundController.signal.aborted ? "备用接口读取超时" : error?.message || String(error));
+      } finally {
+        clearTimeout(backgroundTimer);
+        signal?.removeEventListener("abort", abortBackground);
+      }
+    }
+    throw new Error(errors.slice(-2).join(" / ") || "分组数据读取失败");
   }
 
   async function collectX810114ProfileFromApi() {
     const generation = state.collectionGeneration;
     const signal = state.collectionController.signal;
     updateStatus("读取站点数据");
-    const data = await fetchX810114ProfileData(location.href, signal);
+    let data;
+    try { data = await fetchX810114ProfileData(location.href, signal); }
+    catch (error) {
+      if (signal.aborted || generation !== state.collectionGeneration) return false;
+      throw error;
+    }
     if (!data || signal.aborted || generation !== state.collectionGeneration) return false;
     return applyX810114ProfileData(data);
   }
@@ -6547,11 +6583,12 @@
     });
   }
 
-  function fetchTextViaBackground(url, referrer = location.href, signal = null) {
+  function fetchTextViaBackground(url, referrer = location.href, signal = null, timeout = 45000) {
     if (xivUserscriptMode) {
       return userscriptRequest(url, {
         responseType: "text",
         signal,
+        timeout,
         headers: {
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
@@ -7118,6 +7155,7 @@
     state.navigationController?.abort();
     state.galleryDocument = sourceDoc;
     state.galleryDocumentUrl = sourceUrl;
+    state.galleryQueueCursorUrl = "";
     resetCollection();
     state.galleryQueueCurrentUrl = normalizedPageUrl(sourceUrl);
     state.collectionBase = sourceUrl;
@@ -7171,6 +7209,7 @@
     state.navigationController?.abort();
     state.gallerySwitchGeneration += 1;
     state.pendingGalleryUrl = "";
+    state.galleryQueueCursorUrl = "";
     state.downloadController?.abort();
     state.downloadPanel?.remove();
     state.downloadPanel = null;

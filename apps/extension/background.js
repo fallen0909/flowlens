@@ -175,8 +175,8 @@ async function fetchText(url, referrer, sender) {
   const result = await fetchLimited(context.target.href, {
     credentials: context.includeCredentials ? "include" : "omit",
     referrer: context.referrer,
-    headers: { "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8" }
-  }, MAX_TEXT_BYTES, (type) => !type || /^(?:text\/|application\/(?:xhtml\+xml|xml))/.test(type));
+    headers: { "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,application/xml;q=0.9,text/plain;q=0.8" }
+  }, MAX_TEXT_BYTES, (type) => !type || /^(?:text\/|application\/(?:xhtml\+xml|xml|json|[\w.+-]+\+json)(?:;|$))/.test(type));
   return {
     contentType: result.contentType,
     text: new TextDecoder().decode(result.buffer)

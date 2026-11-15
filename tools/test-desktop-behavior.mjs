@@ -66,7 +66,7 @@ console.log('PASS late response cannot pollute a new gallery');
 {
   let finishApi;
   const apiState={collectionGeneration:0,collectionController:new AbortController(),images:['new-gallery']};
-  const api={location:{href:'https://x.810114.xyz/example'},state:apiState,x810114ProfileName:()=> 'example',updateStatus(){},fetch:async()=>({ok:true,json:()=>new Promise(resolve=>finishApi=resolve)}),Date,encodeURIComponent};
+  const api={AbortController,setTimeout,clearTimeout,location:{href:'https://x.810114.xyz/example'},state:apiState,x810114ProfileName:()=> 'example',updateStatus(){},fetch:async()=>({ok:true,json:()=>new Promise(resolve=>finishApi=resolve)}),Date,encodeURIComponent};
   vm.createContext(api);
   vm.runInContext(span('  async function fetchX810114ProfileData(', '  async function prepareGenericX810114Page('),api);
   const pending=api.collectX810114ProfileFromApi();
