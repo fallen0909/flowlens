@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens version center
 // @namespace    local.flowlens.version
-// @version      2.0.20
+// @version      2.0.21
 // @description  FlowLens runtime version center.
 // @match        *://*/*
 // @run-at       document-start
@@ -10,8 +10,8 @@
 // ==/UserScript==
 
 (() => {
-  const VERSION = "2.0.20";
-  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-15", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
+  const VERSION = "2.0.21";
+  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-20", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
 })();

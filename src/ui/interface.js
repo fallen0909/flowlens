@@ -56,6 +56,22 @@
     #xiv-root #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] { color: #e11d48 !important; }
     #xiv-root #xiv-lightbox .xiv-lightbox-zoom[data-active="true"] { color: var(--fl-accent) !important; }
     #xiv-root #xiv-lightbox button:focus-visible { outline: 3px solid var(--fl-accent); outline-offset: 3px; }
+    /* Image zoom leaves the canvas clear. The image itself still toggles fit. */
+    #xiv-root:has(> #xiv-lightbox[data-active="true"][data-zoom="actual"] > img) > #xiv-topbar,
+    #xiv-root > #xiv-lightbox[data-active="true"][data-zoom="actual"]:has(> img)
+      :is(.xiv-lightbox-zoom, .xiv-lightbox-slideshow, .xiv-lightbox-fav, .xiv-lightbox-close, .xiv-lightbox-arrow) {
+      display: none !important;
+    }
+    #xiv-root > #xiv-lightbox[data-active="true"][data-zoom="actual"]:has(> img) {
+      background: #050505;
+      scrollbar-width: none;
+    }
+    #xiv-root[data-theme="light"] > #xiv-lightbox[data-active="true"][data-zoom="actual"]:has(> img) {
+      background: #f5f5f2;
+    }
+    #xiv-root > #xiv-lightbox[data-active="true"][data-zoom="actual"]:has(> img)::-webkit-scrollbar {
+      display: none;
+    }
     #xiv-root[data-active] .xiv-panel {
       background: var(--fl-surface); color: var(--fl-text);
       border: 1px solid var(--fl-border); border-radius: 20px;
