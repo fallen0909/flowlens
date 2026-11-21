@@ -127,8 +127,8 @@
   }
 
   function currentLightboxUrl() {
-    const media = document.querySelector("#xiv-lightbox > img, #xiv-lightbox > video, #xiv-lightbox iframe");
-    return media?.currentSrc || media?.src || media?.dataset?.sourceUrl || "";
+    const media = document.querySelector("#xiv-lightbox > img, #xiv-lightbox > video, #xiv-lightbox > iframe[data-media-url]");
+    return media?.dataset?.mediaUrl || media?.currentSrc || media?.src || media?.dataset?.sourceUrl || "";
   }
 
   function decorateTile(tile, config = readConfig()) {

@@ -127,5 +127,14 @@ for(const frame of [false,true])for(const touchApi of [false,true]){
   context.setVideoSourceWithFallback(second,'https://video.twimg.com/path/clip.mp4',true);second.readyState=1;
   timer=[...timers.values()].at(-1);const url=second.src;timer.fn();assert.equal(second.src,url);assert.equal([...timers.values()].at(-1).delay,3500);
   second.readyState=2;[...timers.values()].at(-1).fn();assert.equal(second.src,url);
-  console.log('PASS mobile no-response fallback starts at 2.5s, active metadata gets a grace period, successful host is preferred and URL tokens remain intact');
+  context.window.innerWidth=1440;
+  const desktop={dataset:{allowFallback:'true'},isConnected:true,readyState:0,load(){}};
+  context.setVideoSourceWithFallback(desktop,'https://video.twimg.com/path/clip.mp4',true);
+  assert.equal([...timers.values()].at(-1).delay,2500);
+  const timerCount=timers.size;
+  const single={dataset:{allowFallback:'false'},isConnected:true,readyState:0,load(){}};
+  context.setVideoSourceWithFallback(single,'https://site.test/slow.mp4',true);
+  assert.equal(timers.size,timerCount);
+  assert.equal(single.dataset.flSourceFailed,undefined);
+  console.log('PASS desktop and mobile fallback start at 2.5s, metadata gets a grace period, and slow single sources are not falsely marked failed');
 }

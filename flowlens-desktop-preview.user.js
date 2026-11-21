@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens desktop
 // @namespace    local.flowlens.desktop
-// @version      2.0.21
+// @version      2.0.22
 // @description  FlowLens desktop release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,8 +28,8 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.21";
-  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-20", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
+  const VERSION = "2.0.22";
+  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-21", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
 })();
@@ -665,8 +665,8 @@
   }
 
   function currentLightboxUrl() {
-    const media = document.querySelector("#xiv-lightbox > img, #xiv-lightbox > video, #xiv-lightbox iframe");
-    return media?.currentSrc || media?.src || media?.dataset?.sourceUrl || "";
+    const media = document.querySelector("#xiv-lightbox > img, #xiv-lightbox > video, #xiv-lightbox > iframe[data-media-url]");
+    return media?.dataset?.mediaUrl || media?.currentSrc || media?.src || media?.dataset?.sourceUrl || "";
   }
 
   function decorateTile(tile, config = readConfig()) {
@@ -1373,7 +1373,7 @@
   function currentUrl() {
     const lb = box();
     if (!lb) return "";
-    const media = lb.querySelector(":scope > img, :scope > video, :scope > iframe, :scope > .xiv-video-frame");
+    const media = lb.querySelector(":scope > img, :scope > video, :scope > iframe[data-media-url]");
     return media?.currentSrc || media?.src || media?.dataset?.mediaUrl || media?.dataset?.sourceUrl || "";
   }
 
@@ -1514,6 +1514,7 @@
     mediaRatioByImage: new Map(),
     videoTimeByImage: new Map(),
     preferredVideoHost: "",
+    nextVideoPreload: null,
     favoriteKeys: new Set(),
     savingFavorite: false,
     imageKeys: new Set(),
@@ -5071,6 +5072,7 @@
     state.downloadPanel = null;
     state.downloadFailures = [];
     clearOldMediaPreloads(true);
+    clearNextVideoPreload();
     clearTimeout(state.masonryLayoutTimer);
     stopTileMediaObserver();
     state.imageLoadObserver?.disconnect();
@@ -5800,26 +5802,33 @@
   }
 
   function loadVideoSourceAttempt(video, request) {
-    clearTimeout(Number(video.dataset.loadTimer || 0));
     video.dataset.sourceUrl = request.sources[request.index];
     video.dataset.sourceAttempt = String(Number(video.dataset.sourceAttempt || 0) + 1);
     delete video.dataset.flPlaybackBlocked;
     delete video.dataset.flSourceFailed;
     video.src = video.dataset.sourceUrl;
     video.load();
-    const mobile = window.matchMedia?.("(pointer: coarse)")?.matches || window.innerWidth <= 820;
-    const earlyFallback = mobile && request.autoplay && request.sources.length > 1;
+    armVideoSourceTimeout(video, request);
+    if (request.autoplay && video.isConnected) requestVideoPlayback(video);
+  }
+
+  function armVideoSourceTimeout(video, request) {
+    clearTimeout(Number(video.dataset.loadTimer || 0));
+    if (request.index + 1 >= request.sources.length || video.readyState >= 2) return;
+    const index = request.index;
+    const stillLoading = () => videoSourceRequests.get(video) === request && request.index === index
+      && video.isConnected && video.readyState < 2 && video.dataset.played !== "true";
+    const earlyFallback = request.autoplay;
     video.dataset.loadTimer = String(window.setTimeout(() => {
-      if (videoSourceRequests.get(video) !== request || !video.isConnected || video.readyState >= 2 || video.dataset.played === "true") return;
+      if (!stillLoading()) return;
       if (earlyFallback && video.readyState >= 1) {
         video.dataset.loadTimer = String(window.setTimeout(() => {
-          if (videoSourceRequests.get(video) === request && video.isConnected && video.readyState < 2 && video.dataset.played !== "true") advanceVideoSource(video);
+          if (stillLoading()) advanceVideoSource(video);
         }, 3500));
         return;
       }
       advanceVideoSource(video);
-    }, earlyFallback ? 2500 : request.autoplay ? 6000 : 5000));
-    if (request.autoplay && video.isConnected) requestVideoPlayback(video);
+    }, earlyFallback ? 2500 : 5000));
   }
 
   function advanceVideoSource(video) {
@@ -5881,7 +5890,6 @@
       allowFallback = true,
       muted = true,
       loop = true,
-      startTime = 0,
       previewTime = 0,
       previewMode = "seek",
       deferSource = false
@@ -5905,13 +5913,7 @@
     video.dataset.previewTime = String(previewTime || 0);
     video.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
     video.addEventListener("loadedmetadata", () => {
-      if (startTime > 0 && Number.isFinite(video.duration) && startTime < video.duration - 0.5) {
-        try {
-          video.currentTime = startTime;
-        } catch {
-          // Some remote media sources reject seeking before enough data is buffered.
-        }
-      } else if (keepFirstFrame && (previewMode === "seek" || previewMode === "canvas") && previewTime > 0 && Number.isFinite(video.duration) && video.duration > 0.8) {
+      if (keepFirstFrame && (previewMode === "seek" || previewMode === "canvas") && previewTime > 0 && Number.isFinite(video.duration) && video.duration > 0.8) {
         try {
           video.currentTime = Math.min(previewTime, Math.max(0, video.duration - 0.25));
         } catch {
@@ -5947,7 +5949,7 @@
     });
     video.addEventListener("canplay", () => {
       clearTimeout(Number(video.dataset.loadTimer || 0));
-      if (autoplay) requestVideoPlayback(video);
+      if (video.autoplay) requestVideoPlayback(video);
     });
     video.addEventListener("playing", () => {
       video.dataset.played = "true";
@@ -7154,6 +7156,7 @@
     window.addEventListener("beforeunload", saveViewerPosition);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
+        clearNextVideoPreload(true);
         saveViewerPosition();
         cancelAnimationFrame(state.renderFrame);
         state.renderFrame = 0;
@@ -8670,11 +8673,6 @@
       if (!item) { state.mediaPreloadCache.delete(key); continue; }
       const media = item.media;
       try {
-        if (media?.tagName === "VIDEO") {
-          media.pause();
-          media.removeAttribute("src");
-          media.load();
-        }
         media?.remove?.();
         if (media?.tagName === "IMG") media.removeAttribute("src");
       } catch {
@@ -8684,37 +8682,18 @@
     }
   }
 
-  function preloadMediaUrl(url, videoBudget) {
-    if (!url) return videoBudget;
+  function preloadLightboxImage(url) {
+    if (!url || isVideoUrl(url)) return;
     const key = keyForUrl(url);
     const cached = state.mediaPreloadCache.get(key);
-    if (cached && Date.now() - cached.time < 45000) return videoBudget;
+    if (cached && Date.now() - cached.time < 45000) return;
     clearOldMediaPreloads();
-    if (isVideoUrl(url)) {
-      if (videoBudget <= 0) return videoBudget;
-      if (videoSourceCandidates(url).length > 1) return videoBudget;
-      const video = document.createElement("video");
-      video.preload = "metadata";
-      video.muted = true;
-      video.defaultMuted = true;
-      video.playsInline = true;
-      video.controls = false;
-      video.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
-      video.style.cssText = "position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none;";
-      video.dataset.xivPreload = "true";
-      video.src = url;
-      document.documentElement.appendChild(video);
-      try { video.load(); } catch {}
-      state.mediaPreloadCache.set(key, { media: video, time: Date.now() });
-      return videoBudget - 1;
-    }
     const img = new Image();
     img.decoding = "async";
     try { img.fetchPriority = "low"; } catch {}
     img.referrerPolicy = shouldKeepReferrer(url) ? "no-referrer-when-downgrade" : "no-referrer";
     img.src = url;
     state.mediaPreloadCache.set(key, { media: img, time: Date.now() });
-    return videoBudget;
   }
 
   function scheduleLightboxMediaPreload(centerIndex = state.index) {
@@ -8739,10 +8718,7 @@
           }
         }
       }
-      let videoBudget = 1;
-      for (const url of urls) {
-        videoBudget = preloadMediaUrl(url, videoBudget);
-      }
+      urls.forEach(preloadLightboxImage);
     }, 30);
   }
 
@@ -8829,6 +8805,7 @@
     clearTimeout(state.mediaPreloadTimer);
     clearTimeout(state.highResResolveTimer);
     clearOldMediaPreloads(true);
+    clearNextVideoPreload();
     if (state.renderQueue.length) scheduleRenderQueue();
     if (resumeAutoScroll) { resumeTileMedia(); resumeAutoScrollAfterLightbox(); }
   }
@@ -8853,7 +8830,7 @@
 
   function removeDirectLightboxMedia(except = null) {
     state.lightbox?.querySelectorAll(":scope > img, :scope > video, :scope > iframe, :scope > .xiv-video-frame").forEach((node) => {
-      if (node !== except) node.remove();
+      if (node !== except && node.dataset.xivWarm !== "true") node.remove();
     });
   }
 
@@ -9426,76 +9403,185 @@
     state.videoTimeByImage.set(keyForUrl(normalizeMediaUrl(url)), time);
   }
 
-  function setLightboxFrameVideo(url) {
-    url = normalizeMediaUrl(url);
-    pauseLightboxMedia();
-    ensureLightboxChrome();
-    removeDirectLightboxMedia();
-    updateFavoriteButton(url);
-    const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
+  function clearNextVideoPreload(retry = false) {
+    const pending = state.nextVideoPreload;
+    if (!pending) return;
+    state.nextVideoPreload = null;
+    if (retry) pending.owner.preloadAttempted = false;
+    clearTimeout(pending.timer);
+    unloadVideoElement(pending.player.video);
+    (pending.player.frame || pending.player.video)?.remove();
+  }
+
+  function nextVideoForPreload() {
+    const current = state.images[state.index];
+    for (let step = 1; step < state.images.length; step += 1) {
+      const index = (state.index + step) % state.images.length;
+      const url = state.images[index];
+      if (url === current || !isVideoUrl(url) || !mediaMatchesFilter(url)) continue;
+      const tile = state.grid?.querySelector(`.xiv-tile[data-index="${index}"]`);
+      if (tile?.hidden || tile?.style.display === "none" || window.__flowLensMediaFilter?.reasonFor?.(url, tile)) continue;
+      return normalizeMediaUrl(url);
+    }
+    return "";
+  }
+
+  function preloadNextVideo(player) {
+    const { video } = player;
+    if (player.preloadAttempted || state.nextVideoPreload || !video.isConnected || video.paused || video.seeking
+      || video.ended || video.readyState < 3 || document.visibilityState === "hidden"
+      || state.lightbox?.dataset.active !== "true") return;
+    const connection = navigator.connection;
+    if (connection?.saveData || /^(?:slow-)?2g$/.test(connection?.effectiveType || "")) return;
+    if (video.readyState < 4) {
+      const time = video.currentTime;
+      const ahead = Math.min(3, Math.max(0, video.duration - time));
+      let buffered = false;
+      for (let i = 0; i < video.buffered.length; i += 1) {
+        if (video.buffered.start(i) <= time && video.buffered.end(i) >= time + ahead) {
+          buffered = true;
+          break;
+        }
+      }
+      if (!buffered) return;
+    }
+    player.preloadAttempted = true;
+    const url = nextVideoForPreload();
+    if (!url) return;
+    const next = createLightboxVideoPlayer(url);
+    const timer = setTimeout(() => {
+      // Keep a usable buffer even when the current clip is longer than 30s.
+      if (state.nextVideoPreload?.player === next && next.video.readyState < 2) clearNextVideoPreload();
+    }, 30000);
+    state.nextVideoPreload = { player: next, owner: player, timer };
+    if (next.frame) state.lightbox.appendChild(next.frame);
+    else {
+      state.root.appendChild(next.video);
+      setVideoSourceWithFallback(next.video, url);
+    }
+  }
+
+  function createLightboxVideoPlayer(url) {
+    const framed = videoSourceCandidates(url).length > 1;
+    const player = {
+      url,
+      active: false,
+      video: createVideoElement(url, {
+        preload: "auto", allowFallback: !isCloudDriveMediaUrl(url), loop: false, deferSource: true
+      }),
+      frame: null
+    };
+    if (!framed) {
+      player.video.hidden = true;
+      return player;
+    }
+
     const iframe = document.createElement("iframe");
+    player.frame = iframe;
     iframe.title = "video-player";
-    iframe.className = "xiv-video-frame";
-    iframe.dataset.mediaUrl = url;
-    const size = videoSizeFromUrl(url);
-    if (size) iframe.style.setProperty("--xiv-video-ratio", String(size.width / size.height));
+    iframe.dataset.xivWarm = "true";
+    iframe.hidden = true;
     iframe.referrerPolicy = "no-referrer";
     iframe.allow = "autoplay; fullscreen; encrypted-media; picture-in-picture";
     iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-presentation";
     iframe.addEventListener("load", () => {
       if (!iframe.isConnected || state.lightbox?.dataset.active !== "true") return;
       const frameDoc = iframe.contentDocument;
-      if (!frameDoc?.body || frameDoc.querySelector("video")) return;
-      // Assign the source after adoption into the no-referrer document. The
-      // parent's page policy must not leak into a hotlink-protected video.
-      const video = createVideoElement(url, { autoplay: true, controls: true, preload: "auto", keepFirstFrame: false, muted: false, loop: false, startTime, deferSource: true });
-      video.dataset.mediaUrl = url;
-      video.dataset.flLightboxVideo = "true";
-      ["timeupdate", "pause", "seeked"].forEach(name => video.addEventListener(name, () => rememberVideoTime(video)));
+      if (!frameDoc?.body || player.video.isConnected) return;
+      // Keep the no-referrer document and its media element attached when this
+      // player becomes visible. Reparenting the iframe would restart the load.
+      frameDoc.body.appendChild(player.video);
+      if (player.active) activateLightboxVideo(player);
+      else setVideoSourceWithFallback(player.video, url);
+    }, { once: true });
+    iframe.srcdoc = videoFrameSrcDoc();
+    return player;
+  }
+
+  function activateLightboxVideo(player) {
+    const { video, frame, url } = player;
+    video.hidden = false;
+    video.dataset.mediaUrl = url;
+    video.dataset.flLightboxVideo = "true";
+    video.dataset.xivCanZoom = "false";
+    video.controls = true;
+    video.muted = false;
+    video.defaultMuted = false;
+    video.volume = 1;
+    video.autoplay = true;
+    const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
+    const resume = () => {
+      if (startTime > 0 && Number.isFinite(video.duration) && startTime < video.duration - 0.5) {
+        try { video.currentTime = startTime; } catch {}
+      }
+      if (!frame) updateLightboxZoomHint(video);
+    };
+    if (video.readyState >= 1) resume();
+    else video.addEventListener("loadedmetadata", resume);
+    if (frame) {
+      for (const name of ["timeupdate", "pause", "seeked"]) video.addEventListener(name, () => rememberVideoTime(video));
       video.addEventListener("ended", () => {
-        if (!iframe.isConnected || state.lightbox?.dataset.active !== "true") return;
+        if (!frame.isConnected || !video.isConnected || state.lightbox?.dataset.active !== "true") return;
         state.lightbox.dataset.flVideoEnded = "true";
         window.dispatchEvent(new CustomEvent("flowlens:video-ended", { detail: { url } }));
       });
-      frameDoc.body.appendChild(video);
-      installVideoGestures(video);
-      setVideoSourceWithFallback(video, url, true);
+    } else {
+      video.addEventListener("loadeddata", () => updateLightboxZoomHint(video));
+    }
+    const warm = () => preloadNextVideo(player);
+    video.addEventListener("playing", warm);
+    video.addEventListener("timeupdate", warm);
+    const yieldBandwidth = () => {
+      if (state.nextVideoPreload?.owner !== player) return;
+      clearNextVideoPreload(true);
+    };
+    for (const name of ["waiting", "seeking"]) video.addEventListener(name, yieldBandwidth);
+    installVideoGestures(video);
+
+    const request = videoSourceRequests.get(video);
+    if (request) {
+      // Reuse the actual buffer, including a request still in flight. Changing
+      // src or calling load() here would discard the buffered first frame.
+      request.autoplay = true;
+      armVideoSourceTimeout(video, request);
       requestVideoPlayback(video);
-    }, { once: true });
-    iframe.srcdoc = videoFrameSrcDoc();
-    state.lightbox.appendChild(iframe);
+    } else {
+      setVideoSourceWithFallback(video, url, true);
+    }
   }
 
   function setLightboxVideo(url) {
     url = normalizeMediaUrl(url);
-    if (videoSourceCandidates(url).length > 1) {
-      setLightboxFrameVideo(url);
-      return;
+    const pending = state.nextVideoPreload;
+    let player;
+    if (pending?.player.url === url && !pending.player.video.error && pending.player.video.dataset.flSourceFailed !== "true") {
+      clearTimeout(pending.timer);
+      state.nextVideoPreload = null;
+      player = pending.player;
+    } else {
+      clearNextVideoPreload();
+      player = createLightboxVideoPlayer(url);
     }
+
     pauseLightboxMedia();
     ensureLightboxChrome();
-    removeDirectLightboxMedia();
+    removeDirectLightboxMedia(player.frame);
     updateFavoriteButton(url);
-    const startTime = state.videoTimeByImage.get(keyForUrl(url)) || 0;
-    const video = createVideoElement(url, {
-      autoplay: true,
-      controls: true,
-      preload: "auto",
-      keepFirstFrame: false,
-      allowFallback: !isCloudDriveMediaUrl(url),
-      muted: false,
-      loop: false,
-      startTime
-    });
-    video.dataset.mediaUrl = url;
-    video.controls = true;
-    video.disablePictureInPicture = false;
-    video.dataset.xivCanZoom = "false";
-    video.addEventListener("loadedmetadata", () => updateLightboxZoomHint(video));
-    video.addEventListener("loadeddata", () => updateLightboxZoomHint(video));
-    state.lightbox.appendChild(video);
-    installVideoGestures(video);
-    requestVideoPlayback(video);
+    player.active = true;
+    if (player.frame) {
+      const { frame, video } = player;
+      delete frame.dataset.xivWarm;
+      frame.hidden = false;
+      frame.className = "xiv-video-frame";
+      frame.dataset.mediaUrl = url;
+      const size = videoSizeFromUrl(url);
+      if (size) frame.style.setProperty("--xiv-video-ratio", String(size.width / size.height));
+      if (!frame.isConnected) state.lightbox.appendChild(frame);
+      if (video.isConnected) activateLightboxVideo(player);
+      return;
+    }
+    state.lightbox.appendChild(player.video);
+    activateLightboxVideo(player);
   }
 
   function unloadVideoElement(video) {
@@ -13711,5 +13797,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.21";
+  window.__FLOWLENS_VERSION__ = "2.0.22";
 })();

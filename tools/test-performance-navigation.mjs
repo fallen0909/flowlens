@@ -45,22 +45,24 @@ const nextTurn = () => new Promise(resolve => setImmediate(resolve));
 {
   const nodes=new Set();
   const c=install({state:{mediaPreloadCache:new Map()},Date,
-    document:{createElement:()=>({tagName:'VIDEO',dataset:{},style:{},pause(){},load(){},removeAttribute(){},remove(){nodes.delete(this);}}),documentElement:{appendChild:node=>nodes.add(node)}},
-    keyForUrl:url=>url,isVideoUrl:()=>true,videoSourceCandidates:url=>[url],shouldKeepReferrer:()=>false
-  },['clearOldMediaPreloads','preloadMediaUrl']);
-  for(let i=0;i<1000;i++)c.preloadMediaUrl(`https://media.test/${i}.mp4`,1);
+    Image:class {constructor(){this.tagName='IMG';nodes.add(this);}removeAttribute(){nodes.delete(this);}},
+    keyForUrl:url=>url,isVideoUrl:url=>url.endsWith('.mp4'),shouldKeepReferrer:()=>false
+  },['clearOldMediaPreloads','preloadLightboxImage']);
+  for(let i=0;i<1000;i++)c.preloadLightboxImage(`https://media.test/${i}.jpg`);
+  c.preloadLightboxImage('https://media.test/next.mp4');
   assert(c.state.mediaPreloadCache.size<=16);assert(nodes.size<=16);
+  assert(!c.state.mediaPreloadCache.has('https://media.test/next.mp4'));
   c.clearOldMediaPreloads(true);assert.equal(nodes.size,0);assert.equal(c.state.mediaPreloadCache.size,0);
   assert(!fs.readFileSync(new URL('../src/patches/lightbox-ios-smooth.js',import.meta.url),'utf8').includes('new Map('));
-  console.log('PASS 1000 video preloads keep at most 16 nodes; teardown removes all, and the duplicate image cache is gone');
+  console.log('PASS nearby image preloads are capped, never start competing video loads, and release on teardown');
 }
 
 {
   const warmed=[];let callback;
   const c=install({state:{images:['0.jpg','1.mp4','2.jpg','3.mp4','4.jpg','5.mp4','6.jpg','7.mp4'],index:0,lightbox:{dataset:{active:'true'}}},
-    setTimeout(fn){callback=fn;return 1;},clearTimeout(){},keyForUrl:url=>url,mediaMatchesFilter:url=>url.endsWith('.mp4'),preloadMediaUrl(url,budget){warmed.push(url);return budget;}
+    setTimeout(fn){callback=fn;return 1;},clearTimeout(){},keyForUrl:url=>url,mediaMatchesFilter:url=>url.endsWith('.jpg'),preloadLightboxImage(url){warmed.push(url);}
   },['scheduleLightboxMediaPreload']);
-  c.scheduleLightboxMediaPreload(1);callback();assert.deepEqual(warmed,['3.mp4','5.mp4','7.mp4']);
+  c.scheduleLightboxMediaPreload(3);callback();assert.deepEqual(warmed,['4.jpg','6.jpg','2.jpg']);
   console.log('PASS filtered preloading chooses the next two eligible items and previous item without skipping odd/even positions');
 }
 

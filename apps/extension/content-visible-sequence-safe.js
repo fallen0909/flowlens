@@ -57,7 +57,7 @@
   function currentUrl() {
     const lb = box();
     if (!lb) return "";
-    const media = lb.querySelector(":scope > img, :scope > video, :scope > iframe, :scope > .xiv-video-frame");
+    const media = lb.querySelector(":scope > img, :scope > video, :scope > iframe[data-media-url]");
     return media?.currentSrc || media?.src || media?.dataset?.mediaUrl || media?.dataset?.sourceUrl || "";
   }
 
