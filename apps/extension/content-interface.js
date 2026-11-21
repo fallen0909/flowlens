@@ -63,7 +63,12 @@
     }
     #xiv-root[data-theme="light"] #xiv-lightbox > .xiv-video-switch-cover { background: #f5f5f2; }
     .xiv-video-switch-cover > canvas { display: block; width: 100%; height: 100%; }
-    .xiv-video-switch-cover > [role="status"] {
+    #xiv-lightbox > .xiv-video-loading {
+      position: absolute; inset: 0; z-index: 1; touch-action: none;
+      background: #050505 center / contain no-repeat;
+    }
+    #xiv-root[data-theme="light"] #xiv-lightbox > .xiv-video-loading { background-color: #f5f5f2; }
+    .xiv-video-loading > [role="status"] {
       position: absolute; bottom: 14%; left: 50%; transform: translateX(-50%);
       padding: 8px 16px; border-radius: 999px; background: rgba(0,0,0,.74); color: #fff;
       font: 600 14px/1.4 system-ui, sans-serif; white-space: nowrap;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens desktop
 // @namespace    local.flowlens.desktop
-// @version      2.0.23
+// @version      2.0.24
 // @description  FlowLens desktop release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,7 +28,7 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.23";
+  const VERSION = "2.0.24";
   window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-21", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
@@ -1491,6 +1491,8 @@
   const GALLERY_FETCH_BATCH = 3;
   const SITE_ALBUM_FETCH_BATCH = 6;
   const VIDEO_PREVIEW_CONCURRENCY = 3;
+  const VIDEO_PRELOAD_AHEAD = 4;
+  const VIDEO_PRELOAD_CONCURRENCY = 2;
 
   const state = {
     root: null,
@@ -1515,7 +1517,9 @@
     videoTimeByImage: new Map(),
     preferredVideoHost: "",
     videoConnectionHint: null,
-    nextVideoPreload: null,
+    videoPreloads: new Map(),
+    lightboxVideoPlayer: null,
+    videoLoading: null,
     videoTransition: null,
     favoriteKeys: new Set(),
     savingFavorite: false,
@@ -5074,7 +5078,7 @@
     state.downloadPanel = null;
     state.downloadFailures = [];
     clearOldMediaPreloads(true);
-    clearNextVideoPreload();
+    clearVideoPreloads();
     clearTimeout(state.masonryLayoutTimer);
     stopTileMediaObserver();
     state.imageLoadObserver?.disconnect();
@@ -7166,7 +7170,7 @@
     window.addEventListener("beforeunload", saveViewerPosition);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
-        clearNextVideoPreload(true);
+        clearVideoPreloads();
         clearVideoTransition();
         saveViewerPosition();
         cancelAnimationFrame(state.renderFrame);
@@ -8761,16 +8765,14 @@
     const transition = state.videoTransition;
     if (!transition) return;
     state.videoTransition = null;
-    clearTimeout(transition.loadingTimer);
     clearTimeout(transition.deadline);
     transition.outgoing?.cancel();
     transition.incoming?.cancel();
-    transition.cover.remove();
+    transition.cover?.remove();
     delete state.lightbox.dataset.xivVideoTransition;
   }
 
   function beginVideoTransition(index, direction) {
-    const previous = state.videoTransition?.canvas;
     clearVideoTransition();
     const box = state.lightbox;
     if (box?.dataset.active !== "true" || box.dataset.zoom === "actual" || index === state.index
@@ -8780,7 +8782,7 @@
 
     const frame = box.querySelector(":scope > iframe[data-media-url]");
     const video = box.querySelector(":scope > video") || frame?.contentDocument?.querySelector("video");
-    let canvas = previous;
+    let canvas = null;
     if (video?.readyState >= 2 && !video.seeking && video.videoWidth && video.videoHeight) {
       const rect = (frame || video).getBoundingClientRect();
       const bounds = box.getBoundingClientRect();
@@ -8801,47 +8803,60 @@
         // Some protected streams cannot be painted to a canvas.
       }
     }
-    if (!canvas) return null;
-
-    const cover = document.createElement("div");
-    cover.className = "xiv-video-switch-cover";
-    canvas.setAttribute("aria-hidden", "true");
-    cover.appendChild(canvas);
-    const transition = { canvas, cover, direction: direction || Math.sign(index - state.index) };
+    let cover = null;
+    if (canvas) {
+      cover = document.createElement("div");
+      cover.className = "xiv-video-switch-cover";
+      canvas.setAttribute("aria-hidden", "true");
+      cover.appendChild(canvas);
+      box.appendChild(cover);
+    }
+    const transition = { cover, direction: direction || Math.sign(index - state.index) };
     state.videoTransition = transition;
     box.dataset.xivVideoTransition = "true";
-    box.appendChild(cover);
-    transition.loadingTimer = setTimeout(() => {
-      const label = document.createElement("span");
-      label.setAttribute("role", "status");
-      label.textContent = "正在加载视频…";
-      cover.appendChild(label);
-    }, 500);
-    transition.deadline = setTimeout(() => {
-      if (state.videoTransition === transition) clearVideoTransition();
-    }, 12000);
     return transition;
   }
 
-  function finishVideoTransition({video, frame, transition}) {
-    const reveal = () => {
-      if (state.videoTransition !== transition || transition.outgoing || video.readyState < 2 || video.seeking) return;
-      clearTimeout(transition.loadingTimer);
-      transition.cover.querySelector('[role="status"]')?.remove();
-      const motion = { duration: 250, easing: "cubic-bezier(.22,.68,.2,1)" };
-      const direction = transition.direction > 0 ? 1 : -1;
-      if (!transition.cover.animate) { clearVideoTransition(); return; }
-      transition.incoming = (frame || video).animate?.([{ translate: `0 ${direction * 16}%` }, { translate: "0 0%" }], motion);
-      transition.outgoing = transition.cover.animate([{ translate: "0 0%" }, { translate: `0 ${direction * -100}%` }], motion);
-      transition.outgoing.onfinish = () => {
-        if (state.videoTransition === transition) clearVideoTransition();
-      };
+  function playVideoTransition(transition, incoming) {
+    if (!transition || state.videoTransition !== transition) return;
+    if (!incoming.animate) { clearVideoTransition(); return; }
+    const motion = { duration: 250, easing: "cubic-bezier(.22,.68,.2,1)" };
+    const direction = transition.direction > 0 ? 1 : -1;
+    transition.incoming = incoming.animate([{ translate: `0 ${direction * 26}%` }, { translate: "0 0%" }], motion);
+    transition.outgoing = transition.cover?.animate([{ translate: "0 0%" }, { translate: `0 ${direction * -100}%` }], motion);
+    const finish = () => {
+      if (state.videoTransition === transition) clearVideoTransition();
     };
-    for (const event of ["loadeddata", "seeked", "canplay"]) video.addEventListener(event, reveal, { once: true });
-    video.addEventListener("error", () => {
-      if (state.videoTransition === transition && video.dataset.flSourceFailed === "true") clearVideoTransition();
+    transition.incoming.onfinish = finish;
+    transition.deadline = setTimeout(finish, 350);
+  }
+
+  function showVideoLoading(player) {
+    if (player.video.readyState >= 2) return null;
+    const loading = document.createElement("div");
+    loading.className = "xiv-video-loading";
+    const poster = state.posterByImage.get(keyForUrl(player.url));
+    if (poster) loading.style.backgroundImage = `url(${JSON.stringify(poster)})`;
+    const label = document.createElement("span");
+    const position = state.index + 1;
+    label.setAttribute("role", "status");
+    label.textContent = `第 ${position} 项 · 正在加载视频…`;
+    loading.appendChild(label);
+    state.videoLoading = loading;
+    state.lightbox.appendChild(loading);
+    const ready = () => {
+      if (state.lightboxVideoPlayer !== player || player.video.readyState < 2) return;
+      loading.remove();
+      if (state.videoLoading === loading) state.videoLoading = null;
+    };
+    player.video.addEventListener("loadeddata", ready, { once: true });
+    player.video.addEventListener("canplay", ready, { once: true });
+    player.video.addEventListener("error", () => {
+      if (state.lightboxVideoPlayer === player && player.video.dataset.flSourceFailed === "true") {
+        label.textContent = `第 ${position} 项 · 暂时无法播放`;
+      }
     });
-    reveal();
+    return loading;
   }
 
   async function openLightbox(index, direction = 0) {
@@ -8908,7 +8923,7 @@
     clearTimeout(state.mediaPreloadTimer);
     clearTimeout(state.highResResolveTimer);
     clearOldMediaPreloads(true);
-    clearNextVideoPreload();
+    clearVideoPreloads();
     if (state.renderQueue.length) scheduleRenderQueue();
     if (resumeAutoScroll) { resumeTileMedia(); resumeAutoScrollAfterLightbox(); }
   }
@@ -9529,32 +9544,43 @@
     state.videoTimeByImage.set(keyForUrl(normalizeMediaUrl(url)), time);
   }
 
-  function clearNextVideoPreload(retry = false) {
-    const pending = state.nextVideoPreload;
-    if (!pending) return;
-    state.nextVideoPreload = null;
-    if (retry) pending.owner.preloadAttempted = false;
-    clearTimeout(pending.timer);
-    unloadVideoElement(pending.player.video);
-    (pending.player.frame || pending.player.video)?.remove();
+  function takeVideoPreload(url) {
+    const entry = state.videoPreloads.get(url);
+    if (!entry) return null;
+    state.videoPreloads.delete(url);
+    clearTimeout(entry.timer);
+    entry.cleanup();
+    return entry.player;
   }
 
-  function nextVideoForPreload() {
-    const current = state.images[state.index];
-    for (let step = 1; step < state.images.length; step += 1) {
+  function discardVideoPreload(url) {
+    const player = takeVideoPreload(url);
+    if (!player) return;
+    unloadVideoElement(player.video);
+    (player.frame || player.video).remove();
+  }
+
+  function clearVideoPreloads() {
+    for (const url of state.videoPreloads.keys()) discardVideoPreload(url);
+  }
+
+  function nextVideosForPreload(current) {
+    const urls = new Set();
+    for (let step = 1; step < state.images.length && urls.size < VIDEO_PRELOAD_AHEAD; step += 1) {
       const index = (state.index + step) % state.images.length;
       const url = state.images[index];
-      if (url === current || !isVideoUrl(url) || !mediaMatchesFilter(url)) continue;
+      if (!isVideoUrl(url) || !mediaMatchesFilter(url)) continue;
       const tile = state.grid?.querySelector(`.xiv-tile[data-index="${index}"]`);
       if (tile?.hidden || tile?.style.display === "none" || window.__flowLensMediaFilter?.reasonFor?.(url, tile)) continue;
-      return normalizeMediaUrl(url);
+      const normalized = normalizeMediaUrl(url);
+      if (normalized !== current) urls.add(normalized);
     }
-    return "";
+    return [...urls];
   }
 
-  function preloadNextVideo(player) {
+  function preloadNextVideos(player) {
     const { video } = player;
-    if (player.preloadAttempted || state.nextVideoPreload || !video.isConnected || video.paused || video.seeking
+    if (state.lightboxVideoPlayer !== player || !video.isConnected || video.paused || video.seeking
       || video.ended || video.readyState < 3 || document.visibilityState === "hidden"
       || state.lightbox?.dataset.active !== "true") return;
     const connection = navigator.connection;
@@ -9571,19 +9597,48 @@
       }
       if (!buffered) return;
     }
-    player.preloadAttempted = true;
-    const url = nextVideoForPreload();
-    if (!url) return;
-    const next = createLightboxVideoPlayer(url);
-    const timer = setTimeout(() => {
-      // Keep a usable buffer even when the current clip is longer than 30s.
-      if (state.nextVideoPreload?.player === next && next.video.readyState < 2) clearNextVideoPreload();
-    }, 30000);
-    state.nextVideoPreload = { player: next, owner: player, timer };
-    if (next.frame) state.lightbox.appendChild(next.frame);
+    let loading = 0;
+    for (const entry of state.videoPreloads.values()) if (entry.player.video.readyState < 2) loading += 1;
+    for (const url of player.upcoming) {
+      if (loading >= VIDEO_PRELOAD_CONCURRENCY) break;
+      if (state.videoPreloads.has(url) || player.preloadFailures.has(url)) continue;
+      startVideoPreload(url);
+      loading += 1;
+    }
+  }
+
+  function startVideoPreload(url) {
+    const player = createLightboxVideoPlayer(url);
+    const { video, frame } = player;
+    const refill = () => {
+      const current = state.lightboxVideoPlayer;
+      if (current) preloadNextVideos(current);
+    };
+    const failed = () => {
+      const current = state.lightboxVideoPlayer;
+      current?.preloadFailures.add(url);
+      discardVideoPreload(url);
+      refill();
+    };
+    const onError = () => { if (video.dataset.flSourceFailed === "true") failed(); };
+    const ready = () => {
+      if (video.readyState < 2) return;
+      clearTimeout(timer);
+      refill();
+    };
+    const timer = setTimeout(() => { if (video.readyState < 2) failed(); }, 30000);
+    video.addEventListener("canplay", ready);
+    video.addEventListener("loadeddata", ready);
+    video.addEventListener("error", onError);
+    state.videoPreloads.set(url, { player, timer, cleanup() {
+      video.removeEventListener("canplay", ready);
+      video.removeEventListener("loadeddata", ready);
+      video.removeEventListener("error", onError);
+    } });
+    if (frame) state.lightbox.appendChild(frame);
     else {
-      state.root.appendChild(next.video);
-      setVideoSourceWithFallback(next.video, url);
+      state.root.appendChild(video);
+      setVideoSourceWithFallback(video, url);
     }
   }
 
@@ -9654,16 +9709,17 @@
     } else {
       video.addEventListener("loadeddata", () => updateLightboxZoomHint(video));
     }
-    const warm = () => preloadNextVideo(player);
+    const warm = () => preloadNextVideos(player);
     video.addEventListener("playing", warm);
     video.addEventListener("timeupdate", warm);
     const yieldBandwidth = () => {
-      if (state.nextVideoPreload?.owner !== player) return;
-      clearNextVideoPreload(true);
+      if (state.lightboxVideoPlayer !== player || video.readyState >= 3) return;
+      for (const [url, entry] of state.videoPreloads) {
+        if (entry.player.video.readyState < 2) discardVideoPreload(url);
+      }
     };
     for (const name of ["waiting", "seeking"]) video.addEventListener(name, yieldBandwidth);
     installVideoGestures(video);
-    if (player.transition) finishVideoTransition(player);
 
     const request = videoSourceRequests.get(video);
     if (request) {
@@ -9679,23 +9735,26 @@
 
   function setLightboxVideo(url, transition = null) {
     url = normalizeMediaUrl(url);
-    const pending = state.nextVideoPreload;
-    let player;
-    if (pending?.player.url === url && !pending.player.video.error && pending.player.video.dataset.flSourceFailed !== "true") {
-      clearTimeout(pending.timer);
-      state.nextVideoPreload = null;
-      player = pending.player;
-    } else {
-      clearNextVideoPreload();
-      player = createLightboxVideoPlayer(url);
+    let player = takeVideoPreload(url);
+    if (player?.video.error || player?.video.dataset.flSourceFailed === "true") {
+      unloadVideoElement(player.video);
+      (player.frame || player.video).remove();
+      player = null;
     }
+    player ||= createLightboxVideoPlayer(url);
 
     pauseLightboxMedia();
     ensureLightboxChrome();
     removeDirectLightboxMedia(player.frame);
     updateFavoriteButton(url);
     player.active = true;
-    player.transition = transition;
+    player.upcoming = nextVideosForPreload(url);
+    player.preloadFailures = new Set();
+    state.lightboxVideoPlayer = player;
+    for (const cached of state.videoPreloads.keys()) {
+      if (!player.upcoming.includes(cached)) discardVideoPreload(cached);
+    }
+    const loading = showVideoLoading(player);
     if (player.frame) {
       const { frame, video } = player;
       delete frame.dataset.xivWarm;
@@ -9706,10 +9765,11 @@
       if (size) frame.style.setProperty("--xiv-video-ratio", String(size.width / size.height));
       if (!frame.isConnected) state.lightbox.appendChild(frame);
       if (video.isConnected) activateLightboxVideo(player);
-      return;
+    } else {
+      state.lightbox.appendChild(player.video);
+      activateLightboxVideo(player);
     }
-    state.lightbox.appendChild(player.video);
-    activateLightboxVideo(player);
+    playVideoTransition(transition, loading || player.frame || player.video);
   }
 
   function unloadVideoElement(video) {
@@ -9735,6 +9795,9 @@
   }
 
   function pauseLightboxMedia() {
+    state.lightboxVideoPlayer = null;
+    state.videoLoading?.remove();
+    state.videoLoading = null;
     state.lightbox?.querySelectorAll("video").forEach((video) => {
       unloadVideoElement(video);
     });
@@ -9921,6 +9984,11 @@
     if (event.target?.closest?.(".xiv-video-gesture-surface, .xiv-video-gesture-hint")) return;
     claimEvent(event);
     if (Date.now() < state.lightboxSuppressClickUntil) return;
+    if (event.target?.closest?.(".xiv-video-loading") || (event.target === state.lightbox && state.videoLoading)) {
+      const video = state.lightboxVideoPlayer?.video;
+      if (video?.paused) requestVideoPlayback(video, true);
+      return;
+    }
     if (event.target?.closest?.(".xiv-lightbox-zoom")) {
       toggleLightboxZoom();
       return;
@@ -9964,13 +10032,16 @@
       event.target.setPointerCapture?.(event.pointerId);
       return;
     }
+    const loadingVideo = !!event.target?.closest?.(".xiv-video-loading");
     state.lightboxSwipe = {
       pointerId: event.pointerId,
       x: event.clientX,
       y: event.clientY,
+      loadingVideo,
       moved: false
     };
-    event.target?.setPointerCapture?.(event.pointerId);
+    // The poster may disappear if the video becomes ready mid-swipe.
+    (loadingVideo ? state.lightbox : event.target)?.setPointerCapture?.(event.pointerId);
   }
 
   function onLightboxPointerMove(event) {
@@ -10007,12 +10078,20 @@
     if (!swipe) return;
     if (event && swipe.pointerId !== event.pointerId) return;
     state.lightboxSwipe = null;
-    if (!event || !swipe.moved || state.lightbox?.dataset.active !== "true") return;
+    if (!event || event.type === "pointercancel" || state.lightbox?.dataset.active !== "true") return;
     const dx = event.clientX - swipe.x;
     const dy = event.clientY - swipe.y;
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
     const threshold = Math.max(42, Math.min(window.innerWidth, window.innerHeight) * 0.09);
+    if (swipe.loadingVideo) {
+      if (absY < threshold || absY < absX * 1.2) return;
+      claimEvent(event);
+      state.lightboxSuppressClickUntil = Date.now() + 260;
+      showAdjacentImage(dy < 0 ? 1 : -1, true);
+      return;
+    }
+    if (!swipe.moved) return;
     if (Math.max(absX, absY) < threshold) return;
     claimEvent(event);
     state.lightboxSuppressClickUntil = Date.now() + 260;
@@ -13871,7 +13950,12 @@
     }
     #xiv-root[data-theme="light"] #xiv-lightbox > .xiv-video-switch-cover { background: #f5f5f2; }
     .xiv-video-switch-cover > canvas { display: block; width: 100%; height: 100%; }
-    .xiv-video-switch-cover > [role="status"] {
+    #xiv-lightbox > .xiv-video-loading {
+      position: absolute; inset: 0; z-index: 1; touch-action: none;
+      background: #050505 center / contain no-repeat;
+    }
+    #xiv-root[data-theme="light"] #xiv-lightbox > .xiv-video-loading { background-color: #f5f5f2; }
+    .xiv-video-loading > [role="status"] {
       position: absolute; bottom: 14%; left: 50%; transform: translateX(-50%);
       padding: 8px 16px; border-radius: 999px; background: rgba(0,0,0,.74); color: #fff;
       font: 600 14px/1.4 system-ui, sans-serif; white-space: nowrap;
@@ -13939,5 +14023,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.23";
+  window.__FLOWLENS_VERSION__ = "2.0.24";
 })();
