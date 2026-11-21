@@ -7434,15 +7434,12 @@
   }
 
   function showVideoLoading(player) {
-    if (player.video.readyState >= 2) return null;
+    if (player.video.readyState >= 2) return;
     const loading = document.createElement("div");
     loading.className = "xiv-video-loading";
-    const poster = state.posterByImage.get(keyForUrl(player.url));
-    if (poster) loading.style.backgroundImage = `url(${JSON.stringify(poster)})`;
     const label = document.createElement("span");
-    const position = state.index + 1;
     label.setAttribute("role", "status");
-    label.textContent = `第 ${position} 项 · 正在加载视频…`;
+    label.textContent = "正在加载视频…";
     loading.appendChild(label);
     state.videoLoading = loading;
     state.lightbox.appendChild(loading);
@@ -7455,10 +7452,9 @@
     player.video.addEventListener("canplay", ready, { once: true });
     player.video.addEventListener("error", () => {
       if (state.lightboxVideoPlayer === player && player.video.dataset.flSourceFailed === "true") {
-        label.textContent = `第 ${position} 项 · 暂时无法播放`;
+        label.textContent = "暂时无法播放";
       }
     });
-    return loading;
   }
 
   async function openLightbox(index, direction = 0) {
@@ -8356,7 +8352,7 @@
     for (const cached of state.videoPreloads.keys()) {
       if (!player.upcoming.includes(cached)) discardVideoPreload(cached);
     }
-    const loading = showVideoLoading(player);
+    showVideoLoading(player);
     if (player.frame) {
       const { frame, video } = player;
       delete frame.dataset.xivWarm;
@@ -8371,7 +8367,7 @@
       state.lightbox.appendChild(player.video);
       activateLightboxVideo(player);
     }
-    playVideoTransition(transition, loading || player.frame || player.video);
+    playVideoTransition(transition, player.frame || player.video);
   }
 
   function unloadVideoElement(video) {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FlowLens mobile
 // @namespace    local.flowlens.mobile.all
-// @version      2.0.24
+// @version      2.0.25
 // @description  FlowLens mobile release.
 // @match        *://*/*
 // @run-at       document-idle
@@ -28,8 +28,8 @@
 
 // FlowLens module: src/core/version.js
 (() => {
-  const VERSION = "2.0.24";
-  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-21", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
+  const VERSION = "2.0.25";
+  window.__FlowLensVersion = Object.freeze({ name: "FlowLens", version: VERSION, channel: "stable", releaseDate: "2026-11-22", features: Object.freeze(["settings-modules", "reliable-slideshow", "video-auto-advance", "cd2-stream-local-playback", "gallery-locale-dedupe", "gallery-previews", "xchina-album-pagination", "visible-media-recovery", "compact-media-filter", "mobile-video-gestures"]), source: "src/core/version.js" });
   window.__FLOWLENS_VERSION__ = VERSION;
   window.__flowLensGetVersion = () => window.__FlowLensVersion;
 })();
@@ -8832,15 +8832,12 @@
   }
 
   function showVideoLoading(player) {
-    if (player.video.readyState >= 2) return null;
+    if (player.video.readyState >= 2) return;
     const loading = document.createElement("div");
     loading.className = "xiv-video-loading";
-    const poster = state.posterByImage.get(keyForUrl(player.url));
-    if (poster) loading.style.backgroundImage = `url(${JSON.stringify(poster)})`;
     const label = document.createElement("span");
-    const position = state.index + 1;
     label.setAttribute("role", "status");
-    label.textContent = `第 ${position} 项 · 正在加载视频…`;
+    label.textContent = "正在加载视频…";
     loading.appendChild(label);
     state.videoLoading = loading;
     state.lightbox.appendChild(loading);
@@ -8853,10 +8850,9 @@
     player.video.addEventListener("canplay", ready, { once: true });
     player.video.addEventListener("error", () => {
       if (state.lightboxVideoPlayer === player && player.video.dataset.flSourceFailed === "true") {
-        label.textContent = `第 ${position} 项 · 暂时无法播放`;
+        label.textContent = "暂时无法播放";
       }
     });
-    return loading;
   }
 
   async function openLightbox(index, direction = 0) {
@@ -9754,7 +9750,7 @@
     for (const cached of state.videoPreloads.keys()) {
       if (!player.upcoming.includes(cached)) discardVideoPreload(cached);
     }
-    const loading = showVideoLoading(player);
+    showVideoLoading(player);
     if (player.frame) {
       const { frame, video } = player;
       delete frame.dataset.xivWarm;
@@ -9769,7 +9765,7 @@
       state.lightbox.appendChild(player.video);
       activateLightboxVideo(player);
     }
-    playVideoTransition(transition, loading || player.frame || player.video);
+    playVideoTransition(transition, player.frame || player.video);
   }
 
   function unloadVideoElement(video) {
@@ -13952,9 +13948,7 @@
     .xiv-video-switch-cover > canvas { display: block; width: 100%; height: 100%; }
     #xiv-lightbox > .xiv-video-loading {
       position: absolute; inset: 0; z-index: 1; touch-action: none;
-      background: #050505 center / contain no-repeat;
     }
-    #xiv-root[data-theme="light"] #xiv-lightbox > .xiv-video-loading { background-color: #f5f5f2; }
     .xiv-video-loading > [role="status"] {
       position: absolute; bottom: 14%; left: 50%; transform: translateX(-50%);
       padding: 8px 16px; border-radius: 999px; background: rgba(0,0,0,.74); color: #fff;
@@ -14154,5 +14148,5 @@
 
 
 (() => {
-  window.__FLOWLENS_VERSION__ = "2.0.24";
+  window.__FLOWLENS_VERSION__ = "2.0.25";
 })();
