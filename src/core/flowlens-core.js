@@ -116,7 +116,9 @@
     mediaRatioByImage: new Map(),
     videoTimeByImage: new Map(),
     preferredVideoHost: "",
+    videoConnectionHint: null,
     nextVideoPreload: null,
+    videoTransition: null,
     favoriteKeys: new Set(),
     savingFavorite: false,
     imageKeys: new Set(),
@@ -4404,6 +4406,8 @@
   }
 
   function loadVideoSourceAttempt(video, request) {
+    request.startedAt = Date.now();
+    request.progressAt = 0;
     video.dataset.sourceUrl = request.sources[request.index];
     video.dataset.sourceAttempt = String(Number(video.dataset.sourceAttempt || 0) + 1);
     delete video.dataset.flPlaybackBlocked;
@@ -4420,17 +4424,19 @@
     const index = request.index;
     const stillLoading = () => videoSourceRequests.get(video) === request && request.index === index
       && video.isConnected && video.readyState < 2 && video.dataset.played !== "true";
-    const earlyFallback = request.autoplay;
+    const elapsed = Date.now() - request.startedAt;
+    const firstDeadline = request.autoplay ? 2500 : 5000;
     video.dataset.loadTimer = String(window.setTimeout(() => {
       if (!stillLoading()) return;
-      if (earlyFallback && video.readyState >= 1) {
+      const now = Date.now();
+      if (request.autoplay && (video.readyState >= 1 || (request.progressAt && now - request.progressAt < 1200))) {
         video.dataset.loadTimer = String(window.setTimeout(() => {
           if (stillLoading()) advanceVideoSource(video);
-        }, 3500));
+        }, Math.max(0, 6000 - (now - request.startedAt))));
         return;
       }
       advanceVideoSource(video);
-    }, earlyFallback ? 2500 : 5000));
+    }, Math.max(0, firstDeadline - elapsed)));
   }
 
   function advanceVideoSource(video) {
@@ -4552,6 +4558,10 @@
     video.addEventListener("canplay", () => {
       clearTimeout(Number(video.dataset.loadTimer || 0));
       if (video.autoplay) requestVideoPlayback(video);
+    });
+    video.addEventListener("progress", () => {
+      const request = videoSourceRequests.get(video);
+      if (request && video.currentSrc === video.dataset.sourceUrl) request.progressAt = Date.now();
     });
     video.addEventListener("playing", () => {
       video.dataset.played = "true";
@@ -5759,6 +5769,7 @@
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
         clearNextVideoPreload(true);
+        clearVideoTransition();
         saveViewerPosition();
         cancelAnimationFrame(state.renderFrame);
         state.renderFrame = 0;
@@ -7219,6 +7230,7 @@
       startGenericObserver();
     }
 
+    preconnectVideoSource(state.images.find(isVideoUrl));
     if (state.settings?.autoFullscreen !== false && !document.fullscreenElement) {
       try {
         await state.root.requestFullscreen?.();
@@ -7251,6 +7263,8 @@
     state.restorePosition = null;
     stopGenericObserver();
     stopHostOverlayGuard();
+    state.videoConnectionHint?.remove();
+    state.videoConnectionHint = null;
     state.active = false;
     state.grid?.querySelectorAll('.xiv-tile[data-media-mounted="true"]').forEach(tile => setTileMediaMounted(tile, false));
     stopTileMediaObserver();
@@ -7345,11 +7359,99 @@
     }, state.highResByImage.has(keyForUrl(thumbUrl)) ? 40 : 420);
   }
 
-  async function openLightbox(index) {
+  function clearVideoTransition() {
+    const transition = state.videoTransition;
+    if (!transition) return;
+    state.videoTransition = null;
+    clearTimeout(transition.loadingTimer);
+    clearTimeout(transition.deadline);
+    transition.outgoing?.cancel();
+    transition.incoming?.cancel();
+    transition.cover.remove();
+    delete state.lightbox.dataset.xivVideoTransition;
+  }
+
+  function beginVideoTransition(index, direction) {
+    const previous = state.videoTransition?.canvas;
+    clearVideoTransition();
+    const box = state.lightbox;
+    if (box?.dataset.active !== "true" || box.dataset.zoom === "actual" || index === state.index
+      || !isVideoUrl(state.images[state.index] || "") || !isVideoUrl(state.images[index] || "")) return null;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+      || !(window.innerWidth <= 820 || window.matchMedia?.("(pointer: coarse)")?.matches)) return null;
+
+    const frame = box.querySelector(":scope > iframe[data-media-url]");
+    const video = box.querySelector(":scope > video") || frame?.contentDocument?.querySelector("video");
+    let canvas = previous;
+    if (video?.readyState >= 2 && !video.seeking && video.videoWidth && video.videoHeight) {
+      const rect = (frame || video).getBoundingClientRect();
+      const bounds = box.getBoundingClientRect();
+      const scale = Math.min(1, 960 / Math.max(bounds.width, bounds.height));
+      const snapshot = document.createElement("canvas");
+      snapshot.width = Math.max(1, Math.round(bounds.width * scale));
+      snapshot.height = Math.max(1, Math.round(bounds.height * scale));
+      try {
+        const ctx = snapshot.getContext("2d");
+        const fit = Math.min(rect.width / video.videoWidth, rect.height / video.videoHeight);
+        const width = video.videoWidth * fit, height = video.videoHeight * fit;
+        const x = rect.left - bounds.left + (rect.width - width) / 2;
+        const y = rect.top - bounds.top + (rect.height - height) / 2;
+        // A cross-origin frame can be drawn for display. Never read or export its pixels.
+        ctx.drawImage(video, x * scale, y * scale, width * scale, height * scale);
+        canvas = snapshot;
+      } catch {
+        // Some protected streams cannot be painted to a canvas.
+      }
+    }
+    if (!canvas) return null;
+
+    const cover = document.createElement("div");
+    cover.className = "xiv-video-switch-cover";
+    canvas.setAttribute("aria-hidden", "true");
+    cover.appendChild(canvas);
+    const transition = { canvas, cover, direction: direction || Math.sign(index - state.index) };
+    state.videoTransition = transition;
+    box.dataset.xivVideoTransition = "true";
+    box.appendChild(cover);
+    transition.loadingTimer = setTimeout(() => {
+      const label = document.createElement("span");
+      label.setAttribute("role", "status");
+      label.textContent = "正在加载视频…";
+      cover.appendChild(label);
+    }, 500);
+    transition.deadline = setTimeout(() => {
+      if (state.videoTransition === transition) clearVideoTransition();
+    }, 12000);
+    return transition;
+  }
+
+  function finishVideoTransition({video, frame, transition}) {
+    const reveal = () => {
+      if (state.videoTransition !== transition || transition.outgoing || video.readyState < 2 || video.seeking) return;
+      clearTimeout(transition.loadingTimer);
+      transition.cover.querySelector('[role="status"]')?.remove();
+      const motion = { duration: 250, easing: "cubic-bezier(.22,.68,.2,1)" };
+      const direction = transition.direction > 0 ? 1 : -1;
+      if (!transition.cover.animate) { clearVideoTransition(); return; }
+      transition.incoming = (frame || video).animate?.([{ translate: `0 ${direction * 16}%` }, { translate: "0 0%" }], motion);
+      transition.outgoing = transition.cover.animate([{ translate: "0 0%" }, { translate: `0 ${direction * -100}%` }], motion);
+      transition.outgoing.onfinish = () => {
+        if (state.videoTransition === transition) clearVideoTransition();
+      };
+    };
+    for (const event of ["loadeddata", "seeked", "canplay"]) video.addEventListener(event, reveal, { once: true });
+    video.addEventListener("error", () => {
+      if (state.videoTransition === transition && video.dataset.flSourceFailed === "true") clearVideoTransition();
+    });
+    reveal();
+  }
+
+  async function openLightbox(index, direction = 0) {
     if (isGenericX810114Page() && Date.now() - state.lightboxGestureToken > 500) {
       closeHostPhotoViewer();
       return;
     }
+    const transition = beginVideoTransition(index, direction);
     if (state.renderFrame) {
       cancelAnimationFrame(state.renderFrame);
       state.renderFrame = 0;
@@ -7380,7 +7482,7 @@
       if (isVideoUrl(tile.dataset.url || "")) setTileMediaMounted(tile, false);
     });
     if (isVideoUrl(thumbUrl)) {
-      setLightboxVideo(thumbUrl);
+      setLightboxVideo(thumbUrl, transition);
       state.root.dataset.lightboxActive = "true";
       scheduleLightboxMediaPreload(index);
       return;
@@ -7398,6 +7500,7 @@
 
   function closeLightbox(resumeAutoScroll = true) {
     if (!state.lightbox) return;
+    clearVideoTransition();
     pauseLightboxMedia();
     endLightboxDrag();
     endStageSwipe();
@@ -7869,7 +7972,7 @@
       const rect = video.getBoundingClientRect();
       // The bottom native play/seek/volume/fullscreen controls own their input.
       if (rect.width <= 0 || rect.height <= 0 || event.clientY >= rect.bottom - Math.min(56, rect.height * 0.25)) return;
-      gesture = {id:event.pointerId,x:event.clientX,y:event.clientY,width:rect.width,time:Number(video.currentTime)||0,
+      gesture = {id:event.pointerId,x:event.clientX,y:event.clientY,width:rect.width,height:rect.height,time:Number(video.currentTime)||0,
         rate:video.playbackRate || 1,source:video.dataset.sourceAttempt,mode:"pending",boosted:false,target:null,input:event.input || "pointer"};
       if (target !== video || event.input === "touch") claim(event);
       holdTimer = view.setTimeout(() => {
@@ -7888,12 +7991,14 @@
       const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
       if (gesture.mode === "pending" && Math.max(Math.abs(dx), Math.abs(dy)) > 12) {
         clearTimeout(holdTimer);
-        if (Math.abs(dx) < Math.abs(dy) * 1.2) { reset(); return; }
-        if (videoGestureSeekTime(video, gesture.time) === null) { reset(); return; }
-        gesture.mode = "seek";
+        if (event.pointerType !== "mouse" && Math.abs(dy) >= Math.abs(dx) * 1.2) {
+          gesture.mode = "navigate";
+        } else if (Math.abs(dx) >= Math.abs(dy) * 1.2 && videoGestureSeekTime(video, gesture.time) !== null) {
+          gesture.mode = "seek";
+        } else { reset(); return; }
         if (gesture.input !== "touch") { try { target.setPointerCapture?.(event.pointerId); gesture.captured = true; } catch {} }
       }
-      if (gesture.mode === "hold") { claim(event); return; }
+      if (gesture.mode === "hold" || gesture.mode === "navigate") { claim(event); return; }
       if (gesture.mode !== "seek") return;
       claim(event);
       const span = Math.min(120, Math.max(15, video.duration * 0.25));
@@ -7907,7 +8012,10 @@
       // Quick flicks may contain only a final coordinate or lose pointer capture.
       if (current() && gesture.mode !== "hold" && Number.isFinite(event.clientX)) move(event);
       if (!gesture) return;
-      const consumed = gesture.mode === "seek" || gesture.boosted;
+      const consumed = gesture.mode === "seek" || gesture.mode === "navigate" || gesture.boosted;
+      const distance = event.clientY - gesture.y;
+      const navigate = current() && gesture.mode === "navigate"
+        && Math.abs(distance) >= Math.max(40, Math.min(72, gesture.height * .12));
       const tap = current() && gesture.mode === "pending" && target !== video;
       if (consumed) {
         claim(event);
@@ -7925,6 +8033,7 @@
         }
       }
       reset();
+      if (navigate) { showAdjacentImage(distance < 0 ? 1 : -1, true); return; }
       if (feedback) { show(feedback); feedbackTimer = view.setTimeout(hide, 1200); }
       if (tap) {
         claim(event); suppressUntil = Date.now() + 700;
@@ -7934,7 +8043,7 @@
     };
     const cancel = event => {
       if (!event || event.pointerId === undefined || gesture?.id === event.pointerId) {
-        if (gesture?.boosted || gesture?.mode === "seek") suppressUntil = Date.now() + 700;
+        if (gesture?.boosted || gesture?.mode === "seek" || gesture?.mode === "navigate") suppressUntil = Date.now() + 700;
         reset();
       }
     };
@@ -7976,7 +8085,7 @@
     }, true);
     listen(target, "contextmenu", event => { if (gesture || Date.now() < suppressUntil) claim(event); }, true);
     // A native control pause during a drag must not discard the pending seek.
-    listen(video, "pause", () => { if (gesture?.mode !== "seek") cancel(); });
+    listen(video, "pause", () => { if (gesture?.mode !== "seek" && gesture?.mode !== "navigate") cancel(); });
     listen(video, "ended", () => cancel());
     listen(doc, "visibilitychange", () => { if (doc.visibilityState === "hidden") cancel(); });
     listen(view, "blur", () => cancel());
@@ -7996,6 +8105,23 @@
 
   function videoFrameSrcDoc() {
     return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}video{display:block;width:100%;height:100%;object-fit:contain;background:#000}</style></head><body></body></html>`;
+  }
+
+  function preconnectVideoSource(url) {
+    if (!url || navigator.connection?.saveData || /^(?:slow-)?2g$/.test(navigator.connection?.effectiveType || "")) return;
+    try {
+      const source = new URL(videoSourceCandidates(normalizeMediaUrl(url))[0], location.href);
+      if (!/^https?:$/.test(source.protocol) || source.origin === location.origin) return;
+      if (state.videoConnectionHint?.href === `${source.origin}/`) return;
+      state.videoConnectionHint?.remove();
+      const hint = document.createElement("link");
+      hint.rel = "preconnect";
+      hint.href = source.origin;
+      document.head?.appendChild(hint);
+      state.videoConnectionHint = hint;
+    } catch {
+      // Connection hints are optional; the media request still starts normally.
+    }
   }
 
   function rememberVideoTime(video) {
@@ -8139,6 +8265,7 @@
     };
     for (const name of ["waiting", "seeking"]) video.addEventListener(name, yieldBandwidth);
     installVideoGestures(video);
+    if (player.transition) finishVideoTransition(player);
 
     const request = videoSourceRequests.get(video);
     if (request) {
@@ -8152,7 +8279,7 @@
     }
   }
 
-  function setLightboxVideo(url) {
+  function setLightboxVideo(url, transition = null) {
     url = normalizeMediaUrl(url);
     const pending = state.nextVideoPreload;
     let player;
@@ -8170,6 +8297,7 @@
     removeDirectLightboxMedia(player.frame);
     updateFavoriteButton(url);
     player.active = true;
+    player.transition = transition;
     if (player.frame) {
       const { frame, video } = player;
       delete frame.dataset.xivWarm;
@@ -8239,18 +8367,20 @@
     state.videoTimeByImage.set(keyForUrl(url), time);
   }
 
-  function showAdjacentImage(delta) {
+  function showAdjacentImage(delta, videosOnly = false) {
     if (!state.images.length) return false;
     let next = state.index;
     for (let step = 0; step < state.images.length; step += 1) {
       next = (next + delta + state.images.length) % state.images.length;
+      if (videosOnly && next === state.index) return false;
+      if (videosOnly && !isVideoUrl(state.images[next])) continue;
       const tile = state.grid?.querySelector(`.xiv-tile[data-index="${next}"]`);
       const blocked = window.__flowLensMediaFilter?.reasonFor?.(state.images[next], tile);
       if (mediaMatchesFilter(state.images[next]) && !blocked && (!tile || (!tile.hidden && tile.style.display !== "none"))) break;
       if (step === state.images.length - 1) return false;
     }
     state.lightboxGestureToken = Date.now();
-    openLightbox(next);
+    openLightbox(next, delta);
     return true;
   }
 

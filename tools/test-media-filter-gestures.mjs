@@ -48,7 +48,7 @@ class Emitter {
   }
 }
 function fixture(frame=false,{touch=false,coarse=false}={}){
-  let now=10000,id=0;const timers=new Map(),hints=[];
+  let now=10000,id=0;const timers=new Map(),hints=[],navigation=[];
   const view=new Emitter();view.setTimeout=(fn,delay)=>{timers.set(++id,{fn,at:now+delay});return id;};
   view.innerWidth=coarse?390:1024;if(touch)view.TouchEvent=class{};
   const doc=new Emitter();doc.defaultView=view;doc.visibilityState='visible';
@@ -56,10 +56,10 @@ function fixture(frame=false,{touch=false,coarse=false}={}){
   doc.body=parent;doc.createElement=()=>Object.assign(new Emitter(),{style:{},setAttribute(){},remove(){this.removed=true;}});
   const video=new Emitter();Object.assign(video,{ownerDocument:doc,dataset:{sourceAttempt:'1'},isConnected:true,style:{touchAction:'auto'},playbackRate:1.25,paused:false,ended:false,duration:600,currentTime:100,seekable:{length:1,start:()=>0,end:()=>600},getBoundingClientRect:()=>({width:400,height:300,bottom:300}),setPointerCapture(){},releasePointerCapture(){},closest:()=>frame?null:parent});
   video.pause=()=>{video.paused=true;video.emit('pause');};
-  const c=install({state:{lightbox:{dataset:{active:'true'}}},Date:class extends Date{static now(){return now;}},clearTimeout:id=>timers.delete(id),requestVideoPlayback(v){v.paused=false;return Promise.resolve(true);}},['videoGestureSeekTime','createVideoGestureSurface','installVideoGestures']);
+  const c=install({state:{lightbox:{dataset:{active:'true'}}},Date:class extends Date{static now(){return now;}},clearTimeout:id=>timers.delete(id),requestVideoPlayback(v){v.paused=false;return Promise.resolve(true);},showAdjacentImage(direction,videosOnly){navigation.push([direction,videosOnly]);}},['videoGestureSeekTime','createVideoGestureSurface','installVideoGestures']);
   c.installVideoGestures(video);
   const advance=ms=>{now+=ms;for(const [key,t]of [...timers])if(t.at<=now){timers.delete(key);t.fn();}};
-  return{video,doc,view,c,hints,timers,advance};
+  return{video,doc,view,c,hints,timers,advance,navigation};
 }
 for(const frame of [false,true]){
   const f=fixture(frame),{video,advance,view,doc,c}=f;
@@ -77,7 +77,8 @@ for(const frame of [false,true]){
   advance(800);video.emit('pointerdown');advance(450);doc.visibilityState='hidden';doc.emit('visibilitychange');assert.equal(video.playbackRate,1.25);doc.visibilityState='visible';
   advance(800);video.emit('pointerdown');advance(450);view.emit('blur');assert.equal(video.playbackRate,1.25);
   advance(800);video.emit('pointerdown');video.emit('pointerdown',{pointerId:2,isPrimary:false});advance(600);assert.equal(video.playbackRate,1.25);
-  advance(800);video.emit('pointerdown');video.emit('pointermove',{clientY:200});advance(500);assert.equal(video.playbackRate,1.25);assert(!video.emit('pointerup').claimed);
+  advance(800);video.emit('pointerdown');video.emit('pointermove',{clientY:200});advance(500);assert.equal(video.playbackRate,1.25);assert(video.emit('pointerup',{clientY:200}).claimed);
+  assert.deepEqual(f.navigation,[[-1,true]]);
   advance(800);assert(!video.emit('pointerdown',{clientY:280}).claimed);advance(500);assert.equal(video.playbackRate,1.25);assert(!video.emit('pointerup',{clientY:280}).claimed);
   advance(800);video.paused=true;video.emit('pointerdown');advance(500);assert.equal(video.playbackRate,1.25);video.emit('pointerup');video.paused=false;
   advance(800);video.emit('pointerdown');advance(450);video.emit('pause');assert.equal(video.playbackRate,1.25);
@@ -103,6 +104,11 @@ for(const frame of [false,true])for(const touchApi of [false,true]){
   assert.match(f.hints.at(-1).textContent,/跳转到/);assert.equal(f.hints.at(-1).hidden,false);advance(1200);assert.equal(f.hints.at(-1).hidden,true);
   advance(800);start(300);move(100);end(100);assert.equal(video.currentTime,100);
   advance(800);start(100);end(300);assert.equal(video.currentTime,160,'quick flick with no intermediate move must still seek');
+  advance(800);start(100);view.emit('touchend',{touches:[],changedTouches:[point(105,22)]});
+  assert.deepEqual(f.navigation,[[1,true]],'an upward flick switches to the next video');
+  assert.equal(video.currentTime,160,'vertical navigation must not seek in the current video');
+  advance(800);start(100);view.emit('touchend',{touches:[],changedTouches:[point(100,119)]});
+  assert.equal(f.navigation.length,1,'short vertical movements must not switch video');
   advance(800);video.paused=false;start(100);end(100);assert.equal(video.paused,true);assert(surface.emit('click').claimed);
   advance(800);start(100);end(100);assert.equal(video.paused,false);
   advance(800);video.paused=false;start(100);advance(450);assert.equal(video.playbackRate,2);end(100);assert.equal(video.playbackRate,1.25);
@@ -114,27 +120,38 @@ for(const frame of [false,true])for(const touchApi of [false,true]){
 }
 
 {
-  const timers=new Map();let id=0,plays=0;
-  const context={state:{lightbox:{contains:()=>false},preferredVideoHost:''},window:{innerWidth:390,setTimeout(fn,delay){timers.set(++id,{fn,delay});return id;}},clearTimeout:id=>timers.delete(id),location:{href:'https://site.test'},URL,WeakMap,requestVideoPlayback(){plays++;},updateStatus(){}};
+  const timers=new Map();let id=0,plays=0,now=10000;
+  const context={state:{lightbox:{contains:()=>false},preferredVideoHost:''},window:{innerWidth:390,setTimeout(fn,delay){timers.set(++id,{fn,delay});return id;}},clearTimeout:id=>timers.delete(id),location:{href:'https://site.test'},URL,WeakMap,Date:{now:()=>now},requestVideoPlayback(){plays++;},updateStatus(){}};
   vm.createContext(context);
   const source=core.slice(core.indexOf('  const videoSourceRequests'),core.indexOf('  const videoPlayRequests'));
   vm.runInContext(extract('videoSourceCandidates')+'\n'+source,context);
   const video={dataset:{allowFallback:'true'},isConnected:true,readyState:0,load(){}};
   context.setVideoSourceWithFallback(video,'https://twimg.moonchan.xyz/path/clip.mp4?token=keep',true);
-  let timer=[...timers.values()].at(-1);assert.equal(timer.delay,2500);timer.fn();assert.match(video.src,/video-cf\.twimg\.com/);assert.match(video.src,/token=keep/);
+  let timer=[...timers.values()].at(-1);assert.equal(timer.delay,2500);now+=timer.delay;timer.fn();assert.match(video.src,/video-cf\.twimg\.com/);assert.match(video.src,/token=keep/);
   context.state.preferredVideoHost='twimg.moonchan.xyz';assert.match(context.videoSourceCandidates('https://video.twimg.com/path/clip.mp4')[0],/twimg\.moonchan\.xyz/);
   const second={dataset:{allowFallback:'true'},isConnected:true,readyState:0,load(){}};
   context.setVideoSourceWithFallback(second,'https://video.twimg.com/path/clip.mp4',true);second.readyState=1;
-  timer=[...timers.values()].at(-1);const url=second.src;timer.fn();assert.equal(second.src,url);assert.equal([...timers.values()].at(-1).delay,3500);
+  timer=[...timers.values()].at(-1);const url=second.src;now+=timer.delay;timer.fn();assert.equal(second.src,url);assert.equal([...timers.values()].at(-1).delay,3500);
   second.readyState=2;[...timers.values()].at(-1).fn();assert.equal(second.src,url);
   context.window.innerWidth=1440;
   const desktop={dataset:{allowFallback:'true'},isConnected:true,readyState:0,load(){}};
   context.setVideoSourceWithFallback(desktop,'https://video.twimg.com/path/clip.mp4',true);
   assert.equal([...timers.values()].at(-1).delay,2500);
+  const promoted={dataset:{allowFallback:'true'},isConnected:true,readyState:0,load(){}};
+  context.setVideoSourceWithFallback(promoted,'https://video.twimg.com/path/next.mp4');
+  const request=vm.runInContext('videoSourceRequests',context).get(promoted);
+  now+=2700;
+  request.autoplay=true;
+  request.progressAt=now;
+  context.armVideoSourceTimeout(promoted,request);
+  timer=[...timers.values()].at(-1);
+  assert.equal(timer.delay,0,'promotion must not restart the timeout');
+  timer.fn();
+  assert.equal([...timers.values()].at(-1).delay,3300,'a source that is receiving data gets its remaining grace period');
   const timerCount=timers.size;
   const single={dataset:{allowFallback:'false'},isConnected:true,readyState:0,load(){}};
   context.setVideoSourceWithFallback(single,'https://site.test/slow.mp4',true);
   assert.equal(timers.size,timerCount);
   assert.equal(single.dataset.flSourceFailed,undefined);
-  console.log('PASS desktop and mobile fallback start at 2.5s, metadata gets a grace period, and slow single sources are not falsely marked failed');
+  console.log('PASS no-response fallback starts at 2.5s, progressing sources keep their grace period, and promotion does not reset the timer');
 }

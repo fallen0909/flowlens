@@ -126,7 +126,7 @@ function navigationContext() {
   const source={name:'current C document'},host={name:'old A document',documentElement:{classList:{add(){}}}};
   const state={galleryDocument:source,galleryDocumentUrl:'https://gallery.test/c',viewerClosedAtUrl:'https://gallery.test/c',galleryQueueCurrentUrl:'',navigationGeneration:0,images:[],root:{dataset:{}},fetchedPages:new Set(),pageUrls:new Set(),settings:{autoFullscreen:false}};
   const c=install({state,document:host,location:{href:'https://gallery.test/c'},Date,
-    ensureUi(){},isSupportedPage:()=>true,resetCollection(){state.images=[];},normalizedPageUrl:url=>url,pageTitleFromDocument:()=>'',startViewerPositionRestore(){},closeHostPhotoViewer(){},startHostOverlayGuard(){},isGenericX810114Page:()=>false,acquirePageLock(){},isPhotoGalleryPage:()=>false,
+    ensureUi(){},isSupportedPage:()=>true,resetCollection(){state.images=[];},normalizedPageUrl:url=>url,pageTitleFromDocument:()=>'',startViewerPositionRestore(){},closeHostPhotoViewer(){},startHostOverlayGuard(){},isGenericX810114Page:()=>false,acquirePageLock(){},isPhotoGalleryPage:()=>false,isVideoUrl:()=>false,preconnectVideoSource(){},
     collectFromDocument(doc,url){assert.equal(doc,source);assert.equal(url,'https://gallery.test/c');state.images=['C.jpg'];},startGenericObserver(){throw Error('must not observe old host document');}
   },['openViewer']);
   await c.openViewer();assert.equal(state.galleryQueueCurrentUrl,'https://gallery.test/c');assert.deepEqual(state.images,['C.jpg']);

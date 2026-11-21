@@ -56,6 +56,18 @@
     #xiv-root #xiv-lightbox .xiv-lightbox-fav[data-favorited="true"] { color: #e11d48 !important; }
     #xiv-root #xiv-lightbox .xiv-lightbox-zoom[data-active="true"] { color: var(--fl-accent) !important; }
     #xiv-root #xiv-lightbox button:focus-visible { outline: 3px solid var(--fl-accent); outline-offset: 3px; }
+    #xiv-root > #xiv-lightbox[data-xiv-video-transition="true"] { overflow: hidden; }
+    #xiv-lightbox > .xiv-video-switch-cover {
+      position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden;
+      background: #050505;
+    }
+    #xiv-root[data-theme="light"] #xiv-lightbox > .xiv-video-switch-cover { background: #f5f5f2; }
+    .xiv-video-switch-cover > canvas { display: block; width: 100%; height: 100%; }
+    .xiv-video-switch-cover > [role="status"] {
+      position: absolute; bottom: 14%; left: 50%; transform: translateX(-50%);
+      padding: 8px 16px; border-radius: 999px; background: rgba(0,0,0,.74); color: #fff;
+      font: 600 14px/1.4 system-ui, sans-serif; white-space: nowrap;
+    }
     /* Image zoom leaves the canvas clear. The image itself still toggles fit. */
     #xiv-root:has(> #xiv-lightbox[data-active="true"][data-zoom="actual"] > img) > #xiv-topbar,
     #xiv-root > #xiv-lightbox[data-active="true"][data-zoom="actual"]:has(> img)
